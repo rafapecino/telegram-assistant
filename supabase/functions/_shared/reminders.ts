@@ -1,44 +1,34 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
-import { askGroqForJson } from "./groq.ts";
-import { type MadridClock, madridClock, madridLocalToUtc } from "./madrid-time.ts";
+import { madridLocalToUtc } from "./madrid-time.ts";
 import { sendTelegramMessage } from "./telegram.ts";
 
-export type ReminderInterpretation =
-  | { kind: "reminder"; text: string; remindAt: Date }
-  | { kind: "not_reminder" }
-  | { kind: "invalid"; reason: string };
+/** Formato que el modelo debe devolver cuando el mensaje pide un recordatorio (ver message-intent.ts). */
+export const REMINDER_INTENT_FORMAT =
+  'Pide un recordatorio: {"intent": "reminder", "text": "<qué hay que recordar, breve>", ' +
+  '"local_datetime": "YYYY-MM-DDTHH:mm"}. local_datetime es la hora local de Madrid; sin hora indicada, usa las 09:00.';
 
-export function buildReminderPrompt(clock: MadridClock): string {
-  return [
-    "Interpretas mensajes en español para un bot personal de recordatorios.",
-    `Ahora en Madrid es ${clock.weekday} ${clock.localDateTime}.`,
-    "Si el mensaje pide un recordatorio, responde solo con este JSON:",
-    '{"is_reminder": true, "text": "<qué hay que recordar, breve>", "local_datetime": "YYYY-MM-DDTHH:mm"}',
-    "local_datetime es la hora local de Madrid. Sin hora indicada, usa las 09:00.",
-    'Si el mensaje no pide un recordatorio, responde solo {"is_reminder": false}.',
-  ].join("\n");
+export type ReminderRequest =
+  | { kind: "reminder"; text: string; remindAt: Date }
+  | { kind: "invalid"; message: string };
+
+function invalidReminder(reason: string): ReminderRequest {
+  return { kind: "invalid", message: `No he creado el recordatorio: ${reason}.` };
 }
 
-/** Valida la respuesta del modelo: un modelo pequeño puede equivocarse y no queremos guardar basura. */
-export function parseReminderInterpretation(raw: unknown, now: Date): ReminderInterpretation {
-  const candidate = raw as { is_reminder?: unknown; text?: unknown; local_datetime?: unknown } | null;
-  if (candidate?.is_reminder !== true) return { kind: "not_reminder" };
-  if (typeof candidate.text !== "string" || candidate.text.trim() === "") {
-    return { kind: "invalid", reason: "no he entendido qué quieres que te recuerde" };
+/** Valida la respuesta del modelo: puede equivocarse y no queremos guardar basura. */
+export function parseReminderRequest(raw: unknown, now: Date): ReminderRequest {
+  const candidate = raw as { text?: unknown; local_datetime?: unknown } | null;
+  if (typeof candidate?.text !== "string" || candidate.text.trim() === "") {
+    return invalidReminder("no he entendido qué quieres que te recuerde");
   }
   let remindAt: Date;
   try {
     remindAt = madridLocalToUtc(String(candidate.local_datetime));
   } catch {
-    return { kind: "invalid", reason: "no he entendido la fecha" };
+    return invalidReminder("no he entendido la fecha");
   }
-  if (remindAt <= now) return { kind: "invalid", reason: "la fecha que he entendido ya ha pasado" };
+  if (remindAt <= now) return invalidReminder("la fecha que he entendido ya ha pasado");
   return { kind: "reminder", text: candidate.text.trim(), remindAt };
-}
-
-export async function interpretReminder(message: string, now: Date): Promise<ReminderInterpretation> {
-  const raw = await askGroqForJson(buildReminderPrompt(madridClock(now)), message);
-  return parseReminderInterpretation(raw, now);
 }
 
 export async function saveReminder(db: SupabaseClient, text: string, remindAt: Date): Promise<void> {
