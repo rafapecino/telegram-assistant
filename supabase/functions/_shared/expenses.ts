@@ -20,13 +20,16 @@ export const EXPENSE_CATEGORIES = [
 // Los bancos tardan varios días en asentar algunos cargos; la ventana se solapa y los duplicados se descartan.
 const IMPORT_WINDOW_DAYS = 7;
 
-export interface NewExpense {
-  bank_transaction_id: string;
+export interface ExpenseCandidate {
   account_uid: string;
   booking_date: string;
   amount: number;
   currency: string;
   description: string;
+}
+
+export interface NewExpense extends ExpenseCandidate {
+  transaction_key: string;
 }
 
 export interface StoredExpense {
@@ -36,24 +39,42 @@ export interface StoredExpense {
   category: string;
 }
 
+const CARD_NUMBER_PATTERN = /\b\d{13,19}\b/g;
+
+/** Deja solo los 4 últimos dígitos de un número de tarjeta para no guardarlo ni enviarlo a Groq ni a Telegram. */
+export function maskCardNumbers(text: string): string {
+  return text.replace(CARD_NUMBER_PATTERN, (cardNumber) => `****${cardNumber.slice(-4)}`);
+}
+
 /** Convierte un movimiento del banco en gasto. Ingresos y movimientos sin asentar se ignoran. */
-export function toNewExpense(transaction: BankTransaction, accountUid: string): NewExpense | null {
+export function toExpenseCandidate(transaction: BankTransaction, accountUid: string): ExpenseCandidate | null {
   if (transaction.status !== "BOOK" || transaction.credit_debit_indicator !== "DBIT") return null;
   const bookingDate = transaction.booking_date ?? transaction.value_date ?? transaction.transaction_date;
   if (!bookingDate) throw new Error(`Movimiento sin fecha: ${JSON.stringify(transaction)}`);
-  const amount = Math.abs(Number(transaction.transaction_amount.amount));
   const description = transaction.creditor?.name || transaction.remittance_information?.join(" ") || "Sin descripción";
-  // Si el banco no da identificador, se construye uno con los datos del cargo.
-  const bankTransactionId = transaction.entry_reference ?? transaction.transaction_id ??
-    `${accountUid}|${bookingDate}|${amount}|${description}`;
   return {
-    bank_transaction_id: bankTransactionId,
     account_uid: accountUid,
     booking_date: bookingDate,
-    amount,
+    amount: Math.abs(Number(transaction.transaction_amount.amount)),
     currency: transaction.transaction_amount.currency,
-    description,
+    description: maskCardNumbers(description),
   };
+}
+
+/**
+ * Santander identifica cada movimiento por su posición en el día, que puede cambiar entre consultas.
+ * La clave se construye con los datos del gasto y su número de orden entre gastos idénticos del mismo día:
+ * los idénticos son intercambiables, así que el orden en que los devuelva el banco no importa.
+ */
+export function assignTransactionKeys(candidates: ExpenseCandidate[]): NewExpense[] {
+  const occurrences = new Map<string, number>();
+  return candidates.map((candidate) => {
+    const fingerprint = [candidate.account_uid, candidate.booking_date, candidate.amount, candidate.description]
+      .join("|");
+    const occurrence = (occurrences.get(fingerprint) ?? 0) + 1;
+    occurrences.set(fingerprint, occurrence);
+    return { ...candidate, transaction_key: `${fingerprint}|${occurrence}` };
+  });
 }
 
 export function buildCategorizationPrompt(): string {
@@ -79,27 +100,26 @@ async function categorizeExpenses(expenses: NewExpense[]): Promise<string[]> {
   return parseCategories(raw, expenses.length);
 }
 
-async function excludeAlreadyImported(db: SupabaseClient, candidates: NewExpense[]): Promise<NewExpense[]> {
-  const uniqueCandidates = [...new Map(candidates.map((expense) => [expense.bank_transaction_id, expense])).values()];
-  if (uniqueCandidates.length === 0) return [];
+async function excludeAlreadyImported(db: SupabaseClient, expenses: NewExpense[]): Promise<NewExpense[]> {
+  if (expenses.length === 0) return [];
   const { data, error } = await db.from("expenses")
-    .select("bank_transaction_id")
-    .in("bank_transaction_id", uniqueCandidates.map((expense) => expense.bank_transaction_id));
+    .select("transaction_key")
+    .in("transaction_key", expenses.map((expense) => expense.transaction_key));
   if (error) throw new Error(`No se pudieron comprobar los gastos ya importados: ${error.message}`);
-  const importedIds = new Set(data.map((row) => row.bank_transaction_id));
-  return uniqueCandidates.filter((expense) => !importedIds.has(expense.bank_transaction_id));
+  const importedKeys = new Set(data.map((row) => row.transaction_key));
+  return expenses.filter((expense) => !importedKeys.has(expense.transaction_key));
 }
 
 async function fetchCandidateExpenses(accountUids: string[], dateFrom: string): Promise<NewExpense[]> {
-  const candidates: NewExpense[] = [];
+  const candidates: ExpenseCandidate[] = [];
   for (const accountUid of accountUids) {
     const transactions = await fetchTransactions(accountUid, dateFrom);
     candidates.push(
-      ...transactions.map((transaction) => toNewExpense(transaction, accountUid))
-        .filter((expense): expense is NewExpense => expense !== null),
+      ...transactions.map((transaction) => toExpenseCandidate(transaction, accountUid))
+        .filter((candidate): candidate is ExpenseCandidate => candidate !== null),
     );
   }
-  return candidates;
+  return assignTransactionKeys(candidates);
 }
 
 /** Importa los gastos recientes del banco, los clasifica y devuelve cuántos eran nuevos. */
@@ -113,7 +133,7 @@ export async function importRecentExpenses(db: SupabaseClient, now: Date): Promi
   const categories = await categorizeExpenses(newExpenses);
   const { error } = await db.from("expenses").upsert(
     newExpenses.map((expense, index) => ({ ...expense, category: categories[index] })),
-    { onConflict: "bank_transaction_id", ignoreDuplicates: true },
+    { onConflict: "transaction_key", ignoreDuplicates: true },
   );
   if (error) throw new Error(`No se pudieron guardar los gastos: ${error.message}`);
   return newExpenses.length;

@@ -113,8 +113,6 @@ export async function createBankSession(code: string): Promise<BankSession> {
 }
 
 export interface BankTransaction {
-  entry_reference?: string | null;
-  transaction_id?: string | null;
   transaction_amount: { amount: string; currency: string };
   credit_debit_indicator: "CRDT" | "DBIT";
   status: string;
