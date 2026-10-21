@@ -1,0 +1,13 @@
+{
+  "tasks": {
+    "test": "deno test supabase/functions/_shared/"
+  },
+  "fmt": {
+    "lineWidth": 120
+  },
+  "lint": {
+    "rules": {
+      "exclude": ["no-import-prefix"]
+    }
+  }
+}
