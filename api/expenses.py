@@ -178,7 +178,7 @@ def format_euros(amount: Decimal) -> str:
     return f"{spanish} €"
 
 
-def _totals_by_category(expenses: list[StoredExpense]) -> list[tuple[str, Decimal]]:
+def totals_by_category(expenses: list[StoredExpense]) -> list[tuple[str, Decimal]]:
     totals: dict[str, Decimal] = {}
     for expense in expenses:
         totals[expense.category] = totals.get(expense.category, Decimal(0)) + expense.amount
@@ -193,7 +193,7 @@ def build_weekly_summary(expenses: list[StoredExpense]) -> str:
     if not expenses:
         return "Resumen semanal: no hay gastos en los últimos 7 días."
     total = sum((expense.amount for expense in expenses), Decimal(0))
-    category_lines = [f"• {category}: {format_euros(amount)}" for category, amount in _totals_by_category(expenses)]
+    category_lines = [f"• {category}: {format_euros(amount)}" for category, amount in totals_by_category(expenses)]
     largest_lines = [
         f"• {expense.description}: {format_euros(expense.amount)} ({expense.booking_date.isoformat()})"
         for expense in _largest(expenses)
@@ -234,7 +234,7 @@ def build_expense_summary(expenses: list[StoredExpense], days: int, today: date)
         total=float(sum((expense.amount for expense in current), Decimal(0))),
         previous_total=float(sum((expense.amount for expense in previous), Decimal(0))),
         count=len(current),
-        by_category={category: float(amount) for category, amount in _totals_by_category(current)},
+        by_category={category: float(amount) for category, amount in totals_by_category(current)},
         by_day=[DailyTotal(date=day, amount=float(amount)) for day, amount in daily.items()],
         categories=EXPENSE_CATEGORIES,
         largest=[

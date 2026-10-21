@@ -19,6 +19,7 @@ from api.bot import build_reply
 from api.config import env_flag, optional_env, public_url, require_env, warn_about_weak_secrets
 from api.db import init_db
 from api.enable_banking import BankSession
+from api.expense_questions import answer_expense_question, interpret_expense_question
 from api.expenses import (
     EXPENSE_CATEGORIES,
     IMPORT_WINDOW_DAYS,
@@ -29,7 +30,16 @@ from api.expenses import (
 from api.jobs import UnknownJobError, build_scheduler, run_and_report
 from api.logging_config import redact, request_id_var, setup_logging
 from api.madrid_time import format_madrid_datetime
-from api.models import ExpenseCategoryUpdate, ExpenseSummary, JobResult, ReminderCreate, ReminderOut, TelegramUpdate
+from api.models import (
+    ExpenseAnswer,
+    ExpenseCategoryUpdate,
+    ExpenseQuestion,
+    ExpenseSummary,
+    JobResult,
+    ReminderCreate,
+    ReminderOut,
+    TelegramUpdate,
+)
 from api.reminders import complete_reminder, create_reminder, delete_reminder, list_pending_reminders
 from api.telegram import is_authorized_user, send_telegram_message, set_telegram_webhook
 
@@ -270,6 +280,19 @@ def change_expense_category(expense_id: int, payload: ExpenseCategoryUpdate) -> 
     if not update_expense_category(expense_id, payload.category):
         raise HTTPException(status_code=404, detail="El gasto no existe.")
     return Response(status_code=204)
+
+
+@app.post("/expenses/ask", response_model=ExpenseAnswer, dependencies=panel)
+def ask_about_expenses(payload: ExpenseQuestion) -> ExpenseAnswer:
+    try:
+        interpretation = interpret_expense_question(
+            payload.question, payload.previous_questions, datetime.now(timezone.utc)
+        )
+    except Exception:
+        # Groq caído o con una respuesta rota: el detalle queda en los logs y el chat recibe un aviso genérico.
+        logger.exception("No se pudo interpretar la pregunta sobre los gastos")
+        raise HTTPException(status_code=502, detail="No he podido interpretar la pregunta. Inténtalo de nuevo en un momento.")
+    return answer_expense_question(interpretation)
 
 
 @app.get("/reminders/pending", response_model=list[ReminderOut], dependencies=panel)

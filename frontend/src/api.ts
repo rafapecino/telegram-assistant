@@ -29,6 +29,27 @@ export interface ExpenseSummary {
   categories: string[];
 }
 
+export interface ExpenseQueryResult {
+  date_from: string;
+  date_to: string;
+  category: string | null;
+  search: string | null;
+  total: number;
+  count: number;
+  /** Ordenado de mayor a menor importe. */
+  by_category: Record<string, number>;
+  /** Los primeros gastos en el orden pedido (fecha o importe). */
+  expenses: Expense[];
+  /** Gastos que cuentan en el total pero no vienen en `expenses`. */
+  unlisted_count: number;
+}
+
+export interface ExpenseAnswer {
+  text: string;
+  /** null si la pregunta no era sobre gastos o no se entendió: entonces `text` lo explica. */
+  result: ExpenseQueryResult | null;
+}
+
 export interface Reminder {
   id: number;
   text: string;
@@ -119,6 +140,14 @@ export function updateExpenseCategory(expenseId: number, category: string): Prom
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ category }),
+  });
+}
+
+export function askAboutExpenses(question: string, previousQuestions: string[]): Promise<ExpenseAnswer> {
+  return request("/expenses/ask", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, previous_questions: previousQuestions }),
   });
 }
 

@@ -1,4 +1,5 @@
 import type { ExpenseSummary } from "../api";
+import { categoryColorClass } from "../categoryColors";
 import { formatDay, formatEuros } from "../format";
 import { categoryShares, describePeriodChange } from "../stats";
 import { SpendingChart } from "./SpendingChart";
@@ -23,11 +24,11 @@ export function ExpensesPanel({ summary, savingExpenseId, categoryError, onCateg
           <span className="stat-value">{formatEuros(summary.total)}</span>
           <span className={`stat-change change-${change.tone}`}>{change.text}</span>
         </div>
-        <div className="stat">
+        <div className="stat stat-dark">
           <span className="stat-label">Nº de gastos</span>
           <span className="stat-value">{summary.count}</span>
         </div>
-        <div className="stat">
+        <div className="stat stat-warm">
           <span className="stat-label">Media diaria</span>
           <span className="stat-value">{formatEuros(summary.total / summary.days)}</span>
         </div>
@@ -41,7 +42,7 @@ export function ExpensesPanel({ summary, savingExpenseId, categoryError, onCateg
           <h3>Por categoría</h3>
           <ul className="bars">
             {shares.map(({ category, amount, percent }) => (
-              <li key={category}>
+              <li key={category} className={categoryColorClass(category)}>
                 <span className="bar-label" title={category}>
                   {category}
                 </span>
@@ -85,19 +86,21 @@ export function ExpensesPanel({ summary, savingExpenseId, categoryError, onCateg
                       <span className="inline-date muted">{formatDay(expense.booking_date)}</span>
                     </td>
                     <td>
-                      <select
-                        className="tag-select"
-                        value={expense.category}
-                        aria-label={`Categoría de ${expense.description}`}
-                        aria-busy={savingExpenseId === expense.id}
-                        onChange={(event) => onCategoryChange(expense.id, event.target.value)}
-                      >
-                        {summary.categories.map((category) => (
-                          <option key={category} value={category}>
-                            {category}
-                          </option>
-                        ))}
-                      </select>
+                      <span className={`tag ${categoryColorClass(expense.category)}`}>
+                        <select
+                          className="tag-select"
+                          value={expense.category}
+                          aria-label={`Categoría de ${expense.description}`}
+                          aria-busy={savingExpenseId === expense.id}
+                          onChange={(event) => onCategoryChange(expense.id, event.target.value)}
+                        >
+                          {summary.categories.map((category) => (
+                            <option key={category} value={category}>
+                              {category}
+                            </option>
+                          ))}
+                        </select>
+                      </span>
                     </td>
                     <td className="number">{formatEuros(expense.amount)}</td>
                   </tr>
