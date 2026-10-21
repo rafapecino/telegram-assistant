@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
-import { completeBankLink } from "../_shared/bank-connection.ts";
+import { completeBankLink, InvalidBankLinkError } from "../_shared/bank-connection.ts";
 import { createAdminClient } from "../_shared/database.ts";
 import { errorMessage } from "../_shared/env.ts";
 import { importRecentExpenses } from "../_shared/expenses.ts";
@@ -46,6 +46,8 @@ Deno.serve(async (request) => {
     await sendTelegramMessage(summary).catch((error) => console.error("No se pudo avisar por Telegram", error));
     return textPage(`${summary}\n\nYa puedes cerrar esta pestaña y volver a Telegram.`);
   } catch (error) {
+    // Un enlace reutilizado no es un fallo de la conexión: basta con decirlo en la página, sin avisar por Telegram.
+    if (error instanceof InvalidBankLinkError) return textPage(error.message, 400);
     console.error(error);
     return notifyAndRespond(`No se pudo conectar el banco: ${errorMessage(error)}`, 500);
   }

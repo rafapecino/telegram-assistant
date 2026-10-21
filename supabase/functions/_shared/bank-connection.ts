@@ -4,6 +4,9 @@ import { type BankSession, createBankSession, startBankAuthorization } from "./e
 
 const AUTHORIZATION_LINK_LIFETIME_MINUTES = 30;
 
+/** El enlace ya se usó o ha caducado: pasa, por ejemplo, al recargar la página de confirmación. */
+export class InvalidBankLinkError extends Error {}
+
 export async function createBankLink(db: SupabaseClient, now: Date): Promise<string> {
   const { data, error } = await db.from("bank_authorizations").insert({}).select("state").single();
   if (error) throw new Error(`No se pudo preparar la autorización: ${error.message}`);
@@ -25,7 +28,11 @@ export async function completeBankLink(
     .gte("created_at", oldestValidLink.toISOString())
     .select("state");
   if (error) throw new Error(`No se pudo validar la autorización: ${error.message}`);
-  if (claimed.length === 0) throw new Error("El enlace no es válido o ha caducado. Pide otro con /conectar_banco.");
+  if (claimed.length === 0) {
+    throw new InvalidBankLinkError(
+      "Este enlace ya se usó o ha caducado. Si necesitas conectar el banco, pide otro con /conectar_banco.",
+    );
+  }
 
   const session = await createBankSession(code);
   const { error: insertError } = await db.from("bank_sessions").insert({

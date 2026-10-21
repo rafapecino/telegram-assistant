@@ -1,9 +1,15 @@
 import { assertEquals, assertStringIncludes, assertThrows } from "jsr:@std/assert@1.0.19";
 import type { BankTransaction } from "./enable-banking.ts";
-import { buildWeeklySummary, parseCategories, toNewExpense } from "./expenses.ts";
+import {
+  assignTransactionKeys,
+  buildWeeklySummary,
+  type ExpenseCandidate,
+  maskCardNumbers,
+  parseCategories,
+  toExpenseCandidate,
+} from "./expenses.ts";
 
 const CARD_PAYMENT: BankTransaction = {
-  entry_reference: "ref-1",
   transaction_amount: { amount: "12.50", currency: "EUR" },
   credit_debit_indicator: "DBIT",
   status: "BOOK",
@@ -12,9 +18,12 @@ const CARD_PAYMENT: BankTransaction = {
   remittance_information: ["COMPRA TARJETA"],
 };
 
+function candidate(description: string, amount: number): ExpenseCandidate {
+  return { account_uid: "account-1", booking_date: "2026-10-19", amount, currency: "EUR", description };
+}
+
 Deno.test("convierte un cargo asentado en gasto", () => {
-  assertEquals(toNewExpense(CARD_PAYMENT, "account-1"), {
-    bank_transaction_id: "ref-1",
+  assertEquals(toExpenseCandidate(CARD_PAYMENT, "account-1"), {
     account_uid: "account-1",
     booking_date: "2026-10-20",
     amount: 12.5,
@@ -24,18 +33,54 @@ Deno.test("convierte un cargo asentado en gasto", () => {
 });
 
 Deno.test("ignora ingresos y movimientos sin asentar", () => {
-  assertEquals(toNewExpense({ ...CARD_PAYMENT, credit_debit_indicator: "CRDT" }, "account-1"), null);
-  assertEquals(toNewExpense({ ...CARD_PAYMENT, status: "PDNG" }, "account-1"), null);
+  assertEquals(toExpenseCandidate({ ...CARD_PAYMENT, credit_debit_indicator: "CRDT" }, "account-1"), null);
+  assertEquals(toExpenseCandidate({ ...CARD_PAYMENT, status: "PDNG" }, "account-1"), null);
 });
 
-Deno.test("sin acreedor usa el concepto, y sin identificador construye uno estable", () => {
-  const expense = toNewExpense(
-    { ...CARD_PAYMENT, entry_reference: null, creditor: null, transaction_amount: { amount: "-3", currency: "EUR" } },
+Deno.test("sin acreedor usa el concepto y el importe siempre es positivo", () => {
+  const expense = toExpenseCandidate(
+    { ...CARD_PAYMENT, creditor: null, transaction_amount: { amount: "-3", currency: "EUR" } },
     "account-1",
   );
   assertEquals(expense?.description, "COMPRA TARJETA");
   assertEquals(expense?.amount, 3);
-  assertEquals(expense?.bank_transaction_id, "account-1|2026-10-20|3|COMPRA TARJETA");
+});
+
+Deno.test("oculta los números de tarjeta y deja intactos los números cortos", () => {
+  assertEquals(
+    maskCardNumbers("RETIRADA EN CAJERO 004917080010 ..PAN:4111111111111111."),
+    "RETIRADA EN CAJERO 004917080010 ..PAN:****1111.",
+  );
+  assertEquals(
+    maskCardNumbers("COMPRA BET365, TARJETA 4111111111111111 , COMISION 0,00"),
+    "COMPRA BET365, TARJETA ****1111 , COMISION 0,00",
+  );
+  assertEquals(maskCardNumbers("PAGO MOVIL EN DIA, TARJ. :*111111"), "PAGO MOVIL EN DIA, TARJ. :*111111");
+});
+
+Deno.test("el concepto guardado ya no lleva el número de tarjeta", () => {
+  const expense = toExpenseCandidate(
+    { ...CARD_PAYMENT, creditor: null, remittance_information: ["PAN:4111111111111111."] },
+    "account-1",
+  );
+  assertEquals(expense?.description, "PAN:****1111.");
+});
+
+Deno.test("los gastos idénticos del mismo día reciben claves distintas", () => {
+  const keys = assignTransactionKeys([candidate("PECRIS", 8), candidate("PECRIS", 8), candidate("BAR", 3)])
+    .map((expense) => expense.transaction_key);
+  assertEquals(keys, [
+    "account-1|2026-10-19|8|PECRIS|1",
+    "account-1|2026-10-19|8|PECRIS|2",
+    "account-1|2026-10-19|3|BAR|1",
+  ]);
+});
+
+Deno.test("las claves no dependen del orden en que el banco devuelve los movimientos", () => {
+  const firstOrder = assignTransactionKeys([candidate("PECRIS", 8), candidate("BAR", 3), candidate("PECRIS", 8)]);
+  const secondOrder = assignTransactionKeys([candidate("BAR", 3), candidate("PECRIS", 8), candidate("PECRIS", 8)]);
+  const sortedKeys = (expenses: { transaction_key: string }[]) => expenses.map((e) => e.transaction_key).sort();
+  assertEquals(sortedKeys(firstOrder), sortedKeys(secondOrder));
 });
 
 Deno.test("las categorías desconocidas pasan a Otros y un número incorrecto falla", () => {
