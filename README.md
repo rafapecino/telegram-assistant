@@ -187,4 +187,11 @@ Con el entorno virtual activado:
 pytest
 ```
 
+Las del frontend usan el runner de Node (hace falta Node 22.18 o superior), sin dependencias extra:
+
+```bat
+cd frontend
+npm test
+```
+
 La documentación interactiva de la API está en http://localhost:8000/docs si arrancas con `ENABLE_DOCS=true`.

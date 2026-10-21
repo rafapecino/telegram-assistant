@@ -19,12 +19,18 @@ from api.bot import build_reply
 from api.config import env_flag, optional_env, public_url, require_env, warn_about_weak_secrets
 from api.db import init_db
 from api.enable_banking import BankSession
-from api.expenses import IMPORT_WINDOW_DAYS, get_expense_summary, import_recent_expenses
+from api.expenses import (
+    EXPENSE_CATEGORIES,
+    IMPORT_WINDOW_DAYS,
+    get_expense_summary,
+    import_recent_expenses,
+    update_expense_category,
+)
 from api.jobs import UnknownJobError, build_scheduler, run_and_report
 from api.logging_config import redact, request_id_var, setup_logging
 from api.madrid_time import format_madrid_datetime
-from api.models import ExpenseSummary, JobResult, ReminderCreate, ReminderOut, TelegramUpdate
-from api.reminders import create_reminder, list_pending_reminders
+from api.models import ExpenseCategoryUpdate, ExpenseSummary, JobResult, ReminderCreate, ReminderOut, TelegramUpdate
+from api.reminders import complete_reminder, create_reminder, delete_reminder, list_pending_reminders
 from api.telegram import is_authorized_user, send_telegram_message, set_telegram_webhook
 
 setup_logging()
@@ -257,6 +263,15 @@ def expenses_summary(days: int = Query(default=7, ge=1, le=90)) -> ExpenseSummar
     return get_expense_summary(days, datetime.now(timezone.utc))
 
 
+@app.patch("/expenses/{expense_id}", status_code=204, dependencies=panel)
+def change_expense_category(expense_id: int, payload: ExpenseCategoryUpdate) -> Response:
+    if payload.category not in EXPENSE_CATEGORIES:
+        raise HTTPException(status_code=422, detail=f"Categoría desconocida: {payload.category}")
+    if not update_expense_category(expense_id, payload.category):
+        raise HTTPException(status_code=404, detail="El gasto no existe.")
+    return Response(status_code=204)
+
+
 @app.get("/reminders/pending", response_model=list[ReminderOut], dependencies=panel)
 def pending_reminders() -> list[ReminderOut]:
     return list_pending_reminders()
@@ -268,6 +283,20 @@ def add_reminder(payload: ReminderCreate) -> ReminderOut:
         raise HTTPException(status_code=422, detail="La fecha del recordatorio ya ha pasado.")
     reminder_id = create_reminder(payload.text, payload.remind_at)
     return ReminderOut(id=reminder_id, text=payload.text, remind_at=payload.remind_at)
+
+
+@app.post("/reminders/{reminder_id}/complete", status_code=204, dependencies=panel)
+def mark_reminder_completed(reminder_id: int) -> Response:
+    if not complete_reminder(reminder_id, datetime.now(timezone.utc)):
+        raise HTTPException(status_code=404, detail="El recordatorio no existe o ya no está pendiente.")
+    return Response(status_code=204)
+
+
+@app.delete("/reminders/{reminder_id}", status_code=204, dependencies=panel)
+def remove_reminder(reminder_id: int) -> Response:
+    if not delete_reminder(reminder_id):
+        raise HTTPException(status_code=404, detail="El recordatorio no existe.")
+    return Response(status_code=204)
 
 
 # --- Frontend ---

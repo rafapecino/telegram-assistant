@@ -70,10 +70,63 @@ function toMadridLocal(instant: Date): string {
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 }
 
-export function madridNowLocal(): string {
-  return toMadridLocal(new Date());
+export function madridNowLocal(now: Date = new Date()): string {
+  return toMadridLocal(now);
 }
 
-export function tomorrowAtNineLocal(): string {
-  return `${toMadridLocal(new Date(Date.now() + 86_400_000)).slice(0, 10)}T09:00`;
+/** Suma días a una fecha sin hora ("2026-10-31" + 1 = "2026-11-01"). */
+function addDays(isoDate: string, days: number): string {
+  return new Date(Date.parse(`${isoDate}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+function daysBetween(fromIsoDate: string, toIsoDate: string): number {
+  return Math.round((Date.parse(`${toIsoDate}T00:00:00Z`) - Date.parse(`${fromIsoDate}T00:00:00Z`)) / 86_400_000);
+}
+
+// --- Atajos del formulario de recordatorios (devuelven el formato de <input type="datetime-local">) ---
+
+export function inOneHourLocal(now: Date = new Date()): string {
+  return toMadridLocal(new Date(now.getTime() + 3_600_000));
+}
+
+export function tomorrowAtNineLocal(now: Date = new Date()): string {
+  return `${addDays(toMadridLocal(now).slice(0, 10), 1)}T09:00`;
+}
+
+/** El próximo lunes a las 9:00 que aún no haya pasado (si hoy es lunes antes de las 9, hoy). */
+export function nextMondayAtNineLocal(now: Date = new Date()): string {
+  const local = toMadridLocal(now);
+  const today = local.slice(0, 10);
+  const weekday = new Date(`${today}T00:00:00Z`).getUTCDay(); // 0 = domingo, 1 = lunes
+  let daysAhead = (8 - weekday) % 7;
+  if (daysAhead === 0 && local.slice(11) >= "09:00") daysAhead = 7;
+  return `${addDays(today, daysAhead)}T09:00`;
+}
+
+// --- Fecha relativa de un recordatorio ---
+
+const weekdayName = new Intl.DateTimeFormat("es-ES", { timeZone: MADRID_TIME_ZONE, weekday: "long" });
+const shortWeekdayDate = new Intl.DateTimeFormat("es-ES", {
+  timeZone: MADRID_TIME_ZONE,
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+});
+
+/**
+ * "Hoy · 18:00", "Mañana · 09:00", "Viernes · 09:00" (de 2 a 6 días) o "jue, 30 oct · 09:00".
+ * Hoy y mañana se cuentan en el calendario de Madrid, no en el del navegador.
+ */
+export function formatReminderWhen(isoInstant: string, now: Date = new Date()): string {
+  const instant = new Date(isoInstant);
+  const local = toMadridLocal(instant);
+  const daysAhead = daysBetween(toMadridLocal(now).slice(0, 10), local.slice(0, 10));
+  let day: string;
+  if (daysAhead === 0) day = "Hoy";
+  else if (daysAhead === 1) day = "Mañana";
+  else if (daysAhead >= 2 && daysAhead <= 6) {
+    const name = weekdayName.format(instant);
+    day = name.charAt(0).toUpperCase() + name.slice(1);
+  } else day = shortWeekdayDate.format(instant);
+  return `${day} · ${local.slice(11)}`;
 }
