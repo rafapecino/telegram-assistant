@@ -20,6 +20,8 @@ export function setTelegramWebhook(url: string, secretToken: string): Promise<vo
   return callTelegram("setWebhook", { url, secret_token: secretToken, allowed_updates: ["message"] });
 }
 
+/** Sin TELEGRAM_USER_ID configurado nadie está autorizado, y el webhook deja el ID de quien escribe en los logs. */
 export function isAuthorizedUser(userId: number | undefined): boolean {
-  return userId !== undefined && String(userId) === requireEnv("TELEGRAM_USER_ID").trim();
+  const authorizedUserId = Deno.env.get("TELEGRAM_USER_ID")?.trim();
+  return userId !== undefined && authorizedUserId !== undefined && String(userId) === authorizedUserId;
 }

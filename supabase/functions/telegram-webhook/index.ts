@@ -43,7 +43,12 @@ Deno.serve(async (request) => {
 
   const message = (await request.json()).message;
   // Telegram reintenta si no recibe un 200, así que se responde 200 siempre y los errores se cuentan por el chat.
-  if (!message?.text || !isAuthorizedUser(message.from?.id)) return new Response("ok");
+  if (!message?.text) return new Response("ok");
+  if (!isAuthorizedUser(message.from?.id)) {
+    // Queda en los logs para poder averiguar el ID de quien escribe sin depender de otros bots.
+    console.warn(`Mensaje ignorado: el usuario de Telegram ${message.from?.id} no es TELEGRAM_USER_ID`);
+    return new Response("ok");
+  }
   try {
     await sendTelegramMessage(await buildReply(db, message.text.trim(), new Date()));
   } catch (error) {
