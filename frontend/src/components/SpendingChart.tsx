@@ -27,7 +27,10 @@ export function SpendingChart({ byDay, days }: Props) {
   return (
     <figure className="chart">
       <figcaption className="chart-caption">
-        <span>Máximo por {unit}</span>
+        <span>
+          <span className="swatch" aria-hidden="true" />
+          Máximo por {unit}
+        </span>
         <span className="number">{formatEuros(max)}</span>
       </figcaption>
       <svg
@@ -46,7 +49,15 @@ export function SpendingChart({ byDay, days }: Props) {
               <title>{label}</title>
               {/* Zona transparente de toda la altura para que el tooltip salga también en barras bajas o vacías. */}
               <rect className="chart-hit" x={index * SLOT} y={0} width={SLOT} height={100} />
-              {height > 0 && <rect className="chart-bar" x={index * SLOT + 1} y={100 - height} width={BAR} height={height} />}
+              {height > 0 && (
+                <rect
+                  className={bar.amount === max ? "chart-bar is-max" : "chart-bar"}
+                  x={index * SLOT + 1}
+                  y={100 - height}
+                  width={BAR}
+                  height={height}
+                />
+              )}
             </g>
           );
         })}

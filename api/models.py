@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
@@ -67,6 +67,14 @@ class CategoryAnswer(BaseModel):
     categories: list[str]
 
 
+class ExpenseQuestionAnswer(BaseModel):
+    date_from: date
+    date_to: date
+    category: str | None = None
+    search: str | None = None
+    order: str | None = None
+
+
 # --- API ---
 
 
@@ -124,6 +132,41 @@ class ExpenseSummary(BaseModel):
 
 class ExpenseCategoryUpdate(BaseModel):
     category: str
+
+
+QuestionText = Annotated[str, Field(min_length=1, max_length=300)]
+
+
+class ExpenseQuestion(BaseModel):
+    question: QuestionText
+    # Las últimas preguntas del chat, para entender referencias como "¿y el mes pasado?".
+    previous_questions: list[QuestionText] = Field(default_factory=list, max_length=4)
+
+    @field_validator("question")
+    @classmethod
+    def question_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("la pregunta no puede estar vacía")
+        return value.strip()
+
+
+class ExpenseQueryResult(BaseModel):
+    date_from: date
+    date_to: date
+    category: str | None
+    search: str | None
+    total: float
+    count: int
+    by_category: dict[str, float]
+    # Los primeros gastos en el orden pedido; unlisted_count dice cuántos quedan fuera.
+    expenses: list[ExpenseOut]
+    unlisted_count: int
+
+
+class ExpenseAnswer(BaseModel):
+    text: str
+    # Sin resultado cuando la pregunta no era sobre gastos o no se entendió.
+    result: ExpenseQueryResult | None = None
 
 
 class JobResult(BaseModel):

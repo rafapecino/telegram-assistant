@@ -6,7 +6,9 @@ Bot personal de Telegram que:
 - Importa cada día a las 8:00 los gastos de la cuenta bancaria y los clasifica por categoría.
 - Envía un resumen de gastos los domingos a las 20:00.
 
-Incluye además un panel web para ver los gastos y los recordatorios pendientes, y para crear recordatorios.
+Incluye además un panel web para ver los gastos y los recordatorios pendientes, crear recordatorios y preguntar por
+los gastos en un chat ("¿cuánto llevo en restaurantes este mes?"). En el chat, la IA solo interpreta la pregunta
+(periodo, categoría, comercio y orden): las cifras salen de la base de datos.
 
 La API está hecha con FastAPI y guarda los datos en Postgres (puede ser el de Supabase). Las frases y las
 categorías las interpreta `openai/gpt-oss-120b`, un modelo open source, a través de Groq. Los movimientos del banco
@@ -23,6 +25,7 @@ api/
   jobs.py              tareas programadas (recordatorios, importación, resumen semanal)
   reminders.py         recordatorios
   expenses.py          gastos: importación, categorías y resumen
+  expense_questions.py preguntas del chat del panel: interpretación con la IA y consulta a la base de datos
   bank_connection.py   enlace de autorización del banco y sesión activa
   enable_banking.py    cliente de Enable Banking
   groq.py              cliente de Groq
@@ -32,10 +35,12 @@ api/
   logging_config.py    formato de los logs, ID de petición y ocultación de secretos
 frontend/              panel web en React + TypeScript (Vite)
   src/App.tsx          página principal
-  src/components/      acceso con token, panel de gastos y panel de recordatorios
+  src/components/      acceso con token, panel de gastos, chat de gastos y panel de recordatorios
   src/api.ts           llamadas a la API y sus tipos
   src/format.ts        euros y horas de Madrid
-  src/styles.css       estilos (modo claro y oscuro)
+  src/categoryColors.ts color fijo de cada categoría
+  src/assets/          logo de Stratesys
+  src/styles.css       estilos con la identidad de Stratesys (modo claro y oscuro)
 test/                  tests unitarios (pytest)
 requirements.txt
 ```
@@ -151,7 +156,8 @@ Medidas aplicadas en la API ([api/main.py](api/main.py)):
 - `/docs` está apagado salvo con `ENABLE_DOCS=true`.
 - Pydantic valida todo lo que entra: mensajes de Telegram, respuestas del banco y de la IA, y datos del panel.
 
-Ten en cuenta que el texto de tus mensajes y las descripciones de los gastos se envían a Groq para interpretarlos.
+Ten en cuenta que el texto de tus mensajes, las preguntas del chat y las descripciones de los gastos se envían a Groq
+para interpretarlos.
 
 Recomendaciones al publicarla: sírvela solo por HTTPS y cambia los secretos si alguna vez se filtran (en Telegram,
 `/revoke` en @BotFather).

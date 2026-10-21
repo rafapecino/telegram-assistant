@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api import main
+from api.expense_questions import HELP_TEXT, QuestionInterpretation
 
 SECRET_HEADER = {"X-Telegram-Bot-Api-Secret-Token": "webhook-secret"}
 
@@ -117,6 +118,41 @@ def test_completar_y_borrar_recordatorios(client, panel_token, monkeypatch):
     assert client.delete("/reminders/1", headers=panel_token).status_code == 204
     assert client.delete("/reminders/2", headers=panel_token).status_code == 404
     assert client.delete("/reminders/1").status_code == 401
+
+
+def test_preguntar_por_los_gastos(client, panel_token, monkeypatch):
+    received: list[tuple[str, list[str]]] = []
+
+    def interpret(question, previous_questions, now):
+        received.append((question, previous_questions))
+        return QuestionInterpretation(kind="unknown")
+
+    monkeypatch.setattr(main, "interpret_expense_question", interpret)
+    body = {"question": " ¿Y ayer? ", "previous_questions": ["¿Cuánto este mes?"]}
+    response = client.post("/expenses/ask", json=body, headers=panel_token)
+    assert response.status_code == 200
+    assert response.json() == {"text": HELP_TEXT, "result": None}
+    assert received == [("¿Y ayer?", ["¿Cuánto este mes?"])]
+    assert client.post("/expenses/ask", json=body).status_code == 401
+
+
+@pytest.mark.parametrize(
+    "body",
+    [{"question": "   "}, {"question": "x" * 301}, {"question": "hola", "previous_questions": ["a"] * 5}],
+)
+def test_una_pregunta_vacia_o_demasiado_larga_se_rechaza(client, panel_token, body):
+    assert client.post("/expenses/ask", json=body, headers=panel_token).status_code == 422
+
+
+def test_si_falla_la_ia_el_chat_recibe_un_aviso_sin_detalles(client, panel_token, monkeypatch):
+    def failing(question, previous_questions, now):
+        raise RuntimeError("Groq respondió 500 con la clave gsk_secreta")
+
+    monkeypatch.setattr(main, "interpret_expense_question", failing)
+    response = client.post("/expenses/ask", json={"question": "¿Cuánto este mes?"}, headers=panel_token)
+    assert response.status_code == 502
+    assert "gsk_" not in response.text
+    assert "Inténtalo de nuevo" in response.json()["detail"]
 
 
 def test_la_documentacion_esta_apagada_por_defecto(client):
