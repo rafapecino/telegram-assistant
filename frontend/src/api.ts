@@ -1,19 +1,32 @@
 // Cliente de la API de FastAPI. Los tipos reflejan los modelos de api/models.py.
 
 export interface Expense {
+  id: number;
   booking_date: string;
   amount: number;
   description: string;
   category: string;
 }
 
+export interface DailyTotal {
+  /** Fecha sin hora, "2026-10-20". */
+  date: string;
+  amount: number;
+}
+
 export interface ExpenseSummary {
   days: number;
   total: number;
+  /** Total de los `days` días inmediatamente anteriores. */
+  previous_total: number;
   count: number;
   /** Ordenado de mayor a menor importe. */
   by_category: Record<string, number>;
+  /** Un elemento por día del periodo, en orden y con 0 los días sin gastos. */
+  by_day: DailyTotal[];
   largest: Expense[];
+  /** Categorías a las que se puede mover un gasto. */
+  categories: string[];
 }
 
 export interface Reminder {
@@ -88,6 +101,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error("El token del panel no es correcto.");
   }
   if (!response.ok) throw new Error(await errorDetail(response));
+  // 204: la acción ha ido bien y no hay cuerpo que leer.
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
@@ -97,6 +112,22 @@ export function errorText(error: unknown): string {
 
 export function getExpenseSummary(days: number): Promise<ExpenseSummary> {
   return request(`/expenses/summary?days=${days}`);
+}
+
+export function updateExpenseCategory(expenseId: number, category: string): Promise<void> {
+  return request(`/expenses/${expenseId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ category }),
+  });
+}
+
+export function completeReminder(reminderId: number): Promise<void> {
+  return request(`/reminders/${reminderId}/complete`, { method: "POST" });
+}
+
+export function deleteReminder(reminderId: number): Promise<void> {
+  return request(`/reminders/${reminderId}`, { method: "DELETE" });
 }
 
 export function getPendingReminders(): Promise<Reminder[]> {

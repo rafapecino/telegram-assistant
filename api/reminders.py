@@ -79,9 +79,32 @@ def create_reminder(text: str, remind_at: datetime) -> int:
 def list_pending_reminders() -> list[ReminderOut]:
     with connect() as connection:
         rows = connection.execute(
-            "select id, text, remind_at from reminders where sent_at is null order by remind_at limit 100"
+            "select id, text, remind_at from reminders where sent_at is null and completed_at is null "
+            "order by remind_at limit 100"
         ).fetchall()
     return [ReminderOut(**row) for row in rows]
+
+
+def complete_reminder(reminder_id: int, now: datetime) -> bool:
+    """Marca un recordatorio pendiente como completado. Devuelve False si no existe o ya no está pendiente."""
+    with connect() as connection:
+        row = connection.execute(
+            "update reminders set completed_at = %s where id = %s and sent_at is null and completed_at is null "
+            "returning id",
+            (now, reminder_id),
+        ).fetchone()
+    if row:
+        logger.info("Recordatorio %s completado", reminder_id)
+    return row is not None
+
+
+def delete_reminder(reminder_id: int) -> bool:
+    """Borra un recordatorio. Devuelve False si no existe."""
+    with connect() as connection:
+        row = connection.execute("delete from reminders where id = %s returning id", (reminder_id,)).fetchone()
+    if row:
+        logger.info("Recordatorio %s borrado", reminder_id)
+    return row is not None
 
 
 def _unmark_as_sent(reminder_ids: list[int]) -> None:
@@ -93,7 +116,8 @@ def send_due_reminders(now: datetime) -> int:
     # Se marcan como enviados antes de enviarlos para que dos ejecuciones solapadas no los dupliquen.
     with connect() as connection:
         due_reminders = connection.execute(
-            "update reminders set sent_at = %s where sent_at is null and remind_at <= %s returning id, text",
+            "update reminders set sent_at = %s where sent_at is null and completed_at is null and remind_at <= %s "
+            "returning id, text",
             (now, now),
         ).fetchall()
 

@@ -99,6 +99,26 @@ def test_las_respuestas_llevan_cabeceras_de_seguridad(client, panel_token):
     assert "default-src 'self'" in response.headers["Content-Security-Policy"]
 
 
+def test_cambiar_la_categoria_de_un_gasto(client, panel_token, monkeypatch):
+    updates: list[tuple[int, str]] = []
+    monkeypatch.setattr(main, "update_expense_category", lambda expense_id, category: updates.append((expense_id, category)) or expense_id == 1)
+    assert client.patch("/expenses/1", json={"category": "Ocio"}, headers=panel_token).status_code == 204
+    assert client.patch("/expenses/2", json={"category": "Ocio"}, headers=panel_token).status_code == 404
+    assert client.patch("/expenses/1", json={"category": "Viajes"}, headers=panel_token).status_code == 422
+    assert client.patch("/expenses/1", json={"category": "Ocio"}).status_code == 401
+    assert updates == [(1, "Ocio"), (2, "Ocio")]
+
+
+def test_completar_y_borrar_recordatorios(client, panel_token, monkeypatch):
+    monkeypatch.setattr(main, "complete_reminder", lambda reminder_id, now: reminder_id == 1)
+    monkeypatch.setattr(main, "delete_reminder", lambda reminder_id: reminder_id == 1)
+    assert client.post("/reminders/1/complete", headers=panel_token).status_code == 204
+    assert client.post("/reminders/2/complete", headers=panel_token).status_code == 404
+    assert client.delete("/reminders/1", headers=panel_token).status_code == 204
+    assert client.delete("/reminders/2", headers=panel_token).status_code == 404
+    assert client.delete("/reminders/1").status_code == 401
+
+
 def test_la_documentacion_esta_apagada_por_defecto(client):
     assert client.get("/docs").status_code == 404
     assert client.get("/openapi.json").status_code == 404

@@ -96,18 +96,34 @@ class ReminderOut(BaseModel):
 
 
 class ExpenseOut(BaseModel):
+    id: int
     booking_date: date
     amount: float
     description: str
     category: str
 
 
+class DailyTotal(BaseModel):
+    date: date
+    amount: float
+
+
 class ExpenseSummary(BaseModel):
     days: int
     total: float
+    # Total de los `days` días inmediatamente anteriores, para comparar.
+    previous_total: float
     count: int
     by_category: dict[str, float]
+    # Un elemento por día del periodo, en orden y con 0 los días sin gastos.
+    by_day: list[DailyTotal]
     largest: list[ExpenseOut]
+    # Categorías a las que se puede mover un gasto.
+    categories: list[str]
+
+
+class ExpenseCategoryUpdate(BaseModel):
+    category: str
 
 
 class JobResult(BaseModel):

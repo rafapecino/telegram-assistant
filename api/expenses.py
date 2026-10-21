@@ -3,7 +3,7 @@
 import json
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -12,7 +12,7 @@ from api.db import connect
 from api.enable_banking import fetch_transactions
 from api.groq import ask_groq_for_json
 from api.madrid_time import madrid_date_days_ago
-from api.models import BankTransaction, CategoryAnswer, ExpenseOut, ExpenseSummary
+from api.models import BankTransaction, CategoryAnswer, DailyTotal, ExpenseOut, ExpenseSummary
 from api.telegram import send_telegram_message
 
 logger = logging.getLogger(__name__)
@@ -50,6 +50,7 @@ class StoredExpense:
     amount: Decimal
     description: str
     category: str
+    id: int | None = None
 
 
 def to_new_expense(transaction: BankTransaction, account_uid: str) -> NewExpense | None:
@@ -164,7 +165,7 @@ def import_recent_expenses(now: datetime) -> int:
 def fetch_expenses_since(date_from: str) -> list[StoredExpense]:
     with connect() as connection:
         rows = connection.execute(
-            "select booking_date, amount, description, category from expenses where booking_date >= %s",
+            "select id, booking_date, amount, description, category from expenses where booking_date >= %s",
             (date_from,),
         ).fetchall()
     return [StoredExpense(**row) for row in rows]
@@ -214,21 +215,53 @@ def send_weekly_summary(now: datetime) -> None:
     logger.info("Resumen semanal enviado (%d gastos)", len(expenses))
 
 
-def get_expense_summary(days: int, now: datetime) -> ExpenseSummary:
-    """Resumen de los últimos `days` días (incluido hoy) para el frontend."""
-    expenses = fetch_expenses_since(madrid_date_days_ago(now, days - 1))
+def build_expense_summary(expenses: list[StoredExpense], days: int, today: date) -> ExpenseSummary:
+    """Resumen de los `days` días que acaban en `today` (incluido), comparado con los `days` días anteriores.
+
+    `expenses` puede traer gastos de antes del periodo anterior: se ignoran.
+    """
+    first_day = today - timedelta(days=days - 1)
+    previous_first_day = first_day - timedelta(days=days)
+    current = [expense for expense in expenses if first_day <= expense.booking_date <= today]
+    previous = [expense for expense in expenses if previous_first_day <= expense.booking_date < first_day]
+
+    daily = {first_day + timedelta(days=offset): Decimal(0) for offset in range(days)}
+    for expense in current:
+        daily[expense.booking_date] += expense.amount
+
     return ExpenseSummary(
         days=days,
-        total=float(sum((expense.amount for expense in expenses), Decimal(0))),
-        count=len(expenses),
-        by_category={category: float(amount) for category, amount in _totals_by_category(expenses)},
+        total=float(sum((expense.amount for expense in current), Decimal(0))),
+        previous_total=float(sum((expense.amount for expense in previous), Decimal(0))),
+        count=len(current),
+        by_category={category: float(amount) for category, amount in _totals_by_category(current)},
+        by_day=[DailyTotal(date=day, amount=float(amount)) for day, amount in daily.items()],
+        categories=EXPENSE_CATEGORIES,
         largest=[
             ExpenseOut(
+                id=expense.id,
                 booking_date=expense.booking_date,
                 amount=float(expense.amount),
                 description=expense.description,
                 category=expense.category,
             )
-            for expense in _largest(expenses)
+            for expense in _largest(current)
         ],
     )
+
+
+def get_expense_summary(days: int, now: datetime) -> ExpenseSummary:
+    """Resumen de los últimos `days` días (incluido hoy) para el frontend."""
+    expenses = fetch_expenses_since(madrid_date_days_ago(now, 2 * days - 1))
+    return build_expense_summary(expenses, days, date.fromisoformat(madrid_date_days_ago(now, 0)))
+
+
+def update_expense_category(expense_id: int, category: str) -> bool:
+    """Cambia la categoría de un gasto. Devuelve False si el gasto no existe."""
+    with connect() as connection:
+        row = connection.execute(
+            "update expenses set category = %s where id = %s returning id", (category, expense_id)
+        ).fetchone()
+    if row:
+        logger.info("Gasto %s pasado a %s", expense_id, category)
+    return row is not None

@@ -3,7 +3,14 @@ from decimal import Decimal
 
 import pytest
 
-from api.expenses import NewExpense, StoredExpense, build_weekly_summary, parse_categories, to_new_expense
+from api.expenses import (
+    NewExpense,
+    StoredExpense,
+    build_expense_summary,
+    build_weekly_summary,
+    parse_categories,
+    to_new_expense,
+)
 from api.models import BankTransaction
 
 CARD_PAYMENT = {
@@ -73,3 +80,41 @@ def test_el_resumen_semanal_suma_por_categoria_y_muestra_los_mayores_gastos():
 
 def test_el_resumen_avisa_si_no_hay_gastos():
     assert "no hay gastos" in build_weekly_summary([])
+
+
+# --- Resumen del panel ---
+
+TODAY = date(2026, 10, 21)
+
+
+def stored(day: int, amount: str, category: str = "Ocio", expense_id: int = 1) -> StoredExpense:
+    return StoredExpense(date(2026, 10, day), Decimal(amount), "Gasto", category, expense_id)
+
+
+def test_el_resumen_del_panel_separa_el_periodo_actual_del_anterior():
+    # Periodo de 7 días: 15-21 oct. Anterior: 8-14 oct. El día 7 queda fuera de los dos.
+    summary = build_expense_summary(
+        [stored(21, "10"), stored(15, "5"), stored(14, "3"), stored(8, "2"), stored(7, "100")], 7, TODAY
+    )
+    assert summary.total == 15
+    assert summary.count == 2
+    assert summary.previous_total == 5
+
+
+def test_el_resumen_del_panel_sin_gastos_anteriores_compara_con_cero():
+    summary = build_expense_summary([stored(20, "10")], 7, TODAY)
+    assert summary.previous_total == 0
+
+
+def test_el_resumen_del_panel_trae_un_total_por_dia_con_ceros():
+    summary = build_expense_summary([stored(21, "10"), stored(21, "2.5"), stored(19, "4")], 7, TODAY)
+    assert [(day.date.isoformat(), day.amount) for day in summary.by_day] == [
+        ("2026-10-15", 0), ("2026-10-16", 0), ("2026-10-17", 0), ("2026-10-18", 0),
+        ("2026-10-19", 4), ("2026-10-20", 0), ("2026-10-21", 12.5),
+    ]
+
+
+def test_el_resumen_del_panel_incluye_ids_y_categorias_validas():
+    summary = build_expense_summary([stored(21, "10", expense_id=42)], 7, TODAY)
+    assert summary.largest[0].id == 42
+    assert "Supermercado" in summary.categories

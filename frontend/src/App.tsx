@@ -7,10 +7,12 @@ import {
   getExpenseSummary,
   getToken,
   setToken,
+  updateExpenseCategory,
 } from "./api";
 import { ExpensesPanel } from "./components/ExpensesPanel";
 import { LoginForm } from "./components/LoginForm";
 import { RemindersPanel } from "./components/RemindersPanel";
+import { moveExpense } from "./stats";
 
 const DAY_OPTIONS = [7, 30, 90];
 
@@ -21,6 +23,8 @@ export function App() {
   const [summary, setSummary] = useState<ExpenseSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [savingExpenseId, setSavingExpenseId] = useState<number | null>(null);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
 
   // Cualquier 401 de la API devuelve a la pantalla del token.
   useEffect(() => {
@@ -37,6 +41,7 @@ export function App() {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setCategoryError(null);
     getExpenseSummary(days)
       .then((result) => {
         if (!cancelled) setSummary(result);
@@ -51,6 +56,28 @@ export function App() {
       cancelled = true;
     };
   }, [days, authenticated]);
+
+  // Se aplica al momento y se deshace si la API falla.
+  async function changeCategory(expenseId: number, category: string) {
+    const previous = summary?.largest.find((expense) => expense.id === expenseId)?.category;
+    if (!previous || previous === category) return;
+    setCategoryError(null);
+    setSavingExpenseId(expenseId);
+    setSummary((current) => current && moveExpense(current, expenseId, category));
+    try {
+      await updateExpenseCategory(expenseId, category);
+    } catch (failure) {
+      // Solo se revierte si nadie lo ha cambiado otra vez mientras tanto.
+      setSummary((current) =>
+        current?.largest.find((expense) => expense.id === expenseId)?.category === category
+          ? moveExpense(current, expenseId, previous)
+          : current,
+      );
+      setCategoryError(`No se pudo cambiar la categoría: ${errorText(failure)}`);
+    } finally {
+      setSavingExpenseId((current) => (current === expenseId ? null : current));
+    }
+  }
 
   function logIn(token: string) {
     setToken(token);
@@ -108,7 +135,12 @@ export function App() {
             ) : summary ? (
               // Al cambiar de periodo se mantienen los datos anteriores atenuados hasta que llegan los nuevos.
               <div className={loading ? "is-loading" : undefined}>
-                <ExpensesPanel summary={summary} />
+                <ExpensesPanel
+                  summary={summary}
+                  savingExpenseId={savingExpenseId}
+                  categoryError={categoryError}
+                  onCategoryChange={changeCategory}
+                />
               </div>
             ) : (
               <p className="muted">Cargando…</p>

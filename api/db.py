@@ -20,6 +20,8 @@ create table if not exists reminders (
   created_at timestamptz not null default now()
 );
 create index if not exists reminders_pending_idx on reminders (remind_at) where sent_at is null;
+-- Completado a mano desde el panel: ya no se envía ni aparece como pendiente.
+alter table reminders add column if not exists completed_at timestamptz;
 
 -- Cada enlace de autorización bancaria lleva un "state" de un solo uso.
 create table if not exists bank_authorizations (
