@@ -140,27 +140,37 @@ export async function importRecentExpenses(db: SupabaseClient, now: Date): Promi
 }
 
 // La cuenta es en euros; si algún día hay varias divisas, el total habría que separarlo por divisa.
-const euros = new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" });
+export const euros = new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" });
 
-export function buildWeeklySummary(expenses: StoredExpense[]): string {
-  if (expenses.length === 0) return "Resumen semanal: no hay gastos en los últimos 7 días.";
-  const total = expenses.reduce((sum, expense) => sum + Number(expense.amount), 0);
+export function totalAmount(expenses: StoredExpense[]): number {
+  return expenses.reduce((sum, expense) => sum + Number(expense.amount), 0);
+}
+
+export function categoryTotalLines(expenses: StoredExpense[]): string[] {
   const totalsByCategory = new Map<string, number>();
   for (const expense of expenses) {
     totalsByCategory.set(expense.category, (totalsByCategory.get(expense.category) ?? 0) + Number(expense.amount));
   }
-  const categoryLines = [...totalsByCategory.entries()]
+  return [...totalsByCategory.entries()]
     .sort(([, first], [, second]) => second - first)
     .map(([category, amount]) => `• ${category}: ${euros.format(amount)}`);
+}
+
+export function expenseLine(expense: StoredExpense): string {
+  return `• ${expense.description}: ${euros.format(Number(expense.amount))} (${expense.booking_date})`;
+}
+
+export function buildWeeklySummary(expenses: StoredExpense[]): string {
+  if (expenses.length === 0) return "Resumen semanal: no hay gastos en los últimos 7 días.";
   const largestLines = [...expenses]
     .sort((first, second) => Number(second.amount) - Number(first.amount))
     .slice(0, 3)
-    .map((expense) => `• ${expense.description}: ${euros.format(Number(expense.amount))} (${expense.booking_date})`);
+    .map(expenseLine);
   return [
-    `Resumen semanal: ${euros.format(total)} en ${expenses.length} gastos.`,
+    `Resumen semanal: ${euros.format(totalAmount(expenses))} en ${expenses.length} gastos.`,
     "",
     "Por categoría:",
-    ...categoryLines,
+    ...categoryTotalLines(expenses),
     "",
     "Gastos más grandes:",
     ...largestLines,

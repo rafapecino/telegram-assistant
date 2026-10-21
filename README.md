@@ -3,6 +3,7 @@
 Bot personal de Telegram que:
 
 - Crea recordatorios a partir de frases normales ("recuérdame llamar a Juan el jueves a las 17:00").
+- Responde preguntas sobre tus gastos ("¿cuánto he gastado esta semana en restaurantes?").
 - Importa cada día a las 8:00 los gastos de la cuenta bancaria y los clasifica por categoría.
 - Envía un resumen de gastos los domingos a las 20:00.
 
@@ -22,8 +23,10 @@ supabase/
     _shared/             una pieza por funcionalidad (reminders.ts, expenses.ts, ...) y utilidades comunes
 ```
 
-Para añadir una funcionalidad: crea su módulo en `_shared/`, añade su comando en `buildReply`
-(`telegram-webhook/index.ts`) y, si debe ejecutarse sola, su tarea en `runJob` (`scheduled-jobs/index.ts`).
+Cada mensaje pasa por `_shared/message-intent.ts`: el modelo decide qué pide (recordatorio, consulta de gastos o nada) y
+cada funcionalidad valida sus propios datos. Para añadir una funcionalidad: crea su módulo en `_shared/` con su formato
+y su validación, regístralo en `buildIntentPrompt` y `parseMessageIntent`, y responde en `replyToMessage`
+(`telegram-webhook/index.ts`). Si debe ejecutarse sola, añade su tarea en `runJob` (`scheduled-jobs/index.ts`).
 
 ## Puesta en marcha
 

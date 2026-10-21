@@ -2,27 +2,32 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
 import { createBankLink } from "../_shared/bank-connection.ts";
 import { createAdminClient, getInternalSecret } from "../_shared/database.ts";
 import { errorMessage } from "../_shared/env.ts";
+import { findExpenses, formatExpenseReport } from "../_shared/expense-queries.ts";
 import { formatMadridDateTime } from "../_shared/madrid-time.ts";
-import { interpretReminder, saveReminder } from "../_shared/reminders.ts";
+import { interpretMessage } from "../_shared/message-intent.ts";
+import { saveReminder } from "../_shared/reminders.ts";
 import { isAuthorizedUser, sendTelegramMessage } from "../_shared/telegram.ts";
 
 const HELP_TEXT = [
   "Esto es lo que sé hacer:",
   '• Recordatorios: escribe, por ejemplo, "recuérdame llamar a Juan el jueves a las 17:00".',
+  '• Consultar tus gastos: por ejemplo, "¿cuánto he gastado esta semana?" o "gastos de ayer en restaurantes".',
   "• /conectar_banco: conecta tu cuenta del banco para importar los gastos cada día a las 8:00.",
   "• Los domingos a las 20:00 te mando el resumen de gastos de la semana.",
 ].join("\n");
 
-async function replyToReminderRequest(db: SupabaseClient, text: string, now: Date): Promise<string> {
-  const interpretation = await interpretReminder(text, now);
-  switch (interpretation.kind) {
-    case "not_reminder":
+async function replyToMessage(db: SupabaseClient, text: string, now: Date): Promise<string> {
+  const intent = await interpretMessage(text, now);
+  switch (intent.kind) {
+    case "unknown":
       return `No te he entendido.\n\n${HELP_TEXT}`;
     case "invalid":
-      return `No he creado el recordatorio: ${interpretation.reason}.`;
+      return intent.message;
     case "reminder":
-      await saveReminder(db, interpretation.text, interpretation.remindAt);
-      return `Te recordaré "${interpretation.text}" el ${formatMadridDateTime(interpretation.remindAt)}.`;
+      await saveReminder(db, intent.text, intent.remindAt);
+      return `Te recordaré "${intent.text}" el ${formatMadridDateTime(intent.remindAt)}.`;
+    case "expenses_query":
+      return formatExpenseReport(await findExpenses(db, intent.query), intent.query);
   }
 }
 
@@ -31,7 +36,7 @@ async function buildReply(db: SupabaseClient, text: string, now: Date): Promise<
   if (text === "/conectar_banco") {
     return `Autoriza el acceso desde tu banco en este enlace (caduca en 30 minutos):\n${await createBankLink(db, now)}`;
   }
-  return replyToReminderRequest(db, text, now);
+  return replyToMessage(db, text, now);
 }
 
 Deno.serve(async (request) => {
