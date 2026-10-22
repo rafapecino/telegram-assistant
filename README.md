@@ -16,6 +16,7 @@ Bot personal de Telegram que:
 - Recuerda cumpleaños y avisa el día antes y el mismo día.
 - Sigue hábitos diarios: cada noche a las 21:00 pregunta si los has hecho, con botones Sí/No, y lleva la racha.
 - Consulta y crea eventos en Google Calendar ("¿qué tengo mañana?").
+- Responde preguntas generales, como un chat normal, cuando el mensaje no es de ninguna de sus funciones.
 - Cada día a las 8:00 manda un resumen: tiempo, recordatorios y eventos del día, cumpleaños y lista de la compra.
 
 Funciona en Supabase (Edge Functions, Postgres y pg_cron). Las frases y las categorías las interpreta
@@ -135,6 +136,10 @@ secreta solo en el servidor. No pongas `SUPABASE_SECRET_KEYS` ni `PANEL_TOKEN` e
    ejecuta `npm run build` y publica `frontend/dist` en un alojamiento web con HTTPS; añade su origen a
    `PANEL_ORIGINS`. Durante desarrollo, añade `http://localhost:5173` a esa lista.
 5. Introduce `PANEL_TOKEN` en la pantalla de acceso. Se mantiene solo en la sesión de esa pestaña.
+
+En el Inicio hay un chat con el asistente: entiende lo mismo que el bot de Telegram (gastos, compra, recordatorios…)
+y contesta preguntas generales con el mismo modelo de Groq, teniendo en cuenta los últimos mensajes de la conversación.
+La conversación no se guarda: desaparece al recargar la página.
 
 La conexión con Google Calendar utiliza el mismo flujo OAuth del bot. El panel muestra los próximos 14 días.
 El periodo de finanzas se elige entre 7, 30 y 90 días; los presupuestos siempre corresponden al mes actual.

@@ -55,7 +55,24 @@ export function parseMessageIntent(raw: unknown, now: Date): MessageIntent {
   return { kind: "unknown" };
 }
 
-export async function interpretMessage(message: string, now: Date): Promise<MessageIntent> {
-  const raw = await askGroqForJson(buildIntentPrompt(madridClock(now)), message);
+/** Un mensaje anterior de la conversación (solo el chat del panel guarda historial). */
+export interface ConversationTurn {
+  role: "user" | "assistant";
+  text: string;
+}
+
+/** El mensaje que se envía al modelo: con historial, entiende continuaciones como "¿y el mes pasado?". */
+export function withConversation(message: string, history: ConversationTurn[]): string {
+  if (history.length === 0) return message;
+  const previous = history.map((turn) => `${turn.role === "user" ? "Persona" : "Asistente"}: ${turn.text}`);
+  return `Conversación anterior, solo como contexto:\n${previous.join("\n")}\n\nMensaje actual: ${message}`;
+}
+
+export async function interpretMessage(
+  message: string,
+  now: Date,
+  history: ConversationTurn[] = [],
+): Promise<MessageIntent> {
+  const raw = await askGroqForJson(buildIntentPrompt(madridClock(now)), withConversation(message, history));
   return parseMessageIntent(raw, now);
 }

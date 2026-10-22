@@ -1,23 +1,12 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
-import { findBalance, formatBalance } from "../_shared/balance.ts";
+import { replyToText } from "../_shared/assistant.ts";
 import { createBankLink, disconnectBank } from "../_shared/bank-connection.ts";
-import {
-  budgetName,
-  deleteBudget,
-  describeSavedBudget,
-  formatBudgetList,
-  loadBudgetStatuses,
-  saveBudget,
-} from "../_shared/budgets.ts";
 import { createCalendarLink, disconnectCalendar } from "../_shared/calendar.ts";
 import { createAdminClient, getInternalSecret } from "../_shared/database.ts";
 import { errorMessage } from "../_shared/env.ts";
-import { findExpenses, formatExpenseReport } from "../_shared/expense-queries.ts";
 import { transcribeAudio } from "../_shared/groq.ts";
-import { formatMadridDateTime } from "../_shared/madrid-time.ts";
-import { interpretMessage } from "../_shared/message-intent.ts";
-import { applyPersonalButton, replyToPersonalIntent } from "../_shared/personal-replies.ts";
-import { applyReminderButton, describeRepeat, parseReminderButton, saveReminder } from "../_shared/reminders.ts";
+import { applyPersonalButton } from "../_shared/personal-replies.ts";
+import { applyReminderButton, parseReminderButton } from "../_shared/reminders.ts";
 import {
   answerTelegramButton,
   type BotReply,
@@ -63,38 +52,6 @@ interface TelegramCallbackQuery {
   message?: { message_id: number };
 }
 
-async function replyToBudgetDelete(db: SupabaseClient, category: string): Promise<string> {
-  const name = budgetName(category);
-  return await deleteBudget(db, category) ? `He quitado el ${name}.` : `No tenías ningún ${name}.`;
-}
-
-async function replyToMessage(db: SupabaseClient, text: string, now: Date): Promise<string | BotReply> {
-  const intent = await interpretMessage(text, now);
-  switch (intent.kind) {
-    case "unknown":
-      return `No te he entendido.\n\n${HELP_TEXT}`;
-    case "invalid":
-      return intent.message;
-    case "reminder":
-      await saveReminder(db, intent.text, intent.remindAt, intent.repeat);
-      return `Te recordaré "${intent.text}" el ${formatMadridDateTime(intent.remindAt)}${
-        describeRepeat(intent.repeat)
-      }.`;
-    case "expenses_query":
-      return formatExpenseReport(await findExpenses(db, intent.query), intent.query);
-    case "budget_set":
-      return describeSavedBudget(await saveBudget(db, intent.category, intent.monthlyLimit, now));
-    case "budget_delete":
-      return replyToBudgetDelete(db, intent.category);
-    case "budget_list":
-      return formatBudgetList(await loadBudgetStatuses(db, now));
-    case "balance_query":
-      return formatBalance(await findBalance(db, intent.dateFrom, intent.dateTo), intent.dateFrom, intent.dateTo);
-    default:
-      return await replyToPersonalIntent(db, intent, now) ?? `No te he entendido.\n\n${HELP_TEXT}`;
-  }
-}
-
 function describeDisconnection(closedConnections: number): string {
   if (closedConnections === 0) return "No había ninguna conexión con el banco activa.";
   // Enable Banking cierra el permiso en el banco "si es posible": por eso se dice que se ha pedido, no que esté hecho.
@@ -119,7 +76,7 @@ async function buildReply(db: SupabaseClient, text: string, now: Date): Promise<
       ? "Calendario desconectado: he retirado el permiso en Google."
       : "No tenías el calendario conectado.";
   }
-  return replyToMessage(db, text, now);
+  return replyToText(db, text, now);
 }
 
 function toBotReply(reply: string | BotReply): BotReply {
