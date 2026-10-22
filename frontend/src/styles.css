@@ -221,6 +221,7 @@ button.ghost:focus-visible {
   align-items: start;
 }
 
+.main-column,
 .side-column {
   display: grid;
   gap: 20px;
@@ -1065,4 +1066,130 @@ button.secondary.add-button:hover {
   max-width: 420px;
   display: grid;
   gap: 12px;
+}
+
+/* Balance: ingresos (aqua) frente a gastos (naranja), dos tonos vecinos validados de la paleta de categorías */
+
+.income {
+  --category-color: var(--category-3);
+}
+
+.expense {
+  --category-color: var(--category-2);
+}
+
+.stats-even {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.stat-label .dot {
+  display: inline-block;
+  margin-right: 4px;
+}
+
+.stat-note {
+  font-size: 0.8rem;
+}
+
+.balance-legend {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 0.85rem;
+}
+
+.balance-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.balance-months {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.balance-month {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr) 10rem;
+  grid-template-areas: "label bars savings";
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.balance-month:last-child {
+  border-bottom: 0;
+}
+
+.balance-label {
+  grid-area: label;
+  font-weight: 600;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.balance-bars {
+  grid-area: bars;
+  display: grid;
+  gap: 4px;
+}
+
+.balance-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6.5rem;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.85rem;
+}
+
+.balance-track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+
+.balance-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--category-color);
+}
+
+.balance-savings {
+  grid-area: savings;
+  font-weight: 600;
+}
+
+.balance-savings.negative {
+  color: var(--danger);
+}
+
+.balance-note {
+  margin-top: 12px;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 520px) {
+  .stats-even {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .stats-even .stat-dark {
+    grid-column: 1 / -1;
+  }
+
+  .balance-month {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "label savings"
+      "bars bars";
+    row-gap: 6px;
+  }
 }

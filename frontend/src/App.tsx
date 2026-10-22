@@ -10,6 +10,7 @@ import {
   updateExpenseCategory,
 } from "./api";
 import logoUrl from "./assets/stratesys-logo.svg";
+import { BalancePanel } from "./components/BalancePanel";
 import { ExpenseChat } from "./components/ExpenseChat";
 import { ExpensesPanel } from "./components/ExpensesPanel";
 import { LoginForm } from "./components/LoginForm";
@@ -116,42 +117,45 @@ export function App() {
           <LoginForm rejected={tokenRejected} onSubmit={logIn} />
         ) : (
           <main className="layout">
-            <section className="card" aria-labelledby="expenses-title" aria-busy={loading}>
-              <div className="card-header">
-                <h2 id="expenses-title">Gastos</h2>
-                <div className="segmented" role="group" aria-label="Periodo de los gastos">
-                  {DAY_OPTIONS.map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      aria-pressed={option === days}
-                      className={option === days ? "active" : ""}
-                      onClick={() => setDays(option)}
-                    >
-                      {option} días
-                    </button>
-                  ))}
+            <div className="main-column">
+              <section className="card" aria-labelledby="expenses-title" aria-busy={loading}>
+                <div className="card-header">
+                  <h2 id="expenses-title">Gastos</h2>
+                  <div className="segmented" role="group" aria-label="Periodo de los gastos">
+                    {DAY_OPTIONS.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        aria-pressed={option === days}
+                        className={option === days ? "active" : ""}
+                        onClick={() => setDays(option)}
+                      >
+                        {option} días
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              {error ? (
-                <p className="error" role="alert">
-                  {error}
-                </p>
-              ) : summary ? (
-                // Al cambiar de periodo se mantienen los datos anteriores atenuados hasta que llegan los nuevos.
-                <div className={loading ? "is-loading" : undefined}>
-                  <ExpensesPanel
-                    summary={summary}
-                    savingExpenseId={savingExpenseId}
-                    categoryError={categoryError}
-                    onCategoryChange={changeCategory}
-                  />
-                </div>
-              ) : (
-                <p className="muted">Cargando…</p>
-              )}
-            </section>
+                {error ? (
+                  <p className="error" role="alert">
+                    {error}
+                  </p>
+                ) : summary ? (
+                  // Al cambiar de periodo se mantienen los datos anteriores atenuados hasta que llegan los nuevos.
+                  <div className={loading ? "is-loading" : undefined}>
+                    <ExpensesPanel
+                      summary={summary}
+                      savingExpenseId={savingExpenseId}
+                      categoryError={categoryError}
+                      onCategoryChange={changeCategory}
+                    />
+                  </div>
+                ) : (
+                  <p className="muted">Cargando…</p>
+                )}
+              </section>
+              <BalancePanel />
+            </div>
 
             <div className="side-column">
               <ExpenseChat />

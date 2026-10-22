@@ -14,6 +14,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Res
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
+from api.balance import get_balance
 from api.bank_connection import InvalidBankLinkError, claim_bank_link, complete_bank_link
 from api.bot import build_reply
 from api.config import env_flag, optional_env, public_url, require_env, warn_about_weak_secrets
@@ -31,6 +32,7 @@ from api.jobs import UnknownJobError, build_scheduler, run_and_report
 from api.logging_config import redact, request_id_var, setup_logging
 from api.madrid_time import format_madrid_datetime
 from api.models import (
+    BalanceSummary,
     ExpenseAnswer,
     ExpenseCategoryUpdate,
     ExpenseQuestion,
@@ -291,8 +293,15 @@ def ask_about_expenses(payload: ExpenseQuestion) -> ExpenseAnswer:
     except Exception:
         # Groq caído o con una respuesta rota: el detalle queda en los logs y el chat recibe un aviso genérico.
         logger.exception("No se pudo interpretar la pregunta sobre los gastos")
-        raise HTTPException(status_code=502, detail="No he podido interpretar la pregunta. Inténtalo de nuevo en un momento.")
+        raise HTTPException(
+            status_code=502, detail="No he podido interpretar la pregunta. Inténtalo de nuevo en un momento."
+        )
     return answer_expense_question(interpretation)
+
+
+@app.get("/balance", response_model=BalanceSummary, dependencies=panel)
+def balance(months: int = Query(default=6, ge=1, le=24)) -> BalanceSummary:
+    return get_balance(months, datetime.now(timezone.utc))
 
 
 @app.get("/reminders/pending", response_model=list[ReminderOut], dependencies=panel)
