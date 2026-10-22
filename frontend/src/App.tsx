@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { LayoutDashboard, Wallet, Bell, ShoppingBasket, NotebookPen, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Sparkles } from 'lucide-react';
-import chatbotLogo from './assets/chatbot-logo.svg';
+import chatbotLogo from './assets/chatbot-logo.png';
 
 type Row = Record<string, any>;
 type Section = 'overview'|'finances'|'reminders'|'shopping_items'|'notes'|'birthdays'|'habits'|'calendar';
