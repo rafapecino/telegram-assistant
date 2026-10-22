@@ -22,3 +22,14 @@ Deno.test("una intención desconocida o una respuesta rara no hacen nada", () =>
   assertEquals(parseMessageIntent({ intent: "borrar_todo" }, NOW), { kind: "unknown" });
   assertEquals(parseMessageIntent(null, NOW), { kind: "unknown" });
 });
+
+Deno.test("los presupuestos y el balance van a su propia validación", () => {
+  assertEquals(
+    parseMessageIntent({ intent: "budget", action: "set", category: "Ocio", monthly_limit: 50 }, NOW),
+    { kind: "budget_set", category: "Ocio", monthlyLimit: 50 },
+  );
+  assertEquals(
+    parseMessageIntent({ intent: "balance_query", date_from: "2026-10-01", date_to: "2026-10-21" }, NOW),
+    { kind: "balance_query", dateFrom: "2026-10-01", dateTo: "2026-10-21" },
+  );
+});

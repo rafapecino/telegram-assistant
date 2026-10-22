@@ -40,15 +40,15 @@ export async function generateTestKeyPair(): Promise<{ pem: string; publicKey: C
   return { pem: `-----BEGIN PRIVATE KEY-----\n${base64}\n-----END PRIVATE KEY-----\n`, publicKey: keyPair.publicKey };
 }
 
-/** Durante `test`, las llamadas a fetch las responde `respond` y se apuntan en `requests`. */
-export async function withEnableBanking(
-  respond: (request: Request) => Response,
+/** Durante `test`, las variables de `env` existen y las llamadas a fetch las responde `respond` y se apuntan. */
+export async function withFakeFetch(
+  env: Record<string, string>,
+  respond: (request: Request) => Response | Promise<Response>,
   test: (requests: Request[]) => Promise<void>,
 ): Promise<void> {
   const originalFetch = globalThis.fetch;
   const requests: Request[] = [];
-  Deno.env.set("ENABLE_BANKING_APP_ID", "app-de-prueba");
-  Deno.env.set("ENABLE_BANKING_PRIVATE_KEY", (await generateTestKeyPair()).pem);
+  for (const [name, value] of Object.entries(env)) Deno.env.set(name, value);
   globalThis.fetch = (input: string | URL | Request, init?: RequestInit) => {
     const request = new Request(input, init);
     requests.push(request);
@@ -58,9 +58,27 @@ export async function withEnableBanking(
     await test(requests);
   } finally {
     globalThis.fetch = originalFetch;
-    Deno.env.delete("ENABLE_BANKING_APP_ID");
-    Deno.env.delete("ENABLE_BANKING_PRIVATE_KEY");
+    for (const name of Object.keys(env)) Deno.env.delete(name);
   }
+}
+
+/** Claves de Enable Banking de prueba (con una clave RSA de verdad para poder firmar el JWT). */
+export async function enableBankingEnv(): Promise<Record<string, string>> {
+  return { ENABLE_BANKING_APP_ID: "app-de-prueba", ENABLE_BANKING_PRIVATE_KEY: (await generateTestKeyPair()).pem };
+}
+
+export const TELEGRAM_ENV = { TELEGRAM_BOT_TOKEN: "token-de-prueba", TELEGRAM_USER_ID: "42" };
+
+export async function withEnableBanking(
+  respond: (request: Request) => Response,
+  test: (requests: Request[]) => Promise<void>,
+): Promise<void> {
+  await withFakeFetch(await enableBankingEnv(), respond, test);
+}
+
+/** Telegram de prueba: responde "ok" a todo. */
+export function withTelegram(test: (requests: Request[]) => Promise<void>): Promise<void> {
+  return withFakeFetch(TELEGRAM_ENV, () => Response.json({ ok: true, result: {} }), test);
 }
 
 /** "DELETE /sessions/abc" de cada petición, para comprobar qué se ha llamado. */

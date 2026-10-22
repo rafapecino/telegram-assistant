@@ -28,7 +28,7 @@ export type ExpenseQueryRequest =
   | { kind: "expenses_query"; query: ExpenseQuery }
   | { kind: "invalid"; message: string };
 
-function isCalendarDate(value: unknown): value is string {
+export function isCalendarDate(value: unknown): value is string {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
     new Date(`${value}T00:00:00Z`).toISOString().startsWith(value);
 }
@@ -68,7 +68,7 @@ function formatDate(date: string): string {
     .format(new Date(`${date}T00:00:00Z`));
 }
 
-function describePeriod(query: ExpenseQuery): string {
+export function describePeriod(query: ExpenseQuery): string {
   const period = query.dateFrom === query.dateTo
     ? `del ${formatDate(query.dateFrom)}`
     : `del ${formatDate(query.dateFrom)} al ${formatDate(query.dateTo)}`;

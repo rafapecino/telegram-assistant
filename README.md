@@ -2,14 +2,19 @@
 
 Bot personal de Telegram que:
 
-- Crea recordatorios a partir de frases normales ("recuérdame llamar a Juan el jueves a las 17:00").
-- Responde preguntas sobre tus gastos ("¿cuánto he gastado esta semana en restaurantes?").
-- Importa cada día a las 8:00 los gastos de la cuenta bancaria y los clasifica por categoría.
+- Crea recordatorios a partir de frases normales ("recuérdame llamar a Juan el jueves a las 17:00"), también
+  recurrentes ("cada lunes a las 9 sacar la basura"). Cada aviso trae botones: Hecho, +1 h y Mañana 9:00.
+- Responde preguntas sobre tus gastos ("¿cuánto he gastado esta semana en restaurantes?") y tu balance ("¿cuánto he
+  ahorrado este mes?").
+- Guarda presupuestos mensuales ("pon un límite de 200 € al mes en restaurantes") y avisa al pasar del 80 % y del 100 %.
+- Entiende notas de voz.
+- Importa cada día a las 8:00 los movimientos de la cuenta bancaria: clasifica los gastos por categoría y guarda los
+  ingresos para el balance.
 - Envía un resumen de gastos los domingos a las 20:00.
 
 Funciona en Supabase (Edge Functions, Postgres y pg_cron). Las frases y las categorías las interpreta
-`openai/gpt-oss-120b`, un modelo open source, a través de Groq. Los movimientos del banco llegan por open banking con
-Enable Banking.
+`openai/gpt-oss-120b`, un modelo open source, a través de Groq, que también transcribe las notas de voz
+(`whisper-large-v3-turbo`). Los movimientos del banco llegan por open banking con Enable Banking.
 
 ## Cómo está organizado
 
@@ -23,7 +28,8 @@ supabase/
     _shared/             una pieza por funcionalidad (reminders.ts, expenses.ts, ...) y utilidades comunes
 ```
 
-Cada mensaje pasa por `_shared/message-intent.ts`: el modelo decide qué pide (recordatorio, consulta de gastos o nada) y
+Cada mensaje pasa por `_shared/message-intent.ts`: el modelo decide qué pide (recordatorio, consulta de gastos,
+presupuesto, balance o nada) y
 cada funcionalidad valida sus propios datos. Para añadir una funcionalidad: crea su módulo en `_shared/` con su formato
 y su validación, regístralo en `buildIntentPrompt` y `parseMessageIntent`, y responde en `replyToMessage`
 (`telegram-webhook/index.ts`). Si debe ejecutarse sola, añade su tarea en `runJob` (`scheduled-jobs/index.ts`).
@@ -66,6 +72,16 @@ y su validación, regístralo en `buildIntentPrompt` y `parseMessageIntent`, y r
 
    Para cortar el acceso, escribe `/desconectar_banco`: cierra la sesión en Enable Banking, que pide al banco retirar
    el permiso, y borra la conexión guardada. Los gastos ya importados se quedan.
+
+## Actualizar un bot ya en marcha
+
+Cuando cambian las migraciones o las funciones, repite el paso 4. Si cambia qué recibe el webhook (por ejemplo, los
+botones de los recordatorios necesitan `callback_query`), repite también el paso 5.
+
+## Datos que salen de Supabase
+
+A Groq van el texto de tus mensajes, las notas de voz para transcribirlas y las descripciones de los gastos para
+clasificarlas. Los números de tarjeta se ocultan antes (`****1234`).
 
 ## Lanzar una tarea a mano
 
