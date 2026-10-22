@@ -1,13 +1,15 @@
-import { assertEquals, assertStringIncludes, assertThrows } from "jsr:@std/assert@1.0.19";
+import { assertEquals, assertRejects, assertStringIncludes, assertThrows } from "jsr:@std/assert@1.0.19";
 import type { BankTransaction } from "./enable-banking.ts";
 import {
   assignTransactionKeys,
   buildWeeklySummary,
   type ExpenseCandidate,
+  importRecentExpenses,
   maskCardNumbers,
   parseCategories,
   toExpenseCandidate,
 } from "./expenses.ts";
+import { fakeDb } from "./testing.ts";
 
 const CARD_PAYMENT: BankTransaction = {
   transaction_amount: { amount: "12.50", currency: "EUR" },
@@ -105,4 +107,23 @@ Deno.test("el resumen semanal suma por categoría y muestra los tres mayores gas
 
 Deno.test("el resumen avisa si no hay gastos", () => {
   assertStringIncludes(buildWeeklySummary([]), "no hay gastos");
+});
+
+/** Base de datos sin conexión vigente y con `savedConnections` conexiones guardadas (caducadas). */
+function withoutActiveConnection(savedConnections: number) {
+  return fakeDb((query) =>
+    query.includes("maybeSingle()") ? { data: null, error: null } : { count: savedConnections, error: null }
+  ).db;
+}
+
+Deno.test("sin ninguna conexión guardada la importación no hace nada ni avisa", async () => {
+  assertEquals(await importRecentExpenses(withoutActiveConnection(0), new Date("2026-10-22T06:00:00Z")), 0);
+});
+
+Deno.test("con la conexión caducada la importación avisa de que hay que volver a conectar", async () => {
+  await assertRejects(
+    () => importRecentExpenses(withoutActiveConnection(1), new Date("2026-10-22T06:00:00Z")),
+    Error,
+    "/conectar_banco",
+  );
 });

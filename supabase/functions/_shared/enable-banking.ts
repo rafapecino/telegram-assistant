@@ -51,7 +51,14 @@ function parseResponseBody(text: string): Record<string, unknown> {
   }
 }
 
-async function enableBankingRequest<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
+/** Respuesta de error de Enable Banking. Guarda el código HTTP para distinguir, por ejemplo, un 404. */
+export class EnableBankingError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
+async function enableBankingRequest<T>(method: "GET" | "POST" | "DELETE", path: string, body?: unknown): Promise<T> {
   const jwt = await createEnableBankingJwt(
     requireEnv("ENABLE_BANKING_APP_ID").trim(),
     requireEnv("ENABLE_BANKING_PRIVATE_KEY"),
@@ -65,7 +72,10 @@ async function enableBankingRequest<T>(method: "GET" | "POST", path: string, bod
   const result = parseResponseBody(await response.text());
   if (!response.ok) {
     const detail = result.error ? `${result.error}: ${result.message}` : JSON.stringify(result);
-    throw new Error(`Enable Banking respondió ${response.status} en ${path.split("?")[0]} (${detail})`);
+    throw new EnableBankingError(
+      `Enable Banking respondió ${response.status} en ${path.split("?")[0]} (${detail})`,
+      response.status,
+    );
   }
   return result as T;
 }
@@ -110,6 +120,17 @@ export async function createBankSession(code: string): Promise<BankSession> {
   const accountUids = session.accounts.map((account) => account.uid).filter((uid): uid is string => Boolean(uid));
   if (accountUids.length === 0) throw new Error("El banco no ha compartido ninguna cuenta.");
   return { sessionId: session.session_id, accountUids, validUntil: session.access.valid_until };
+}
+
+/** Cierra la sesión en Enable Banking, que a su vez cierra el permiso en el banco cuando el banco lo permite. */
+export async function deleteBankSession(sessionId: string): Promise<void> {
+  try {
+    await enableBankingRequest("DELETE", `/sessions/${encodeURIComponent(sessionId)}`);
+  } catch (error) {
+    // 404: Enable Banking ya no tiene la sesión (caducó o se cerró antes), así que no queda ningún acceso que cerrar.
+    if (error instanceof EnableBankingError && error.status === 404) return;
+    throw error;
+  }
 }
 
 export interface BankTransaction {
