@@ -9,15 +9,18 @@ import {
   loadBudgetStatuses,
   saveBudget,
 } from "../_shared/budgets.ts";
+import { createCalendarLink, disconnectCalendar } from "../_shared/calendar.ts";
 import { createAdminClient, getInternalSecret } from "../_shared/database.ts";
 import { errorMessage } from "../_shared/env.ts";
 import { findExpenses, formatExpenseReport } from "../_shared/expense-queries.ts";
 import { transcribeAudio } from "../_shared/groq.ts";
 import { formatMadridDateTime } from "../_shared/madrid-time.ts";
 import { interpretMessage } from "../_shared/message-intent.ts";
+import { applyPersonalButton, replyToPersonalIntent } from "../_shared/personal-replies.ts";
 import { applyReminderButton, describeRepeat, parseReminderButton, saveReminder } from "../_shared/reminders.ts";
 import {
   answerTelegramButton,
+  type BotReply,
   downloadTelegramFile,
   editTelegramMessage,
   isAuthorizedUser,
@@ -30,9 +33,16 @@ const HELP_TEXT = [
   '• Consultar tus gastos: "¿cuánto he gastado esta semana?" o "gastos de ayer en restaurantes".',
   '• Presupuestos: "pon un límite de 200 € al mes en restaurantes" o "¿cómo voy con los presupuestos?".',
   '• Balance: "¿cuánto he ahorrado este mes?".',
+  '• Lista de la compra: "añade leche y pan a la compra" o "¿qué hay en la lista?".',
+  '• Notas: "apunta que la talla de Marta es la 38" y luego "¿qué talla usa Marta?".',
+  '• Cumpleaños: "el cumple de mamá es el 3 de marzo". Te aviso el día antes y el mismo día.',
+  '• Hábitos: "quiero leer cada día". Te pregunto cada noche a las 21:00.',
+  '• Calendario: "¿qué tengo mañana?" o "pon en el calendario dentista el martes a las 10".',
+  "• Cada día a las 8:00 te mando un resumen: tiempo, recordatorios, calendario y cumpleaños.",
   "• También me puedes mandar notas de voz.",
   "• /conectar_banco: conecta tu cuenta del banco para importar los gastos cada día a las 8:00.",
   "• /desconectar_banco: corta el acceso a tu banco. Los gastos ya importados se quedan.",
+  "• /conectar_calendario y /desconectar_calendario: tu calendario de Google.",
   "• Los domingos a las 20:00 te mando el resumen de gastos de la semana.",
 ].join("\n");
 
@@ -58,7 +68,7 @@ async function replyToBudgetDelete(db: SupabaseClient, category: string): Promis
   return await deleteBudget(db, category) ? `He quitado el ${name}.` : `No tenías ningún ${name}.`;
 }
 
-async function replyToMessage(db: SupabaseClient, text: string, now: Date): Promise<string> {
+async function replyToMessage(db: SupabaseClient, text: string, now: Date): Promise<string | BotReply> {
   const intent = await interpretMessage(text, now);
   switch (intent.kind) {
     case "unknown":
@@ -80,6 +90,8 @@ async function replyToMessage(db: SupabaseClient, text: string, now: Date): Prom
       return formatBudgetList(await loadBudgetStatuses(db, now));
     case "balance_query":
       return formatBalance(await findBalance(db, intent.dateFrom, intent.dateTo), intent.dateFrom, intent.dateTo);
+    default:
+      return await replyToPersonalIntent(db, intent, now) ?? `No te he entendido.\n\n${HELP_TEXT}`;
   }
 }
 
@@ -92,42 +104,70 @@ function describeDisconnection(closedConnections: number): string {
   ].join("\n");
 }
 
-async function buildReply(db: SupabaseClient, text: string, now: Date): Promise<string> {
+async function buildReply(db: SupabaseClient, text: string, now: Date): Promise<string | BotReply> {
   if (text === "/start" || text === "/ayuda") return HELP_TEXT;
   if (text === "/conectar_banco") {
     return `Autoriza el acceso desde tu banco en este enlace (caduca en 30 minutos):\n${await createBankLink(db, now)}`;
   }
   if (text === "/desconectar_banco") return describeDisconnection(await disconnectBank(db, now));
+  if (text === "/conectar_calendario") {
+    const link = await createCalendarLink(db);
+    return `Autoriza el acceso a tu calendario de Google en este enlace (caduca en 30 minutos):\n${link}`;
+  }
+  if (text === "/desconectar_calendario") {
+    return await disconnectCalendar(db)
+      ? "Calendario desconectado: he retirado el permiso en Google."
+      : "No tenías el calendario conectado.";
+  }
   return replyToMessage(db, text, now);
 }
 
+function toBotReply(reply: string | BotReply): BotReply {
+  return typeof reply === "string" ? { text: reply } : reply;
+}
+
 /** Transcribe la nota de voz y responde como si se hubiera escrito, enseñando lo que se ha entendido. */
-async function replyToVoice(db: SupabaseClient, voice: NonNullable<TelegramMessage["voice"]>, now: Date) {
-  if ((voice.duration ?? 0) > MAX_VOICE_SECONDS) return "Las notas de voz pueden durar hasta 2 minutos.";
+async function replyToVoice(
+  db: SupabaseClient,
+  voice: NonNullable<TelegramMessage["voice"]>,
+  now: Date,
+): Promise<BotReply> {
+  if ((voice.duration ?? 0) > MAX_VOICE_SECONDS) return { text: "Las notas de voz pueden durar hasta 2 minutos." };
   // Telegram guarda las notas de voz como .oga; Groq las acepta con la extensión .ogg.
   const text = await transcribeAudio(await downloadTelegramFile(voice.file_id), "nota-de-voz.ogg");
-  if (!text) return "No he entendido la nota de voz.";
-  return `🎙️ «${text}»\n\n${await buildReply(db, text, now)}`;
+  if (!text) return { text: "No he entendido la nota de voz." };
+  const reply = toBotReply(await buildReply(db, text, now));
+  return { ...reply, text: `🎙️ «${text}»\n\n${reply.text}` };
 }
 
 async function handleMessage(db: SupabaseClient, message: TelegramMessage): Promise<void> {
   const now = new Date();
-  if (message.voice) {
-    await sendTelegramMessage(await replyToVoice(db, message.voice, now));
-  } else if (message.text) {
-    await sendTelegramMessage(await buildReply(db, message.text.trim(), now));
-  }
+  let reply: BotReply | null = null;
+  if (message.voice) reply = await replyToVoice(db, message.voice, now);
+  else if (message.text) reply = toBotReply(await buildReply(db, message.text.trim(), now));
+  if (reply) await sendTelegramMessage(reply.text, reply.buttons);
 }
 
-/** Botones del aviso de un recordatorio: se actualiza el mensaje para que se vea qué se ha hecho. */
+/** Botones de recordatorios, lista de la compra y hábitos: se actualiza el mensaje para que se vea qué se ha hecho. */
 async function handleButton(db: SupabaseClient, callback: TelegramCallbackQuery): Promise<void> {
-  const button = parseReminderButton(callback.data ?? "");
-  if (!button || !callback.message) {
+  const data = callback.data ?? "";
+  if (!callback.message) {
     await answerTelegramButton(callback.id, "Este botón ya no funciona.");
     return;
   }
-  await editTelegramMessage(callback.message.message_id, await applyReminderButton(db, button, new Date()));
-  await answerTelegramButton(callback.id, button.action === "done" ? "Hecho" : "Pospuesto");
+  const reminderButton = parseReminderButton(data);
+  if (reminderButton) {
+    await editTelegramMessage(callback.message.message_id, await applyReminderButton(db, reminderButton, new Date()));
+    await answerTelegramButton(callback.id, reminderButton.action === "done" ? "Hecho" : "Pospuesto");
+    return;
+  }
+  const result = await applyPersonalButton(db, data);
+  if (!result) {
+    await answerTelegramButton(callback.id, "Este botón ya no funciona.");
+    return;
+  }
+  await editTelegramMessage(callback.message.message_id, result.message.text, result.message.buttons);
+  await answerTelegramButton(callback.id, result.toast);
 }
 
 Deno.serve(async (request) => {

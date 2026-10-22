@@ -33,3 +33,22 @@ Deno.test("los presupuestos y el balance van a su propia validación", () => {
     { kind: "balance_query", dateFrom: "2026-10-01", dateTo: "2026-10-21" },
   );
 });
+
+Deno.test("las funciones personales van a su propia validación", () => {
+  assertEquals(parseMessageIntent({ intent: "shopping", action: "add", items: ["pan"] }, NOW), {
+    kind: "shopping_add",
+    items: ["pan"],
+  });
+  assertEquals(parseMessageIntent({ intent: "note", action: "list" }, NOW), { kind: "note_list" });
+  // El año de nacimiento se valida contra el año en curso en Madrid.
+  assertEquals(
+    parseMessageIntent({ intent: "birthday", action: "save", name: "Ana", month: 1, day: 2, year: 2027 }, NOW).kind,
+    "invalid",
+  );
+  assertEquals(parseMessageIntent({ intent: "habit", action: "list" }, NOW), { kind: "habit_list" });
+  assertEquals(
+    parseMessageIntent({ intent: "calendar", action: "list", date_from: "2026-10-22", date_to: "2026-10-22" }, NOW)
+      .kind,
+    "calendar_list",
+  );
+});
