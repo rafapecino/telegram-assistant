@@ -175,7 +175,18 @@ async function callCalendar(db: SupabaseClient, url: string, init: RequestInit =
     ...init,
     headers: { Authorization: `Bearer ${await getAccessToken(db)}`, "Content-Type": "application/json" },
   });
-  if (!response.ok) throw new Error(`Google Calendar respondió ${response.status}: ${await response.text()}`);
+  if (!response.ok) {
+    const details = parseJsonOrEmpty(await response.text());
+    const googleError = details.error as Record<string, unknown> | undefined;
+    const status = googleError?.status;
+    const errors = googleError?.errors as { reason?: string }[] | undefined;
+    if (status === "PERMISSION_DENIED" &&
+      (googleError?.code === 403 || response.status === 403) &&
+      (JSON.stringify(details).includes("SERVICE_DISABLED") || errors?.some((error) => error.reason === "accessNotConfigured"))) {
+      throw new Error("La API de Google Calendar está desactivada. Actívala en Google Cloud y vuelve a actualizar el panel.");
+    }
+    throw new Error(`Google Calendar respondió ${response.status}: ${typeof googleError?.message === "string" ? googleError.message : "No se pudo consultar el calendario."}`);
+  }
   return response.json();
 }
 

@@ -91,9 +91,9 @@ Deno.test("la lista de hábitos enseña racha y semana de cada uno", () => {
     TODAY,
   );
   assertEquals(text.split("\n"), [
-    "Tus hábitos (te pregunto cada día a las 21:00):",
-    "• Leer: racha de 1 día · 1 de los últimos 7 días",
-    "• Correr: racha de 0 días · 0 de los últimos 7 días",
+    "Tus hábitos (te pregunto los días elegidos a las 21:00):",
+    "• Leer: racha de 1 día · 1 de 7 días previstos esta semana",
+    "• Correr: racha de 0 días · 0 de 7 días previstos esta semana",
   ]);
   assertEquals(formatHabitList([], [], TODAY), "No sigues ningún hábito. Prueba con «quiero leer cada día».");
 });

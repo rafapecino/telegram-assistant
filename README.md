@@ -125,21 +125,24 @@ deno task test
 
 La carpeta `frontend/` contiene un panel responsive para consultar y gestionar ingresos, gastos, presupuestos,
 recordatorios, lista de la compra, notas, cumpleaños, hábitos y eventos del calendario. Comparte los datos del bot:
-las operaciones pasan por la función `panel-api`, que valida la clave del panel y accede a Supabase con la clave
-secreta solo en el servidor. No pongas `SUPABASE_SECRET_KEYS` ni `PANEL_TOKEN` en variables `VITE_`.
+las operaciones pasan por la función `panel-api`, que comprueba la sesión y accede a Supabase con la clave secreta solo
+en el servidor. No pongas `SUPABASE_SECRET_KEYS` en variables `VITE_`.
 
-1. En Supabase → Edge Functions → Secrets, crea `PANEL_TOKEN` con una cadena aleatoria larga y
-   `PANEL_ORIGINS` con el origen exacto del panel (por ejemplo `https://panel.ejemplo.com`; separa varios con comas).
-2. Despliega la función con `supabase functions deploy panel-api` tras aplicar las migraciones con `supabase db push`.
-3. Copia `frontend/.env.example` a `frontend/.env` y sustituye la URL del proyecto en `VITE_PANEL_API_URL`.
-4. Desde `frontend/`, ejecuta `npm ci` y `npm run dev`. Abre la URL que muestra Vite. Para producción,
-   ejecuta `npm run build` y publica `frontend/dist` en un alojamiento web con HTTPS; añade su origen a
-   `PANEL_ORIGINS`. Durante desarrollo, añade `http://localhost:5173` a esa lista.
-5. Introduce `PANEL_TOKEN` en la pantalla de acceso. Se mantiene solo en la sesión de esa pestaña.
+El acceso es con correo y contraseña (Supabase Auth). Cualquiera puede crearse una cuenta desde la pantalla de
+acceso, pero solo entran las que autorices en la tabla `panel_users`:
+
+```sql
+insert into public.panel_users (user_id) select id from auth.users where email = 'tu@correo.com';
+```
+
+1. Aplica las migraciones con `supabase db push` y despliega la función con `supabase functions deploy panel-api`.
+2. Desde `frontend/`, ejecuta `npm ci` y `npm run dev`. Sin `frontend/.env`, el panel usa el proyecto de producción;
+   para otro proyecto, copia `frontend/.env.example` a `frontend/.env` y rellénalo.
+3. Para producción, el proyecto de Vercel compila `frontend/` (Root Directory `frontend`) al fusionar en `main`.
 
 En el Inicio hay un chat con el asistente: entiende lo mismo que el bot de Telegram (gastos, compra, recordatorios…)
 y contesta preguntas generales con el mismo modelo de Groq, teniendo en cuenta los últimos mensajes de la conversación.
 La conversación no se guarda: desaparece al recargar la página.
 
-La conexión con Google Calendar utiliza el mismo flujo OAuth del bot. El panel muestra los próximos 14 días.
+La conexión con Google Calendar utiliza el mismo flujo OAuth del bot. El panel muestra los eventos del mes en curso.
 El periodo de finanzas se elige entre 7, 30 y 90 días; los presupuestos siempre corresponden al mes actual.

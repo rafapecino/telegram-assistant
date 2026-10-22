@@ -92,15 +92,26 @@ Deno.test("posponer crea un recordatorio nuevo de una sola vez y el aviso lo dic
   const text = await applyReminderButton(db, { action: "1h", reminderId: 3 }, NOW);
   assertStringIncludes(text, "Pospuesto al miércoles, 21 de octubre, 13:00");
   assertEquals(queries[1][0], 'from("reminders")');
-  assertStringIncludes(queries[1][1], '"text":"llamar a Juan","remind_at":"2026-10-21T11:00:00.000Z","repeat":null');
+  assertStringIncludes(queries[1][1], '"text":"llamar a Juan","remind_at":"2026-10-21T11:00:00.000Z"');
+  assertStringIncludes(queries[1][1], '"repeat":null');
 });
 
 Deno.test("el aviso lleva botones y los que se repiten se reprograman para la siguiente vez", async () => {
   const due = [
-    { id: 1, text: "una vez", remind_at: "2026-10-21T10:00:00Z", repeat: null, repeat_day: null },
-    { id: 2, text: "cada semana", remind_at: "2026-10-21T10:00:00Z", repeat: "weekly", repeat_day: null },
+    { id: 1, text: "una vez", remind_at: "2026-10-21T10:00:00Z", repeat: null, repeat_day: null, advance_minutes: 30 },
+    {
+      id: 2,
+      text: "cada semana",
+      remind_at: "2026-10-21T10:00:00Z",
+      repeat: "weekly",
+      repeat_day: null,
+      advance_minutes: 30,
+    },
   ];
-  const { db, queries } = fakeDb((query) => query.some((step) => step.startsWith("select(")) ? { data: due } : {});
+  const { db, queries } = fakeDb((query) => {
+    if (query.some((step) => step.startsWith('update({"advance_notified_at"'))) return { data: [] };
+    return query.some((step) => step.startsWith("select(")) ? { data: due } : {};
+  });
   await withTelegram(async (requests) => {
     assertEquals(await sendDueReminders(db, NOW), 2);
     const sent = await Promise.all(requests.map((request) => request.json()));
@@ -114,10 +125,27 @@ Deno.test("el aviso lleva botones y los que se repiten se reprograman para la si
       ],
     );
   });
-  // Solo el semanal se vuelve a programar: siete días después y sin marcar como enviado.
-  assertEquals(queries.length, 2);
-  assertEquals(queries[1].slice(1), [
-    'update({"remind_at":"2026-10-28T11:00:00.000Z","sent_at":null})',
+  // Solo el semanal se vuelve a programar: siete días después, sin marcar como enviado y con su aviso previo.
+  assertEquals(queries.length, 3);
+  assertEquals(queries[2].slice(1), [
+    'update({"remind_at":"2026-10-28T11:00:00.000Z","sent_at":null,"advance_at":"2026-10-28T10:30:00.000Z",' +
+    '"advance_notified_at":null})',
     'eq("id", 2)',
   ]);
+});
+
+Deno.test("el aviso previo llega antes de la hora y sin botones", async () => {
+  const { db } = fakeDb((query) =>
+    query.some((step) => step.startsWith('update({"advance_notified_at"'))
+      ? { data: [{ id: 5, text: "dentista", remind_at: "2026-10-21T10:30:00Z" }] }
+      : { data: [] }
+  );
+  await withTelegram(async (requests) => {
+    assertEquals(await sendDueReminders(db, NOW), 0);
+    const sent = await Promise.all(requests.map((request) => request.json()));
+    assertEquals(sent.map((message) => message.text), [
+      "🔔 Aviso previo: dentista\n📅 miércoles, 21 de octubre, 12:30",
+    ]);
+    assertEquals(sent[0].reply_markup, undefined);
+  });
 });
