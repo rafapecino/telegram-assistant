@@ -50,19 +50,33 @@ create table if not exists expenses (
 );
 create index if not exists expenses_booking_date_idx on expenses (booking_date);
 
+-- Ingresos para el balance. Los importa el bot de Supabase (misma tabla que su migración); el panel solo los lee.
+create table if not exists incomes (
+  id bigint generated always as identity primary key,
+  transaction_key text not null unique,
+  account_uid text not null,
+  booking_date date not null,
+  amount numeric(12, 2) not null check (amount >= 0),
+  currency text not null,
+  description text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists incomes_booking_date_idx on incomes (booking_date);
+
 -- Seguridad: en Supabase, las tablas de "public" se pueden leer por internet con la clave pública del proyecto.
 -- RLS activado y sin políticas cierra ese acceso; la API conecta como propietaria de las tablas y no se ve afectada.
 alter table reminders enable row level security;
 alter table bank_authorizations enable row level security;
 alter table bank_sessions enable row level security;
 alter table expenses enable row level security;
+alter table incomes enable row level security;
 
 -- Y además se quitan los permisos a los roles públicos de Supabase (en otro Postgres no existen y se salta).
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'anon')
      and exists (select 1 from pg_roles where rolname = 'authenticated') then
-    revoke all on reminders, bank_authorizations, bank_sessions, expenses from anon, authenticated;
+    revoke all on reminders, bank_authorizations, bank_sessions, expenses, incomes from anon, authenticated;
   end if;
 end
 $$;

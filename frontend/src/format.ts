@@ -30,6 +30,13 @@ export function formatDay(isoDate: string): string {
   return shortDate.format(new Date(`${isoDate}T00:00:00Z`));
 }
 
+const monthYear = new Intl.DateTimeFormat("es-ES", { timeZone: "UTC", month: "short", year: "numeric" });
+
+/** Mes sin día ("2026-10") como "oct 2026". */
+export function formatMonth(month: string): string {
+  return monthYear.format(new Date(`${month}-01T00:00:00Z`));
+}
+
 /** Minutos que Madrid va por delante de UTC en un instante dado: 60 en invierno, 120 en verano. */
 function madridOffsetMinutes(instant: Date): number {
   const offsetName = new Intl.DateTimeFormat("en-US", { timeZone: MADRID_TIME_ZONE, timeZoneName: "longOffset" })

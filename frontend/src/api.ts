@@ -50,6 +50,22 @@ export interface ExpenseAnswer {
   result: ExpenseQueryResult | null;
 }
 
+export interface BalanceMonth {
+  /** "2026-10" */
+  month: string;
+  /** null en los meses anteriores al primer ingreso registrado: no hay datos para calcular el ahorro. */
+  incomes: number | null;
+  expenses: number;
+  savings: number | null;
+}
+
+export interface BalanceSummary {
+  /** Del más antiguo al más reciente; el último es el mes en curso. */
+  months: BalanceMonth[];
+  /** Fecha sin hora del primer ingreso guardado, o null si aún no hay ninguno. */
+  incomes_since: string | null;
+}
+
 export interface Reminder {
   id: number;
   text: string;
@@ -149,6 +165,10 @@ export function askAboutExpenses(question: string, previousQuestions: string[]):
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question, previous_questions: previousQuestions }),
   });
+}
+
+export function getBalance(months: number): Promise<BalanceSummary> {
+  return request(`/balance?months=${months}`);
 }
 
 export function completeReminder(reminderId: number): Promise<void> {

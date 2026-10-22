@@ -163,6 +163,22 @@ class ExpenseQueryResult(BaseModel):
     unlisted_count: int
 
 
+class BalanceMonth(BaseModel):
+    # "2026-10"
+    month: str
+    # None en los meses anteriores al primer ingreso registrado: no hay datos para calcular el ahorro.
+    incomes: float | None
+    expenses: float
+    savings: float | None
+
+
+class BalanceSummary(BaseModel):
+    # Del más antiguo al más reciente; el último es el mes en curso.
+    months: list[BalanceMonth]
+    # Fecha del primer ingreso guardado, o None si aún no hay ninguno.
+    incomes_since: date | None
+
+
 class ExpenseAnswer(BaseModel):
     text: str
     # Sin resultado cuando la pregunta no era sobre gastos o no se entendió.

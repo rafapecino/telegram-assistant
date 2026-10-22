@@ -11,6 +11,7 @@ export default defineConfig({
     proxy: {
       "/expenses": API,
       "/reminders": API,
+      "/balance": API,
       "/health": API,
     },
   },

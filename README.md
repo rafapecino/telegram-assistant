@@ -26,6 +26,7 @@ api/
   reminders.py         recordatorios
   expenses.py          gastos: importación, categorías y resumen
   expense_questions.py preguntas del chat del panel: interpretación con la IA y consulta a la base de datos
+  balance.py           balance del panel: ingresos frente a gastos de cada mes
   bank_connection.py   enlace de autorización del banco y sesión activa
   enable_banking.py    cliente de Enable Banking
   groq.py              cliente de Groq
@@ -35,7 +36,7 @@ api/
   logging_config.py    formato de los logs, ID de petición y ocultación de secretos
 frontend/              panel web en React + TypeScript (Vite)
   src/App.tsx          página principal
-  src/components/      acceso con token, panel de gastos, chat de gastos y panel de recordatorios
+  src/components/      acceso con token, panel de gastos, balance, chat de gastos y panel de recordatorios
   src/api.ts           llamadas a la API y sus tipos
   src/format.ts        euros y horas de Madrid
   src/categoryColors.ts color fijo de cada categoría

@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from api import main
 from api.expense_questions import HELP_TEXT, QuestionInterpretation
+from api.models import BalanceSummary
 
 SECRET_HEADER = {"X-Telegram-Bot-Api-Secret-Token": "webhook-secret"}
 
@@ -153,6 +154,21 @@ def test_si_falla_la_ia_el_chat_recibe_un_aviso_sin_detalles(client, panel_token
     assert response.status_code == 502
     assert "gsk_" not in response.text
     assert "Inténtalo de nuevo" in response.json()["detail"]
+
+
+def test_el_balance_exige_el_token_y_limita_los_meses(client, panel_token, monkeypatch):
+    requested: list[int] = []
+
+    def fake_balance(months, now):
+        requested.append(months)
+        return BalanceSummary(months=[], incomes_since=None)
+
+    monkeypatch.setattr(main, "get_balance", fake_balance)
+    assert client.get("/balance").status_code == 401
+    assert client.get("/balance", headers=panel_token).json() == {"months": [], "incomes_since": None}
+    assert client.get("/balance?months=0", headers=panel_token).status_code == 422
+    assert client.get("/balance?months=25", headers=panel_token).status_code == 422
+    assert requested == [6]
 
 
 def test_la_documentacion_esta_apagada_por_defecto(client):
