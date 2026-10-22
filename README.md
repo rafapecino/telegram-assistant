@@ -118,3 +118,23 @@ select status_code, content from net._http_response order by id desc limit 1;
 ```bash
 deno task test
 ```
+
+
+## Panel web personal
+
+La carpeta `frontend/` contiene un panel responsive para consultar y gestionar ingresos, gastos, presupuestos,
+recordatorios, lista de la compra, notas, cumpleaños, hábitos y eventos del calendario. Comparte los datos del bot:
+las operaciones pasan por la función `panel-api`, que valida la clave del panel y accede a Supabase con la clave
+secreta solo en el servidor. No pongas `SUPABASE_SECRET_KEYS` ni `PANEL_TOKEN` en variables `VITE_`.
+
+1. En Supabase → Edge Functions → Secrets, crea `PANEL_TOKEN` con una cadena aleatoria larga y
+   `PANEL_ORIGINS` con el origen exacto del panel (por ejemplo `https://panel.ejemplo.com`; separa varios con comas).
+2. Despliega la función con `supabase functions deploy panel-api` tras aplicar las migraciones con `supabase db push`.
+3. Copia `frontend/.env.example` a `frontend/.env` y sustituye la URL del proyecto en `VITE_PANEL_API_URL`.
+4. Desde `frontend/`, ejecuta `npm ci` y `npm run dev`. Abre la URL que muestra Vite. Para producción,
+   ejecuta `npm run build` y publica `frontend/dist` en un alojamiento web con HTTPS; añade su origen a
+   `PANEL_ORIGINS`. Durante desarrollo, añade `http://localhost:5173` a esa lista.
+5. Introduce `PANEL_TOKEN` en la pantalla de acceso. Se mantiene solo en la sesión de esa pestaña.
+
+La conexión con Google Calendar utiliza el mismo flujo OAuth del bot. El panel muestra los próximos 14 días.
+El periodo de finanzas se elige entre 7, 30 y 90 días; los presupuestos siempre corresponden al mes actual.
