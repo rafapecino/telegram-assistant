@@ -5,6 +5,7 @@ import { loadBudgetStatuses, parseBudgetRequest, saveBudget, deleteBudget } from
 import { parseReminderRequest, saveReminder } from "../_shared/reminders.ts";
 import { recordHabit } from "../_shared/habits.ts";
 import { createBankLink, disconnectBank, hasBankConnections } from "../_shared/bank-connection.ts";
+import { parseChatInput, replyToChat } from "../_shared/panel-chat.ts";
 
 const resources = new Set(["shopping_items", "notes", "birthdays", "habits", "reminders", "expenses", "incomes"]);
 const editable = new Set(["shopping_items", "notes", "birthdays", "habits", "reminders"]);
@@ -15,6 +16,8 @@ const fields: Record<string, string> = {
   incomes: "id,booking_date,amount,description,currency",
 };
 const MAX_BODY = 4096;
+// El chat envía también los últimos mensajes de la conversación.
+const MAX_CHAT_BODY = 32768;
 function json(data: unknown, status = 200, headers: HeadersInit = {}) {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers } });
 }
@@ -31,9 +34,9 @@ function validText(value: unknown, max: number): string {
 function validId(value: unknown): number {
   const n = Number(value); if (!Number.isSafeInteger(n) || n <= 0) throw new Error("Identificador no válido."); return n;
 }
-async function body(request: Request): Promise<Record<string, unknown>> {
-  if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY) throw new Error("Solicitud demasiado grande.");
-  const text = await request.text(); if (text.length > MAX_BODY) throw new Error("Solicitud demasiado grande.");
+async function body(request: Request, maxBody = MAX_BODY): Promise<Record<string, unknown>> {
+  if (Number(request.headers.get("content-length") ?? 0) > maxBody) throw new Error("Solicitud demasiado grande.");
+  const text = await request.text(); if (text.length > maxBody) throw new Error("Solicitud demasiado grande.");
   const parsed = JSON.parse(text); if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Datos no válidos.");
   return parsed;
 }
@@ -69,7 +72,8 @@ Deno.serve(async (request) => {
       }
     }
     if (request.method === "POST") {
-      const input = await body(request);
+      const input = await body(request, resource === "chat" ? MAX_CHAT_BODY : MAX_BODY);
+      if (resource === "chat") return json(await replyToChat(db, parseChatInput(input), now), 200, cors);
       if (resource === "shopping_items" || resource === "notes") {
         const { error } = await db.from(resource).insert({ text: validText(input.text, resource === "notes" ? 1000 : 100) }); if (error) throw error;
       } else if (resource === "birthdays") {
