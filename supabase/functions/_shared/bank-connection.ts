@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
 import { functionUrl } from "./database.ts";
-import { type BankSession, createBankSession, startBankAuthorization } from "./enable-banking.ts";
+import { type BankSession, createBankSession, deleteBankSession, startBankAuthorization } from "./enable-banking.ts";
 
 const AUTHORIZATION_LINK_LIFETIME_MINUTES = 30;
 
@@ -54,4 +54,28 @@ export async function getActiveBankSession(db: SupabaseClient, now: Date): Promi
   if (error) throw new Error(`No se pudo leer la conexión con el banco: ${error.message}`);
   if (!data) return null;
   return { sessionId: data.session_id, accountUids: data.account_uids, validUntil: data.valid_until };
+}
+
+/** Distingue "nunca conectado o desconectado a propósito" (false) de "conectado pero caducado" (true). */
+export async function hasBankConnections(db: SupabaseClient): Promise<boolean> {
+  const { count, error } = await db.from("bank_sessions").select("session_id", { count: "exact", head: true });
+  if (error) throw new Error(`No se pudo leer la conexión con el banco: ${error.message}`);
+  return (count ?? 0) > 0;
+}
+
+/**
+ * Cierra en Enable Banking las conexiones vigentes y borra todas las guardadas. Devuelve cuántas seguían vigentes.
+ * Si Enable Banking falla no se borra nada, para poder repetir el comando.
+ */
+export async function disconnectBank(db: SupabaseClient, now: Date): Promise<number> {
+  const { data: sessions, error } = await db.from("bank_sessions").select("session_id, valid_until");
+  if (error) throw new Error(`No se pudo leer la conexión con el banco: ${error.message}`);
+  const activeSessions = sessions.filter((session) => new Date(session.valid_until) > now);
+  for (const session of activeSessions) await deleteBankSession(session.session_id);
+  if (sessions.length > 0) {
+    const { error: deleteError } = await db.from("bank_sessions").delete()
+      .in("session_id", sessions.map((session) => session.session_id));
+    if (deleteError) throw new Error(`No se pudo borrar la conexión con el banco: ${deleteError.message}`);
+  }
+  return activeSessions.length;
 }

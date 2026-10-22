@@ -22,3 +22,33 @@ Deno.test("una intención desconocida o una respuesta rara no hacen nada", () =>
   assertEquals(parseMessageIntent({ intent: "borrar_todo" }, NOW), { kind: "unknown" });
   assertEquals(parseMessageIntent(null, NOW), { kind: "unknown" });
 });
+
+Deno.test("los presupuestos y el balance van a su propia validación", () => {
+  assertEquals(
+    parseMessageIntent({ intent: "budget", action: "set", category: "Ocio", monthly_limit: 50 }, NOW),
+    { kind: "budget_set", category: "Ocio", monthlyLimit: 50 },
+  );
+  assertEquals(
+    parseMessageIntent({ intent: "balance_query", date_from: "2026-10-01", date_to: "2026-10-21" }, NOW),
+    { kind: "balance_query", dateFrom: "2026-10-01", dateTo: "2026-10-21" },
+  );
+});
+
+Deno.test("las funciones personales van a su propia validación", () => {
+  assertEquals(parseMessageIntent({ intent: "shopping", action: "add", items: ["pan"] }, NOW), {
+    kind: "shopping_add",
+    items: ["pan"],
+  });
+  assertEquals(parseMessageIntent({ intent: "note", action: "list" }, NOW), { kind: "note_list" });
+  // El año de nacimiento se valida contra el año en curso en Madrid.
+  assertEquals(
+    parseMessageIntent({ intent: "birthday", action: "save", name: "Ana", month: 1, day: 2, year: 2027 }, NOW).kind,
+    "invalid",
+  );
+  assertEquals(parseMessageIntent({ intent: "habit", action: "list" }, NOW), { kind: "habit_list" });
+  assertEquals(
+    parseMessageIntent({ intent: "calendar", action: "list", date_from: "2026-10-22", date_to: "2026-10-22" }, NOW)
+      .kind,
+    "calendar_list",
+  );
+});

@@ -75,3 +75,18 @@ export function formatMadridDateTime(instant: Date): string {
 export function madridDateDaysAgo(now: Date, days: number): string {
   return madridClock(new Date(now.getTime() - days * 86_400_000)).localDate;
 }
+
+/** Primer día del mes en curso en Madrid, por ejemplo "2026-10-01". */
+export function madridMonthStart(now: Date): string {
+  return `${madridClock(now).localDate.slice(0, 8)}01`;
+}
+
+/** Suma días a una fecha sin hora: "2026-10-31" + 1 = "2026-11-01". */
+export function addDaysToDate(date: string, days: number): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Día de la semana de una fecha sin hora: 0 domingo, 1 lunes… 6 sábado. */
+export function weekdayOf(date: string): number {
+  return new Date(`${date}T00:00:00Z`).getUTCDay();
+}

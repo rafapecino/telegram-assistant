@@ -3,6 +3,26 @@ import { requireEnv } from "./env.ts";
 const GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
 // Modelo open source. Groq usa el formato de la API de OpenAI: cambiar de proveedor es cambiar URL y modelo.
 const GROQ_MODEL = "openai/gpt-oss-120b";
+const GROQ_TRANSCRIPTION_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
+// Whisper turbo: solo transcribe (no traduce), que es lo único que hace falta, y es el más barato de Groq.
+const GROQ_TRANSCRIPTION_MODEL = "whisper-large-v3-turbo";
+
+/** Pasa a texto un audio en español. `fileName` debe llevar una extensión que Groq acepte (por ejemplo .ogg). */
+export async function transcribeAudio(audio: Blob, fileName: string): Promise<string> {
+  const form = new FormData();
+  form.append("file", audio, fileName);
+  form.append("model", GROQ_TRANSCRIPTION_MODEL);
+  form.append("language", "es");
+  form.append("response_format", "json");
+  const response = await fetch(GROQ_TRANSCRIPTION_URL, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${requireEnv("GROQ_API_KEY")}` },
+    body: form,
+  });
+  if (!response.ok) throw new Error(`Groq respondió ${response.status} al transcribir: ${await response.text()}`);
+  const { text } = await response.json();
+  return typeof text === "string" ? text.trim() : "";
+}
 
 /** Pide al modelo una respuesta en JSON y la devuelve ya parseada (sin validar: eso lo hace quien llama). */
 export async function askGroqForJson(systemPrompt: string, userMessage: string): Promise<unknown> {
