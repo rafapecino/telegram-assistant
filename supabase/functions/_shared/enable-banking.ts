@@ -141,6 +141,8 @@ export interface BankTransaction {
   value_date?: string | null;
   transaction_date?: string | null;
   creditor?: { name?: string | null } | null;
+  // Quien paga: en los ingresos es lo que identifica el movimiento (en los gastos lo es creditor, quien cobra).
+  debtor?: { name?: string | null } | null;
   remittance_information?: string[] | null;
 }
 

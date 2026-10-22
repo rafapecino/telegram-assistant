@@ -46,12 +46,15 @@ export function maskCardNumbers(text: string): string {
   return text.replace(CARD_NUMBER_PATTERN, (cardNumber) => `****${cardNumber.slice(-4)}`);
 }
 
-/** Convierte un movimiento del banco en gasto. Ingresos y movimientos sin asentar se ignoran. */
-export function toExpenseCandidate(transaction: BankTransaction, accountUid: string): ExpenseCandidate | null {
-  if (transaction.status !== "BOOK" || transaction.credit_debit_indicator !== "DBIT") return null;
+/** `counterparty` es quien cobra en un gasto o quien paga en un ingreso. */
+function toCandidate(
+  transaction: BankTransaction,
+  accountUid: string,
+  counterparty: string | null | undefined,
+): ExpenseCandidate {
   const bookingDate = transaction.booking_date ?? transaction.value_date ?? transaction.transaction_date;
   if (!bookingDate) throw new Error(`Movimiento sin fecha: ${JSON.stringify(transaction)}`);
-  const description = transaction.creditor?.name || transaction.remittance_information?.join(" ") || "Sin descripción";
+  const description = counterparty || transaction.remittance_information?.join(" ") || "Sin descripción";
   return {
     account_uid: accountUid,
     booking_date: bookingDate,
@@ -59,6 +62,18 @@ export function toExpenseCandidate(transaction: BankTransaction, accountUid: str
     currency: transaction.transaction_amount.currency,
     description: maskCardNumbers(description),
   };
+}
+
+/** Convierte un movimiento del banco en gasto. Ingresos y movimientos sin asentar se ignoran. */
+export function toExpenseCandidate(transaction: BankTransaction, accountUid: string): ExpenseCandidate | null {
+  if (transaction.status !== "BOOK" || transaction.credit_debit_indicator !== "DBIT") return null;
+  return toCandidate(transaction, accountUid, transaction.creditor?.name);
+}
+
+/** Convierte un movimiento del banco en ingreso, para el balance. Cargos y movimientos sin asentar se ignoran. */
+export function toIncomeCandidate(transaction: BankTransaction, accountUid: string): ExpenseCandidate | null {
+  if (transaction.status !== "BOOK" || transaction.credit_debit_indicator !== "CRDT") return null;
+  return toCandidate(transaction, accountUid, transaction.debtor?.name);
 }
 
 /**
@@ -110,19 +125,32 @@ async function excludeAlreadyImported(db: SupabaseClient, expenses: NewExpense[]
   return expenses.filter((expense) => !importedKeys.has(expense.transaction_key));
 }
 
-async function fetchCandidateExpenses(accountUids: string[], dateFrom: string): Promise<NewExpense[]> {
-  const candidates: ExpenseCandidate[] = [];
+/** Gastos e ingresos de los mismos movimientos. Los ingresos tienen la misma forma que los gastos, sin categoría. */
+async function fetchCandidates(
+  accountUids: string[],
+  dateFrom: string,
+): Promise<{ expenses: NewExpense[]; incomes: NewExpense[] }> {
+  const expenses: ExpenseCandidate[] = [];
+  const incomes: ExpenseCandidate[] = [];
   for (const accountUid of accountUids) {
-    const transactions = await fetchTransactions(accountUid, dateFrom);
-    candidates.push(
-      ...transactions.map((transaction) => toExpenseCandidate(transaction, accountUid))
-        .filter((candidate): candidate is ExpenseCandidate => candidate !== null),
-    );
+    for (const transaction of await fetchTransactions(accountUid, dateFrom)) {
+      const expense = toExpenseCandidate(transaction, accountUid);
+      if (expense) expenses.push(expense);
+      const income = toIncomeCandidate(transaction, accountUid);
+      if (income) incomes.push(income);
+    }
   }
-  return assignTransactionKeys(candidates);
+  return { expenses: assignTransactionKeys(expenses), incomes: assignTransactionKeys(incomes) };
 }
 
-/** Importa los gastos recientes del banco, los clasifica y devuelve cuántos eran nuevos. */
+async function saveIncomes(db: SupabaseClient, incomes: NewExpense[]): Promise<void> {
+  if (incomes.length === 0) return;
+  // Los ingresos no se clasifican, así que no hace falta filtrar antes los ya importados: se ignoran al guardar.
+  const { error } = await db.from("incomes").upsert(incomes, { onConflict: "transaction_key", ignoreDuplicates: true });
+  if (error) throw new Error(`No se pudieron guardar los ingresos: ${error.message}`);
+}
+
+/** Importa los gastos recientes del banco (y los ingresos, para el balance) y devuelve cuántos gastos eran nuevos. */
 export async function importRecentExpenses(db: SupabaseClient, now: Date): Promise<number> {
   const session = await getActiveBankSession(db, now);
   if (!session) {
@@ -131,8 +159,9 @@ export async function importRecentExpenses(db: SupabaseClient, now: Date): Promi
     if (!(await hasBankConnections(db))) return 0;
     throw new Error("No hay ninguna conexión con el banco activa. Conéctalo con /conectar_banco.");
   }
-  const candidates = await fetchCandidateExpenses(session.accountUids, madridDateDaysAgo(now, IMPORT_WINDOW_DAYS));
-  const newExpenses = await excludeAlreadyImported(db, candidates);
+  const { expenses, incomes } = await fetchCandidates(session.accountUids, madridDateDaysAgo(now, IMPORT_WINDOW_DAYS));
+  await saveIncomes(db, incomes);
+  const newExpenses = await excludeAlreadyImported(db, expenses);
   if (newExpenses.length === 0) return 0;
 
   const categories = await categorizeExpenses(newExpenses);

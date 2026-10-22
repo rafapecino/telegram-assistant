@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
+import { checkBudgetAlerts } from "../_shared/budgets.ts";
 import { createAdminClient, functionUrl, getInternalSecret } from "../_shared/database.ts";
 import { errorMessage } from "../_shared/env.ts";
 import { importRecentExpenses, sendWeeklySummary } from "../_shared/expenses.ts";
@@ -9,17 +10,24 @@ import { sendTelegramMessage, setTelegramWebhook } from "../_shared/telegram.ts"
 const DAILY_IMPORT_HOUR = 8;
 const WEEKLY_SUMMARY_HOUR = 20;
 
-async function importAndSummarize(db: SupabaseClient, now: Date): Promise<string> {
+/** Tras cada importación se revisan los presupuestos, porque es cuando cambia lo gastado. */
+async function importAndCheckBudgets(db: SupabaseClient, now: Date): Promise<string> {
   const importedCount = await importRecentExpenses(db, now);
+  const alertCount = await checkBudgetAlerts(db, now);
+  return `Importados ${importedCount} gastos y enviados ${alertCount} avisos de presupuesto`;
+}
+
+async function importAndSummarize(db: SupabaseClient, now: Date): Promise<string> {
+  const result = await importAndCheckBudgets(db, now);
   await sendWeeklySummary(db, now);
-  return `Importados ${importedCount} gastos y enviado el resumen`;
+  return `${result}, y enviado el resumen`;
 }
 
 // pg_cron funciona en UTC: la hora de Madrid se comprueba aquí para no desfasarse con el cambio de horario.
 async function runHourlyJobs(db: SupabaseClient, now: Date): Promise<string> {
   const clock = madridClock(now);
-  if (clock.isSunday && clock.hour === WEEKLY_SUMMARY_HOUR) return importAndSummarize(db, now);
-  if (clock.hour === DAILY_IMPORT_HOUR) return `Importados ${await importRecentExpenses(db, now)} gastos`;
+  if (clock.isSunday && clock.hour === WEEKLY_SUMMARY_HOUR) return await importAndSummarize(db, now);
+  if (clock.hour === DAILY_IMPORT_HOUR) return await importAndCheckBudgets(db, now);
   return "Nada que hacer a esta hora";
 }
 
@@ -30,7 +38,7 @@ async function runJob(db: SupabaseClient, job: string, now: Date): Promise<strin
     case "hourly":
       return runHourlyJobs(db, now);
     case "import-expenses":
-      return `Importados ${await importRecentExpenses(db, now)} gastos`;
+      return importAndCheckBudgets(db, now);
     case "weekly-summary":
       return importAndSummarize(db, now);
     case "setup-telegram-webhook":
