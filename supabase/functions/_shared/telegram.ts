@@ -31,9 +31,24 @@ export async function sendTelegramMessage(text: string, buttons?: TelegramButton
   });
 }
 
-/** Cambia el texto de un mensaje ya enviado. Sin `reply_markup`, Telegram le quita los botones. */
-export async function editTelegramMessage(messageId: number, text: string): Promise<void> {
-  await callTelegram("editMessageText", { chat_id: ownerChatId(), message_id: messageId, text });
+/** Cambia el texto de un mensaje ya enviado. Sin `buttons`, Telegram le quita los botones. */
+export async function editTelegramMessage(
+  messageId: number,
+  text: string,
+  buttons?: TelegramButton[][],
+): Promise<void> {
+  await callTelegram("editMessageText", {
+    chat_id: ownerChatId(),
+    message_id: messageId,
+    text,
+    ...(buttons ? { reply_markup: { inline_keyboard: buttons } } : {}),
+  });
+}
+
+/** Respuesta del bot: texto y, opcionalmente, botones debajo. */
+export interface BotReply {
+  text: string;
+  buttons?: TelegramButton[][];
 }
 
 /** Quita el "cargando" del botón pulsado y muestra un aviso breve. */
