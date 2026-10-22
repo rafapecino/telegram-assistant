@@ -14,12 +14,12 @@ const REPEAT_LABELS: Record<Repeat, string> = {
 /** Formato que el modelo debe devolver cuando el mensaje pide un recordatorio (ver message-intent.ts). */
 export const REMINDER_INTENT_FORMAT =
   'Pide un recordatorio: {"intent": "reminder", "text": "<qué hay que recordar, breve>", ' +
-  '"local_datetime": "YYYY-MM-DDTHH:mm", "repeat": null}. local_datetime es la hora local de Madrid de la primera vez; ' +
+  '"local_datetime": "YYYY-MM-DDTHH:mm", "repeat": null, "advance_minutes": null}. local_datetime es la hora local de Madrid de la primera vez; ' +
   'sin hora indicada, usa las 09:00. Si se repite, repeat es "daily" (cada día), "weekdays" (de lunes a viernes), ' +
-  '"weekly" (cada semana) o "monthly" (cada mes); si no, null.';
+  '"weekly" (cada semana) o "monthly" (cada mes); si no, null. advance_minutes es 30 o 1440 solo si la persona pide expresamente ese aviso previo; si no, null.';
 
 export type ReminderRequest =
-  | { kind: "reminder"; text: string; remindAt: Date; repeat: Repeat | null }
+  | { kind: "reminder"; text: string; remindAt: Date; repeat: Repeat | null; advanceMinutes?: 30 | 1440 }
   | { kind: "invalid"; message: string };
 
 function invalidReminder(reason: string): ReminderRequest {
@@ -42,12 +42,14 @@ function atSameLocalTime(instant: Date, date: string): Date {
 
 /** Valida la respuesta del modelo: puede equivocarse y no queremos guardar basura. */
 export function parseReminderRequest(raw: unknown, now: Date): ReminderRequest {
-  const candidate = raw as { text?: unknown; local_datetime?: unknown; repeat?: unknown } | null;
+  const candidate = raw as { text?: unknown; local_datetime?: unknown; repeat?: unknown; advance_minutes?: unknown } | null;
   if (typeof candidate?.text !== "string" || candidate.text.trim() === "") {
     return invalidReminder("no he entendido qué quieres que te recuerde");
   }
   const repeat = candidate.repeat ?? null;
   if (repeat !== null && !isRepeat(repeat)) return invalidReminder("no he entendido cada cuánto se repite");
+  const advance = candidate.advance_minutes ?? null;
+  if (advance !== null && advance !== 30 && advance !== 1440) return invalidReminder("no he entendido cuándo avisarte antes");
   let remindAt: Date;
   try {
     remindAt = madridLocalToUtc(String(candidate.local_datetime));
@@ -61,7 +63,15 @@ export function parseReminderRequest(raw: unknown, now: Date): ReminderRequest {
     remindAt = atSameLocalTime(remindAt, date);
   }
   if (remindAt <= now) return invalidReminder("la fecha que he entendido ya ha pasado");
-  return { kind: "reminder", text: candidate.text.trim(), remindAt, repeat };
+  return { kind: "reminder", text: candidate.text.trim(), remindAt, repeat,
+    ...(advance === null ? {} : { advanceMinutes: advance as 30 | 1440 }) };
+}
+
+export function suggestAdvanceMinutes(text: string, remindAt: Date, now: Date): 30 | 1440 {
+  if (/reuni[oó]n|cita|llamada|videollamada|clase/i.test(text)) return 30;
+  if (/cumple|aniversario|viaje|vacaciones|concierto/i.test(text) ||
+    remindAt.getTime() - now.getTime() >= 7 * 86_400_000) return 1440;
+  return 30;
 }
 
 /** Para la confirmación: "" si no se repite, " y después cada semana" si se repite. */
@@ -113,10 +123,16 @@ export async function saveReminder(
   text: string,
   remindAt: Date,
   repeat: Repeat | null = null,
+  advanceMinutes?: 30 | 1440,
 ): Promise<void> {
+  const now = new Date();
+  const minutes = advanceMinutes ?? suggestAdvanceMinutes(text, remindAt, now);
+  const advanceAt = remindAt.getTime() - minutes * 60_000;
   const { error } = await db.from("reminders").insert({
     text,
     remind_at: remindAt.toISOString(),
+    advance_minutes: minutes,
+    advance_at: advanceAt > now.getTime() ? new Date(advanceAt).toISOString() : null,
     repeat,
     repeat_day: repeat === "monthly" ? Number(madridClock(remindAt).localDate.slice(8)) : null,
   });
@@ -174,23 +190,42 @@ interface DueReminder {
   remind_at: string;
   repeat: Repeat | null;
   repeat_day: number | null;
+  advance_minutes: 30 | 1440;
 }
 
 async function reschedule(db: SupabaseClient, reminder: DueReminder & { repeat: Repeat }, now: Date): Promise<void> {
   const next = nextOccurrenceAfter(new Date(reminder.remind_at), reminder.repeat, reminder.repeat_day, now);
   const { error } = await db.from("reminders")
-    .update({ remind_at: next.toISOString(), sent_at: null })
+    .update({ remind_at: next.toISOString(), sent_at: null,
+      advance_at: next.getTime() - reminder.advance_minutes * 60_000 >= now.getTime()
+        ? new Date(next.getTime() - reminder.advance_minutes * 60_000).toISOString() : null,
+      advance_notified_at: null })
     .eq("id", reminder.id);
   if (error) throw new Error(`No se pudo programar la siguiente vez de "${reminder.text}": ${error.message}`);
 }
 
 export async function sendDueReminders(db: SupabaseClient, now: Date): Promise<number> {
+  const { data: advance, error: advanceError } = await db.from("reminders")
+    .update({ advance_notified_at: now.toISOString() })
+    .is("sent_at", null).is("advance_notified_at", null)
+    .not("advance_at", "is", null).lte("advance_at", now.toISOString())
+    .gt("remind_at", now.toISOString())
+    .select("id, text, remind_at");
+  if (advanceError) throw new Error(`No se pudieron leer los avisos previos: ${advanceError.message}`);
+  for (const reminder of advance ?? []) {
+    try {
+      await sendTelegramMessage(`🔔 Aviso previo: ${reminder.text}\n📅 ${formatMadridDateTime(new Date(reminder.remind_at))}`);
+    } catch (sendError) {
+      await db.from("reminders").update({ advance_notified_at: null }).eq("id", reminder.id);
+      throw sendError;
+    }
+  }
   // Se marcan como enviados antes de enviarlos para que dos ejecuciones solapadas no los dupliquen.
   const { data: dueReminders, error } = await db.from("reminders")
     .update({ sent_at: now.toISOString() })
     .is("sent_at", null)
     .lte("remind_at", now.toISOString())
-    .select("id, text, remind_at, repeat, repeat_day");
+    .select("id, text, remind_at, repeat, repeat_day, advance_minutes");
   if (error) throw new Error(`No se pudieron leer los recordatorios pendientes: ${error.message}`);
 
   for (const reminder of dueReminders as DueReminder[]) {

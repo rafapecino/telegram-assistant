@@ -36,6 +36,7 @@ export function parseHabitRequest(raw: unknown): HabitRequest {
 export interface Habit {
   id: number;
   name: string;
+  scheduled_days?: number[];
 }
 
 export interface HabitCheck {
@@ -45,22 +46,28 @@ export interface HabitCheck {
 }
 
 /** Días seguidos cumplidos hasta hoy. Si hoy aún no se ha contestado, cuenta hasta ayer: la racha no se rompe. */
-export function currentStreak(checks: HabitCheck[], today: string): number {
+const ALL_DAYS = [1, 2, 3, 4, 5, 6, 7];
+function weekday(date: string): number { return new Date(`${date}T12:00:00Z`).getUTCDay() || 7; }
+
+export function currentStreak(checks: HabitCheck[], today: string, scheduledDays = ALL_DAYS): number {
   const doneDays = new Set(checks.filter((check) => check.done).map((check) => check.date));
   const answeredToday = checks.some((check) => check.date === today);
   let day = answeredToday ? today : addDaysToDate(today, -1);
   let streak = 0;
-  while (doneDays.has(day)) {
-    streak++;
+  for (let count = 0; count < 366; count++) {
+    if (scheduledDays.includes(weekday(day))) {
+      if (!doneDays.has(day)) break;
+      streak++;
+    }
     day = addDaysToDate(day, -1);
   }
   return streak;
 }
 
 /** Cuántos de los últimos 7 días (hoy incluido) se ha cumplido. */
-export function doneLastWeek(checks: HabitCheck[], today: string): number {
+export function doneLastWeek(checks: HabitCheck[], today: string, scheduledDays = ALL_DAYS): number {
   const weekStart = addDaysToDate(today, -6);
-  return checks.filter((check) => check.done && check.date >= weekStart && check.date <= today).length;
+  return checks.filter((check) => check.done && check.date >= weekStart && check.date <= today && scheduledDays.includes(weekday(check.date))).length;
 }
 
 export function habitButtons(habitId: number, date: string): TelegramButton[][] {
@@ -89,15 +96,16 @@ export function formatHabitList(habits: Habit[], checks: HabitCheck[], today: st
   if (habits.length === 0) return "No sigues ningún hábito. Prueba con «quiero leer cada día».";
   const lines = habits.map((habit) => {
     const own = checks.filter((check) => check.habit_id === habit.id);
-    return `• ${habit.name}: racha de ${streakText(currentStreak(own, today))} · ${
-      doneLastWeek(own, today)
-    } de los últimos 7 días`;
+    const days = habit.scheduled_days ?? ALL_DAYS;
+    return `• ${habit.name}: racha de ${streakText(currentStreak(own, today, days))} · ${
+      doneLastWeek(own, today, days)
+    } de ${days.length} días previstos esta semana`;
   });
-  return [`Tus hábitos (te pregunto cada día a las ${HABIT_QUESTION_HOUR}:00):`, ...lines].join("\n");
+  return [`Tus hábitos (te pregunto los días elegidos a las ${HABIT_QUESTION_HOUR}:00):`, ...lines].join("\n");
 }
 
 export async function listHabits(db: SupabaseClient): Promise<Habit[]> {
-  const { data, error } = await db.from("habits").select("id, name").order("created_at");
+  const { data, error } = await db.from("habits").select("id, name, scheduled_days").order("created_at");
   if (error) throw new Error(`No se pudieron leer los hábitos: ${error.message}`);
   return data;
 }
@@ -125,7 +133,7 @@ export async function recordHabit(db: SupabaseClient, habit: Habit, date: string
     .upsert({ habit_id: habit.id, date, done, answered_at: new Date().toISOString() }, { onConflict: "habit_id,date" });
   if (error) throw new Error(`No se pudo apuntar el hábito: ${error.message}`);
   const checks = (await loadChecks(db, date)).filter((check) => check.habit_id === habit.id);
-  return currentStreak(checks, date);
+  return currentStreak(checks, date, habit.scheduled_days ?? ALL_DAYS);
 }
 
 /** A las 21:00 pregunta por cada hábito que aún no se haya apuntado hoy. Devuelve cuántas preguntas ha hecho. */
@@ -136,7 +144,9 @@ export async function askHabits(db: SupabaseClient, now: Date): Promise<number> 
   const answered = new Set(
     (await loadChecks(db, today)).filter((check) => check.date === today).map((check) => check.habit_id),
   );
-  const pending = habits.filter((habit) => !answered.has(habit.id));
+  const pending = habits.filter((habit) =>
+    (habit.scheduled_days ?? ALL_DAYS).includes(weekday(today)) && !answered.has(habit.id)
+  );
   for (const habit of pending) {
     await sendTelegramMessage(`¿Has hecho «${habit.name}» hoy?`, habitButtons(habit.id, today));
   }

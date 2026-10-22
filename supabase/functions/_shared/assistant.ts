@@ -72,7 +72,7 @@ export async function replyToText(
     case "invalid":
       return intent.message;
     case "reminder":
-      await saveReminder(db, intent.text, intent.remindAt, intent.repeat);
+      await saveReminder(db, intent.text, intent.remindAt, intent.repeat, intent.advanceMinutes);
       return `Te recordaré "${intent.text}" el ${formatMadridDateTime(intent.remindAt)}${
         describeRepeat(intent.repeat)
       }.`;
