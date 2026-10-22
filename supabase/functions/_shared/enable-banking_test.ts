@@ -1,16 +1,6 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
-import { createEnableBankingJwt, pemToPkcs8Bytes } from "./enable-banking.ts";
-
-async function generateTestKeyPair(): Promise<{ pem: string; publicKey: CryptoKey }> {
-  const keyPair = await crypto.subtle.generateKey(
-    { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
-    true,
-    ["sign", "verify"],
-  );
-  const pkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", keyPair.privateKey));
-  const base64 = btoa(String.fromCharCode(...pkcs8)).match(/.{1,64}/g)!.join("\n");
-  return { pem: `-----BEGIN PRIVATE KEY-----\n${base64}\n-----END PRIVATE KEY-----\n`, publicKey: keyPair.publicKey };
-}
+import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1.0.19";
+import { createEnableBankingJwt, deleteBankSession, EnableBankingError, pemToPkcs8Bytes } from "./enable-banking.ts";
+import { describeRequests, generateTestKeyPair, withEnableBanking } from "./testing.ts";
 
 function base64UrlDecode(value: string): Uint8Array<ArrayBuffer> {
   const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
@@ -53,4 +43,25 @@ Deno.test("rechaza claves PKCS#1 con un mensaje claro", () => {
     Error,
     "PKCS#8",
   );
+});
+
+Deno.test("cerrar la sesión hace DELETE /sessions/{id} firmado con el JWT de la aplicación", async () => {
+  await withEnableBanking(() => new Response("{}"), async (requests) => {
+    await deleteBankSession("sesion-1");
+    assertEquals(describeRequests(requests), ["DELETE /sessions/sesion-1"]);
+    assertEquals(requests[0].headers.get("authorization")?.startsWith("Bearer "), true);
+  });
+});
+
+Deno.test("si Enable Banking ya no tiene la sesión (404), se da por cerrada", async () => {
+  await withEnableBanking(() => Response.json({ error: "NOT_FOUND" }, { status: 404 }), async () => {
+    await deleteBankSession("sesion-1");
+  });
+});
+
+Deno.test("cualquier otro error al cerrar la sesión se propaga con su código", async () => {
+  await withEnableBanking(() => Response.json({ error: "ERROR", message: "caído" }, { status: 500 }), async () => {
+    const error = await assertRejects(() => deleteBankSession("sesion-1"), EnableBankingError);
+    assertEquals(error.status, 500);
+  });
 });

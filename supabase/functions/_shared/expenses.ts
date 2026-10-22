@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
-import { getActiveBankSession } from "./bank-connection.ts";
+import { getActiveBankSession, hasBankConnections } from "./bank-connection.ts";
 import { type BankTransaction, fetchTransactions } from "./enable-banking.ts";
 import { askGroqForJson } from "./groq.ts";
 import { madridDateDaysAgo } from "./madrid-time.ts";
@@ -125,7 +125,12 @@ async function fetchCandidateExpenses(accountUids: string[], dateFrom: string): 
 /** Importa los gastos recientes del banco, los clasifica y devuelve cuántos eran nuevos. */
 export async function importRecentExpenses(db: SupabaseClient, now: Date): Promise<number> {
   const session = await getActiveBankSession(db, now);
-  if (!session) throw new Error("No hay ninguna conexión con el banco activa. Conéctalo con /conectar_banco.");
+  if (!session) {
+    // Sin conexiones guardadas (nunca conectado o desconectado con /desconectar_banco) no hay nada de qué avisar.
+    // Si las hay pero han caducado, sí: hay que volver a conectar.
+    if (!(await hasBankConnections(db))) return 0;
+    throw new Error("No hay ninguna conexión con el banco activa. Conéctalo con /conectar_banco.");
+  }
   const candidates = await fetchCandidateExpenses(session.accountUids, madridDateDaysAgo(now, IMPORT_WINDOW_DAYS));
   const newExpenses = await excludeAlreadyImported(db, candidates);
   if (newExpenses.length === 0) return 0;

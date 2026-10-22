@@ -64,6 +64,9 @@ y su validación, regístralo en `buildIntentPrompt` y `parseMessageIntent`, y r
 
 6. En Telegram, escribe `/conectar_banco` al bot y autoriza el acceso desde el banco.
 
+   Para cortar el acceso, escribe `/desconectar_banco`: cierra la sesión en Enable Banking, que pide al banco retirar
+   el permiso, y borra la conexión guardada. Los gastos ya importados se quedan.
+
 ## Lanzar una tarea a mano
 
 ```sql

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
-import { createBankLink } from "../_shared/bank-connection.ts";
+import { createBankLink, disconnectBank } from "../_shared/bank-connection.ts";
 import { createAdminClient, getInternalSecret } from "../_shared/database.ts";
 import { errorMessage } from "../_shared/env.ts";
 import { findExpenses, formatExpenseReport } from "../_shared/expense-queries.ts";
@@ -13,6 +13,7 @@ const HELP_TEXT = [
   '• Recordatorios: escribe, por ejemplo, "recuérdame llamar a Juan el jueves a las 17:00".',
   '• Consultar tus gastos: por ejemplo, "¿cuánto he gastado esta semana?" o "gastos de ayer en restaurantes".',
   "• /conectar_banco: conecta tu cuenta del banco para importar los gastos cada día a las 8:00.",
+  "• /desconectar_banco: corta el acceso a tu banco. Los gastos ya importados se quedan.",
   "• Los domingos a las 20:00 te mando el resumen de gastos de la semana.",
 ].join("\n");
 
@@ -31,11 +32,21 @@ async function replyToMessage(db: SupabaseClient, text: string, now: Date): Prom
   }
 }
 
+function describeDisconnection(closedConnections: number): string {
+  if (closedConnections === 0) return "No había ninguna conexión con el banco activa.";
+  // Enable Banking cierra el permiso en el banco "si es posible": por eso se dice que se ha pedido, no que esté hecho.
+  return [
+    "Banco desconectado: he cerrado el acceso en Enable Banking y he pedido al banco que retire el permiso.",
+    "Ya no importaré más gastos; los que ya tengo siguen guardados. Para volver a conectarlo, usa /conectar_banco.",
+  ].join("\n");
+}
+
 async function buildReply(db: SupabaseClient, text: string, now: Date): Promise<string> {
   if (text === "/start" || text === "/ayuda") return HELP_TEXT;
   if (text === "/conectar_banco") {
     return `Autoriza el acceso desde tu banco en este enlace (caduca en 30 minutos):\n${await createBankLink(db, now)}`;
   }
+  if (text === "/desconectar_banco") return describeDisconnection(await disconnectBank(db, now));
   return replyToMessage(db, text, now);
 }
 
