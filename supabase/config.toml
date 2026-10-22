@@ -13,3 +13,6 @@ verify_jwt = false
 
 [functions.scheduled-jobs]
 verify_jwt = false
+
+[functions.panel-api]
+verify_jwt = false
