@@ -1,10 +1,11 @@
-// Respuestas de las funciones que no dependen del banco: compra, notas, cumpleaños, hábitos y agenda (calendario y
-// recordatorios).
+// Respuestas de las funciones que no dependen del banco: compra, notas, cumpleaños, hábitos, peso y agenda
+// (calendario, recordatorios, hábitos y cumpleaños del día).
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
 import {
   type BirthdayRequest,
   deleteBirthday,
   describeBirthdayDate,
+  formatBirthdaysBetween,
   formatUpcomingBirthdays,
   listBirthdays,
   saveBirthday,
@@ -22,6 +23,7 @@ import {
   deleteHabit,
   describeAnswer,
   formatHabitList,
+  formatHabitsForDay,
   HABIT_QUESTION_HOUR,
   type HabitRequest,
   listHabits,
@@ -55,6 +57,7 @@ import {
 } from "./shopping.ts";
 import type { BotReply } from "./telegram.ts";
 import { matchByName } from "./text.ts";
+import { describeSavedWeight, formatWeightTrend, listWeights, saveWeight, type WeightRequest } from "./weight.ts";
 
 async function replyToShopping(db: SupabaseClient, request: ShoppingRequest): Promise<BotReply> {
   switch (request.kind) {
@@ -129,23 +132,31 @@ async function replyToHabit(db: SupabaseClient, request: HabitRequest, today: st
   return describeAnswer(habit, request.done, await recordHabit(db, habit, today, request.done));
 }
 
-/** "¿Qué tengo hoy?": recordatorios y eventos del calendario de esos días. */
-async function replyToAgenda(db: SupabaseClient, dateFrom: string, dateTo: string): Promise<string> {
-  const reminders = formatRemindersBetween(await listRemindersBetween(db, dateFrom, dateTo));
-  let events: string;
+async function describeEvents(db: SupabaseClient, dateFrom: string, dateTo: string): Promise<string> {
   try {
-    events = formatEvents(await listEvents(db, dateFrom, dateTo));
+    return formatEvents(await listEvents(db, dateFrom, dateTo));
   } catch (error) {
-    // Sin calendario conectado se enseñan igualmente los recordatorios.
+    // Sin calendario conectado se enseña igualmente lo demás.
     if (!(error instanceof CalendarNotConnectedError)) throw error;
-    events = error.message;
+    return error.message;
   }
-  return `${reminders}\n\n${events}`;
 }
 
-async function replyToCalendar(db: SupabaseClient, request: CalendarRequest): Promise<string> {
+/** "¿Qué tengo hoy?": recordatorios, hábitos, cumpleaños y eventos del calendario de esos días. */
+async function replyToAgenda(db: SupabaseClient, dateFrom: string, dateTo: string, today: string): Promise<string> {
+  const sections = [formatRemindersBetween(await listRemindersBetween(db, dateFrom, dateTo))];
+  // Los hábitos se repiten casi a diario: solo se enseñan al preguntar por un día concreto.
+  if (dateFrom === dateTo) {
+    sections.push(formatHabitsForDay(await listHabits(db), await loadChecks(db, today), dateFrom, today));
+  }
+  sections.push(formatBirthdaysBetween(await listBirthdays(db), dateFrom, dateTo));
+  sections.push(await describeEvents(db, dateFrom, dateTo));
+  return sections.filter(Boolean).join("\n\n");
+}
+
+async function replyToCalendar(db: SupabaseClient, request: CalendarRequest, today: string): Promise<string> {
   if (request.kind === "invalid") return request.message;
-  if (request.kind === "calendar_list") return replyToAgenda(db, request.dateFrom, request.dateTo);
+  if (request.kind === "calendar_list") return replyToAgenda(db, request.dateFrom, request.dateTo, today);
   try {
     await createEvent(db, request);
     return describeCreatedEvent(request);
@@ -156,11 +167,19 @@ async function replyToCalendar(db: SupabaseClient, request: CalendarRequest): Pr
   }
 }
 
+async function replyToWeight(db: SupabaseClient, request: WeightRequest): Promise<string> {
+  if (request.kind === "invalid") return request.message;
+  if (request.kind === "weight_list") return formatWeightTrend(await listWeights(db));
+  await saveWeight(db, request.date, request.kg);
+  return describeSavedWeight(await listWeights(db), request.date, request.kg);
+}
+
 const SHOPPING_KINDS = new Set(["shopping_add", "shopping_remove", "shopping_list", "shopping_clear"]);
 const NOTE_KINDS = new Set(["note_save", "note_ask", "note_list", "note_delete"]);
 const BIRTHDAY_KINDS = new Set(["birthday_save", "birthday_delete", "birthday_list"]);
 const HABIT_KINDS = new Set(["habit_create", "habit_delete", "habit_log", "habit_list"]);
 const CALENDAR_KINDS = new Set(["calendar_list", "calendar_create", "calendar_create_all_day"]);
+const WEIGHT_KINDS = new Set(["weight_save", "weight_list"]);
 
 /** Responde a una intención de estas funciones, o devuelve null si no es de ninguna. */
 export async function replyToPersonalIntent(
@@ -173,7 +192,8 @@ export async function replyToPersonalIntent(
   if (NOTE_KINDS.has(intent.kind)) return { text: await replyToNote(db, intent as NoteRequest) };
   if (BIRTHDAY_KINDS.has(intent.kind)) return { text: await replyToBirthday(db, intent as BirthdayRequest, today) };
   if (HABIT_KINDS.has(intent.kind)) return { text: await replyToHabit(db, intent as HabitRequest, today) };
-  if (CALENDAR_KINDS.has(intent.kind)) return { text: await replyToCalendar(db, intent as CalendarRequest) };
+  if (CALENDAR_KINDS.has(intent.kind)) return { text: await replyToCalendar(db, intent as CalendarRequest, today) };
+  if (WEIGHT_KINDS.has(intent.kind)) return { text: await replyToWeight(db, intent as WeightRequest) };
   return null;
 }
 

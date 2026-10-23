@@ -64,6 +64,18 @@ export function currentStreak(checks: HabitCheck[], today: string, scheduledDays
   return streak;
 }
 
+/** Hábitos que tocan ese día, para "¿qué tengo hoy?". Hecho o pendiente solo hasta hoy; "" si no toca ninguno. */
+export function formatHabitsForDay(habits: Habit[], checks: HabitCheck[], date: string, today: string): string {
+  const due = habits.filter((habit) => (habit.scheduled_days ?? ALL_DAYS).includes(weekday(date)));
+  if (due.length === 0) return "";
+  const lines = due.map((habit) => {
+    if (date > today) return `• ${habit.name}`;
+    const done = checks.some((check) => check.habit_id === habit.id && check.date === date && check.done);
+    return `• ${habit.name}: ${done ? "✅ hecho" : "pendiente"}`;
+  });
+  return ["Hábitos:", ...lines].join("\n");
+}
+
 /** Cuántos de los últimos 7 días (hoy incluido) se ha cumplido. */
 export function doneLastWeek(checks: HabitCheck[], today: string, scheduledDays = ALL_DAYS): number {
   const weekStart = addDaysToDate(today, -6);

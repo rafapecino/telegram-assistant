@@ -6,14 +6,15 @@ import { parseReminderRequest, saveReminder } from "../_shared/reminders.ts";
 import { recordHabit } from "../_shared/habits.ts";
 import { createBankLink, disconnectBank, hasBankConnections } from "../_shared/bank-connection.ts";
 import { parseChatInput, replyToChat } from "../_shared/panel-chat.ts";
+import { parseWeightRequest, saveWeight } from "../_shared/weight.ts";
 
-const resources = new Set(["shopping_items", "notes", "birthdays", "habits", "reminders", "expenses", "incomes"]);
-const editable = new Set(["shopping_items", "notes", "birthdays", "habits", "reminders"]);
+const resources = new Set(["shopping_items", "notes", "birthdays", "habits", "reminders", "expenses", "incomes", "weight_entries"]);
+const editable = new Set(["shopping_items", "notes", "birthdays", "habits", "reminders", "weight_entries"]);
 const fields: Record<string, string> = {
   shopping_items: "id,text,created_at", notes: "id,text,created_at",
   birthdays: "id,name,day,month,year", habits: "id,name,created_at,scheduled_days",
   reminders: "id,text,remind_at,repeat,sent_at,advance_minutes", expenses: "id,booking_date,amount,category,description,currency",
-  incomes: "id,booking_date,amount,description,currency",
+  incomes: "id,booking_date,amount,description,currency", weight_entries: "id,date,kg",
 };
 const MAX_BODY = 4096;
 // El chat envía también los últimos mensajes de la conversación.
@@ -61,6 +62,7 @@ Deno.serve(async (request) => {
       if (resources.has(resource)) {
         let query = db.from(resource).select(fields[resource]).limit(150);
         if (resource === "reminders") query = query.is("sent_at", null).order("remind_at");
+        else if (resource === "weight_entries") query = query.order("date", { ascending: false });
         else if (resource === "expenses" || resource === "incomes") query = query.gte("booking_date", url.searchParams.get("from") ?? madridMonthStart(now)).order("booking_date", { ascending: false });
         else query = query.order("id", { ascending: false });
         const { data, error } = await query; if (error) throw error; return json(data, 200, cors);
@@ -109,6 +111,10 @@ Deno.serve(async (request) => {
           advance_minutes: input.advance_minutes ?? null }, now);
         if (reminder.kind === "invalid") throw new Error(reminder.message);
         await saveReminder(db, reminder.text, reminder.remindAt, reminder.repeat, reminder.advanceMinutes);
+      } else if (resource === "weight_entries") {
+        const weight = parseWeightRequest({ action: "save", kg: input.kg, date: input.date }, today);
+        if (weight.kind !== "weight_save") throw new Error(weight.kind === "invalid" ? weight.message : "Peso no válido.");
+        await saveWeight(db, weight.date, weight.kg);
       } else if (resource === "budgets") {
         const intent = parseBudgetRequest({ action: "set", category: input.category, monthly_limit: input.monthly_limit });
         if (intent.kind === "invalid") throw new Error(intent.message);

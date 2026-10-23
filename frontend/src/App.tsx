@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { LayoutDashboard, Wallet, Bell, ShoppingBasket, NotebookPen, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Sparkles } from 'lucide-react';
+import { LayoutDashboard, Wallet, Bell, ShoppingBasket, NotebookPen, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Sparkles, Scale } from 'lucide-react';
 import chatbotLogo from './assets/chatbot-logo.png';
 
 type Row = Record<string, any>;
-type Section = 'overview'|'finances'|'reminders'|'shopping_items'|'notes'|'birthdays'|'habits'|'calendar';
+type Section = 'overview'|'finances'|'reminders'|'shopping_items'|'notes'|'birthdays'|'habits'|'weight'|'calendar';
 
 // La clave publicable de Supabase está pensada para ir en el navegador; los permisos los decide panel-api.
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? 'https://znzyzstvfqsrilhzyqub.supabase.co';
@@ -16,9 +16,9 @@ const chartColors = ['#1779db','#f08143','#32ad91','#8a66d7','#e6b33e','#ea7091'
 const navigation: {id:Section; label:string; icon:typeof LayoutDashboard}[] = [
   {id:'overview',label:'Inicio',icon:LayoutDashboard},{id:'finances',label:'Finanzas',icon:Wallet},{id:'reminders',label:'Recordatorios',icon:Bell},
   {id:'shopping_items',label:'Lista de la compra',icon:ShoppingBasket},{id:'notes',label:'Notas',icon:NotebookPen},
-  {id:'birthdays',label:'Cumpleaños',icon:Cake},{id:'habits',label:'Hábitos',icon:Flame},{id:'calendar',label:'Calendario',icon:CalendarDays}
+  {id:'birthdays',label:'Cumpleaños',icon:Cake},{id:'habits',label:'Hábitos',icon:Flame},{id:'weight',label:'Peso',icon:Scale},{id:'calendar',label:'Calendario',icon:CalendarDays}
 ];
-const resources = ['expenses','incomes','budgets','reminders','shopping_items','notes','birthdays','habits','habit_checks','calendar','bank_connection'] as const;
+const resources = ['expenses','incomes','budgets','reminders','shopping_items','notes','birthdays','habits','habit_checks','weight_entries','calendar','bank_connection'] as const;
 const euro = (v:number) => new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(v);
 const dateTime = (v:string) => new Intl.DateTimeFormat('es-ES',{dateStyle:'medium',timeStyle:'short',timeZone:'Europe/Madrid'}).format(new Date(v));
 const todayInMadrid = () => new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Madrid'}).format(new Date());
@@ -149,6 +149,32 @@ function LoginScreen({onNotice,error,notice,setError}:{onNotice:(text:string)=>v
     </div></div>
 }
 
+const kilos = (v:number) => `${v.toFixed(1).replace('.',',')} kg`;
+/** Ni subir ni bajar es bueno o malo de por sí: solo se indica el sentido. */
+const kiloChange = (from:number,to:number) => {const d=Math.round((to-from)*10)/10;return d===0?'Sin cambios':`${d>0?'+':'−'}${kilos(Math.abs(d))}`};
+
+function WeightChart({entries}:{entries:Row[]}) {
+  if(entries.length<2)return <Empty>Apunta al menos dos pesos para ver la gráfica.</Empty>;
+  const width=600,height=190,pad=28,values=entries.map(e=>Number(e.kg));
+  const min=Math.min(...values)-0.5,max=Math.max(...values)+0.5;
+  const points=values.map((kg,i)=>[pad+i*(width-2*pad)/(values.length-1),height-pad-(kg-min)/(max-min)*(height-2*pad)]);
+  return <svg className="weight-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Evolución del peso">
+    <text x={4} y={pad}>{kilos(max-0.5)}</text><text x={4} y={height-pad+4}>{kilos(min+0.5)}</text>
+    <polyline points={points.map(p=>p.join(',')).join(' ')}/>{points.map(([x,y],i)=><circle key={entries[i].date} cx={x} cy={y} r={4}><title>{`${entries[i].date}: ${kilos(values[i])}`}</title></circle>)}
+  </svg>;
+}
+
+function WeightSection({entries,save,remove}:{entries:Row[];save:(payload:object)=>Promise<boolean>;remove:(id:number)=>void}) {
+  const [date,setDate]=useState(todayInMadrid()),[kg,setKg]=useState(''),[busy,setBusy]=useState(false);
+  const ordered=[...entries].sort((a,b)=>a.date.localeCompare(b.date)), last=ordered.at(-1), previous=ordered.at(-2), first=ordered[0];
+  async function submit(e:FormEvent){e.preventDefault();setBusy(true);try{if(await save({date,kg:Number(kg.replace(',','.'))}))setKg('')}finally{setBusy(false)}}
+  return <>
+    <div className="summary-grid finance-metrics"><div className="metric balance-tile"><span>Último peso</span><strong>{last?kilos(Number(last.kg)):'—'}</strong><small>{last?last.date:'Sin registros'}</small></div><div className="metric"><span>Desde la vez anterior</span><strong>{last&&previous?kiloChange(Number(previous.kg),Number(last.kg)):'—'}</strong><small>{previous?`Desde el ${previous.date}`:'Necesitas dos registros'}</small></div><div className="metric"><span>Desde el principio</span><strong>{last&&first&&first!==last?kiloChange(Number(first.kg),Number(last.kg)):'—'}</strong><small>{first?`Desde el ${first.date}`:'Sin registros'}</small></div></div>
+    <Card title="Apunta tu peso"><form className="stack-form" onSubmit={submit}><div className="form-row"><label>Fecha<input type="date" value={date} max={todayInMadrid()} onChange={e=>setDate(e.target.value)} required/></label><label>Peso (kg)<input inputMode="decimal" value={kg} placeholder="72,5" onChange={e=>setKg(e.target.value)} required pattern="[0-9]+([.,][0-9])?"/></label><button className="primary" type="submit" disabled={busy}><Plus size={17}/> Guardar</button></div><p className="form-hint">Una vez por semana basta, mejor a la misma hora. Si repites un día, se sustituye. También puedes decírselo al asistente: «peso 72,5».</p></form></Card>
+    <Card title="Evolución" aside={<span className="count">{ordered.length} registros</span>}><WeightChart entries={ordered.slice(-20)}/>{[...ordered].reverse().map((r,i,list)=><div className="list-row" key={r.id}><span className="row-symbol mint"><Scale size={17}/></span><span className="row-main"><strong>{kilos(Number(r.kg))}</strong><small>{r.date}{list[i+1]?` · ${kiloChange(Number(list[i+1].kg),Number(r.kg))}`:''}</small></span><button className="delete icon-button" aria-label={`Eliminar el peso del ${r.date}`} onClick={()=>remove(r.id)}><Trash2 size={17}/></button></div>)}{!ordered.length&&<Empty>Apunta tu peso para empezar a ver cómo evoluciona.</Empty>}</Card>
+  </>;
+}
+
 export function App(){
   const [token,setToken]=useState(''),[authReady,setAuthReady]=useState(false);
   const [section,setSection]=useState<Section>('overview'),[mobileOpen,setMobileOpen]=useState(false);
@@ -202,6 +228,7 @@ export function App(){
   {section==='notes'&&<Card title="Tus notas" aside={<span className="count">{rows('notes').length} notas</span>}><InlineForm label="Guardar nota" placeholder="Algo que quieras recordar…" onSubmit={text=>action('notes','POST',{text})}/><div className="notes-grid">{rows('notes').map(r=><article className="note" key={r.id}><p>{r.text}</p><div className="between"><small>{new Date(r.created_at).toLocaleDateString('es-ES')}</small><button className="delete icon-button" aria-label="Eliminar nota" onClick={()=>void action('notes','DELETE',undefined,{id:String(r.id)})}><Trash2 size={16}/></button></div></article>)}</div>{!rows('notes').length&&<Empty>Aquí aparecerán las cosas que quieras guardar.</Empty>}</Card>}
   {section==='birthdays'&&<Card title="Cumpleaños" aside={<span className="count">{rows('birthdays').length} personas</span>}><form className="stack-form" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);void action('birthdays','POST',{name:f.get('name'),day:Number(f.get('day')),month:Number(f.get('month')),year:f.get('year')});e.currentTarget.reset()}}><div className="form-row"><label>Nombre<input name="name" required placeholder="Nombre"/></label><label>Día<input name="day" type="number" min="1" max="31" required placeholder="Día"/></label><label>Mes<select name="month">{Array.from({length:12},(_,i)=><option key={i} value={i+1}>{new Intl.DateTimeFormat('es-ES',{month:'long'}).format(new Date(2024,i,1))}</option>)}</select></label><label>Año opcional<input name="year" type="number" min="1900" max="2100" placeholder="Año"/></label><button className="primary" type="submit"><Plus size={17}/> Añadir</button></div></form>{rows('birthdays').sort((a,b)=>a.month-b.month||a.day-b.day).map(r=><div className="list-row" key={r.id}><span className="row-symbol peach"><Cake size={18}/></span><span className="row-main"><strong>{r.name}</strong><small>{r.day} de {new Intl.DateTimeFormat('es-ES',{month:'long'}).format(new Date(2024,r.month-1,1))}{r.year?` · ${r.year}`:''}</small></span><button className="delete icon-button" aria-label={`Eliminar cumpleaños de ${r.name}`} onClick={()=>void action('birthdays','DELETE',undefined,{id:String(r.id)})}><Trash2 size={17}/></button></div>)}{!rows('birthdays').length&&<Empty>Añade un cumpleaños para que no se te pase.</Empty>}</Card>}
   {section==='habits'&&<Card title="Mis hábitos" aside={<span className="count">{rows('habits').length} hábitos</span>}><InlineForm label="Crear hábito" placeholder="Por ejemplo: leer 20 minutos…" onSubmit={name=>action('habits','POST',{name})}/>{rows('habits').map(r=>{const check=rows('habit_checks').find(c=>c.habit_id===r.id&&c.date===todayInMadrid());return <div className="list-row" key={r.id}><span className="row-symbol warm"><Flame size={18}/></span><span className="row-main"><strong>{r.name}</strong><small>{check?check.done?'Hecho hoy':'Pendiente hoy':'¿Lo has hecho hoy?'}</small></span><button className={`habit-answer ${check?.done?'done':''}`} aria-pressed={check?.done===true} onClick={()=>void action('habit_checks','POST',{habit_id:r.id,done:!check?.done})}>{check?.done?'Hecho':'Marcar hecho'}</button><button className="delete icon-button" aria-label={`Eliminar hábito ${r.name}`} onClick={()=>void action('habits','DELETE',undefined,{id:String(r.id)})}><Trash2 size={17}/></button></div>})}{!rows('habits').length&&<Empty>Empieza con un hábito pequeño que quieras mantener.</Empty>}</Card>}
+  {section==='weight'&&<WeightSection entries={rows('weight_entries')} save={payload=>action('weight_entries','POST',payload)} remove={id=>void action('weight_entries','DELETE',undefined,{id:String(id)})}/>}
   {section==='calendar'&&<Card title="Próximos eventos" aside={data.calendar?.connected?<span className="connected"><span className="status-dot"/> Google conectado</span>:undefined}>{data.calendar?.connected?<><EventForm save={payload=>action('calendar','POST',payload)}/>{data.calendar.events.map((e:Row,i:number)=><div className="list-row" key={i}><span className="row-symbol mint"><CalendarDays size={18}/></span><span className="row-main"><strong>{e.title}</strong><small>{e.start?dateTime(e.start):`${e.date} · Todo el día`}</small></span></div>)}{!data.calendar.events.length&&<Empty>No hay eventos en los próximos 14 días.</Empty>}</>:<div className="connect-calendar"><CalendarDays size={34}/><h3>Tu agenda, aquí mismo</h3><p>Conecta Google Calendar para consultar tus próximos eventos y crear otros nuevos.</p><button className="primary" onClick={async()=>{try{const result=await api('calendar_link',token,'POST',{});window.location.assign(result.url)}catch(e){setError(e instanceof Error?e.message:'No se pudo conectar')}}}>Conectar Google Calendar <ArrowUpRight size={18}/></button></div>}</Card>}
   <footer>Tu asistente personal · Datos actualizados desde Supabase</footer></main></div></div>
 }

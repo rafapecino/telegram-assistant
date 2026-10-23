@@ -28,6 +28,7 @@ const CAPABILITIES = [
   "cumpleaños (avisa el día antes y el mismo día)",
   "hábitos diarios con rachas",
   "consultar y crear eventos en Google Calendar",
+  "registro del peso corporal para ver si sube o baja",
   "un resumen cada mañana a las 8:00 con el tiempo, recordatorios, eventos y cumpleaños",
 ].join("; ");
 
