@@ -51,6 +51,9 @@ export async function answerGeneralQuestion(message: string, history: Conversati
       `Además de conversar, sabes hacer esto con sus datos: ${CAPABILITIES}.`,
       "Si pregunta por algo que depende de información de última hora (noticias, resultados, precios), di que no " +
       "tienes acceso a internet.",
+      // Esta respuesta no lee la base de datos: sin esta regla, el modelo dice que la ha consultado y se inventa datos.
+      "Aquí no ves sus datos (recordatorios, gastos, calendario, notas…): nunca digas que los has consultado ni te " +
+      'inventes ninguno. Si los pide, dile que lo pregunte directamente, por ejemplo "¿qué tengo hoy?".',
       'Responde solo con JSON {"answer": "<tu respuesta>"}.',
     ].join("\n"),
     withConversation(message, history),
