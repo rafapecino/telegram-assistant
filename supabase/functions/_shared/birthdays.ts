@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
+import { addDaysToDate } from "./madrid-time.ts";
 import { tidyName } from "./text.ts";
 
 const MONTHS = [
@@ -99,6 +100,17 @@ export function describeBirthdayDate(birthday: Pick<Birthday, "day" | "month">):
 export function nameWithAge(birthday: Birthday, date: string): string {
   const age = ageOn(birthday, date);
   return age === null ? birthday.name : `${birthday.name} (${age})`;
+}
+
+/** Cumpleaños entre dos fechas (incluidas), en orden; "" si no hay ninguno. */
+export function formatBirthdaysBetween(birthdays: Birthday[], dateFrom: string, dateTo: string): string {
+  const lines: string[] = [];
+  for (let date = dateFrom; date <= dateTo; date = addDaysToDate(date, 1)) {
+    for (const birthday of birthdaysOn(birthdays, date)) {
+      lines.push(`• ${describeBirthdayDate(birthday)}: ${nameWithAge(birthday, date)}`);
+    }
+  }
+  return lines.length ? ["Cumpleaños:", ...lines].join("\n") : "";
 }
 
 export function formatUpcomingBirthdays(birthdays: Birthday[], today: string): string {

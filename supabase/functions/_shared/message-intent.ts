@@ -9,6 +9,7 @@ import { type MadridClock, madridClock } from "./madrid-time.ts";
 import { NOTE_INTENT_FORMAT, type NoteRequest, parseNoteRequest } from "./notes.ts";
 import { parseReminderRequest, REMINDER_INTENT_FORMAT, type ReminderRequest } from "./reminders.ts";
 import { parseShoppingRequest, SHOPPING_INTENT_FORMAT, type ShoppingRequest } from "./shopping.ts";
+import { parseWeightRequest, WEIGHT_INTENT_FORMAT, type WeightRequest } from "./weight.ts";
 
 // Para añadir una funcionalidad: su formato va en buildIntentPrompt y su validación en parseMessageIntent.
 export type MessageIntent =
@@ -21,6 +22,7 @@ export type MessageIntent =
   | BirthdayRequest
   | HabitRequest
   | CalendarRequest
+  | WeightRequest
   | { kind: "unknown" };
 
 export function buildIntentPrompt(clock: MadridClock): string {
@@ -37,6 +39,7 @@ export function buildIntentPrompt(clock: MadridClock): string {
     `- ${BIRTHDAY_INTENT_FORMAT}`,
     `- ${HABIT_INTENT_FORMAT}`,
     `- ${CALENDAR_INTENT_FORMAT}`,
+    `- ${WEIGHT_INTENT_FORMAT}`,
     '- Cualquier otra cosa: {"intent": "unknown"}',
   ].join("\n");
 }
@@ -52,6 +55,7 @@ export function parseMessageIntent(raw: unknown, now: Date): MessageIntent {
   if (intent === "birthday") return parseBirthdayRequest(raw, Number(madridClock(now).localDate.slice(0, 4)));
   if (intent === "habit") return parseHabitRequest(raw);
   if (intent === "calendar") return parseCalendarRequest(raw);
+  if (intent === "weight") return parseWeightRequest(raw, madridClock(now).localDate);
   return { kind: "unknown" };
 }
 
