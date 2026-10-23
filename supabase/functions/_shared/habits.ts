@@ -76,6 +76,24 @@ export function formatHabitsForDay(habits: Habit[], checks: HabitCheck[], date: 
   return ["Hábitos:", ...lines].join("\n");
 }
 
+const WEEKDAY_NAMES = ["", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
+
+/** Hábitos que tocan en varios días, para "¿qué tengo esta semana?": qué días toca cada uno; "" si ninguno. */
+export function formatHabitsForRange(habits: Habit[], dateFrom: string, dateTo: string): string {
+  const weekdaysInRange = new Set<number>();
+  for (let date = dateFrom; date <= dateTo && weekdaysInRange.size < 7; date = addDaysToDate(date, 1)) {
+    weekdaysInRange.add(weekday(date));
+  }
+  const lines = habits.flatMap((habit) => {
+    const days = (habit.scheduled_days ?? ALL_DAYS).filter((day) => weekdaysInRange.has(day)).sort((a, b) => a - b);
+    if (days.length === 0) return [];
+    if (days.length === weekdaysInRange.size) return [`• ${habit.name}: todos los días`];
+    const names = days.map((day) => WEEKDAY_NAMES[day]);
+    return [`• ${habit.name}: ${names.length > 1 ? `${names.slice(0, -1).join(", ")} y ${names.at(-1)}` : names[0]}`];
+  });
+  return lines.length ? ["Rutinas:", ...lines].join("\n") : "";
+}
+
 /** Cuántos de los últimos 7 días (hoy incluido) se ha cumplido. */
 export function doneLastWeek(checks: HabitCheck[], today: string, scheduledDays = ALL_DAYS): number {
   const weekStart = addDaysToDate(today, -6);

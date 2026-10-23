@@ -43,17 +43,21 @@ Deno.test("qué tengo hoy: recordatorios, hábitos que tocan, cumpleaños y avis
   );
 });
 
-Deno.test("varios días: sin hábitos y sin secciones vacías", async () => {
-  const { db, queries } = fakeDb((query) => ({ data: query[0] === 'from("google_connections")' ? null : [] }));
+Deno.test("varios días: rutinas con sus días, cumpleaños y sin secciones vacías", async () => {
+  const { db } = fakeDb((query) => ({
+    data: query[0] === 'from("google_connections")' ? null : query[0] === 'from("reminders")' ? [] : AGENDA_DATA[query[0]] ?? [],
+  }));
   const reply = await replyToPersonalIntent(
     db,
-    { kind: "calendar_list", dateFrom: "2026-10-23", dateTo: "2026-10-30" },
+    { kind: "calendar_list", dateFrom: "2026-10-22", dateTo: "2026-10-25" },
     NOW,
   );
-  assertEquals(queries.some((query) => query[0] === 'from("habits")'), false);
   assertEquals(
     reply?.text,
-    "No tienes recordatorios esos días.\n\nNo tienes el calendario conectado. Conéctalo con /conectar_calendario.",
+    "No tienes recordatorios esos días.\n\n" +
+      "Rutinas:\n• Leer: jueves\n\n" +
+      "Cumpleaños:\n• 22 de octubre: Mamá (60)\n\n" +
+      "No tienes el calendario conectado. Conéctalo con /conectar_calendario.",
   );
 });
 
