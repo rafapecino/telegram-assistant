@@ -24,6 +24,7 @@ import {
   describeAnswer,
   formatHabitList,
   formatHabitsForDay,
+  formatHabitsForRange,
   HABIT_QUESTION_HOUR,
   type HabitRequest,
   listHabits,
@@ -145,10 +146,13 @@ async function describeEvents(db: SupabaseClient, dateFrom: string, dateTo: stri
 /** "¿Qué tengo hoy?": recordatorios, hábitos, cumpleaños y eventos del calendario de esos días. */
 async function replyToAgenda(db: SupabaseClient, dateFrom: string, dateTo: string, today: string): Promise<string> {
   const sections = [formatRemindersBetween(await listRemindersBetween(db, dateFrom, dateTo))];
-  // Los hábitos se repiten casi a diario: solo se enseñan al preguntar por un día concreto.
-  if (dateFrom === dateTo) {
-    sections.push(formatHabitsForDay(await listHabits(db), await loadChecks(db, today), dateFrom, today));
-  }
+  const habits = await listHabits(db);
+  // De un día se dice si ya está hecho; de varios, qué días toca cada rutina.
+  sections.push(
+    dateFrom === dateTo
+      ? formatHabitsForDay(habits, await loadChecks(db, today), dateFrom, today)
+      : formatHabitsForRange(habits, dateFrom, dateTo),
+  );
   sections.push(formatBirthdaysBetween(await listBirthdays(db), dateFrom, dateTo));
   sections.push(await describeEvents(db, dateFrom, dateTo));
   return sections.filter(Boolean).join("\n\n");

@@ -4,6 +4,7 @@ import {
   currentStreak,
   doneLastWeek,
   formatHabitList,
+  formatHabitsForRange,
   habitButtons,
   parseHabitButton,
   parseHabitRequest,
@@ -96,4 +97,17 @@ Deno.test("la lista de hábitos enseña racha y semana de cada uno", () => {
     "• Correr: racha de 0 días · 0 de 7 días previstos esta semana",
   ]);
   assertEquals(formatHabitList([], [], TODAY), "No sigues ningún hábito. Prueba con «quiero leer cada día».");
+});
+
+Deno.test("en varios días dice qué días toca cada rutina", () => {
+  const habits = [
+    { id: 1, name: "Leer", scheduled_days: [1, 2, 3, 4, 5, 6, 7] },
+    { id: 2, name: "Correr", scheduled_days: [1, 4] },
+    { id: 3, name: "Nadar", scheduled_days: [6] },
+  ];
+  assertEquals(
+    formatHabitsForRange(habits, "2026-10-19", "2026-10-25"),
+    "Rutinas:\n• Leer: todos los días\n• Correr: lunes y jueves\n• Nadar: sábado",
+  );
+  assertEquals(formatHabitsForRange([habits[2]], "2026-10-19", "2026-10-21"), "");
 });

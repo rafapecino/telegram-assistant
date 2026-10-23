@@ -18,7 +18,8 @@ export const CALENDAR_INTENT_FORMAT =
   'Agenda (calendario de Google, recordatorios, hábitos o rutinas del día y cumpleaños), si pregunta qué tiene o qué ' +
   'tiene que hacer algún día, qué rutinas le tocan, por su agenda o calendario, o qué recordatorios tiene: ' +
   '{"intent": "calendar", "action": "list", "date_from": "YYYY-MM-DD", ' +
-  '"date_to": "YYYY-MM-DD"} para verlos ("¿qué tengo mañana?"; sin días concretos, hoy y los 30 siguientes), ' +
+  '"date_to": "YYYY-MM-DD"} para verlos ("¿qué tengo mañana?"; "esta semana" o "qué hay para esta semana", de hoy al ' +
+  'domingo; sin días concretos, hoy y los 30 siguientes), ' +
   'o {"intent": "calendar", "action": "create", "title": "<evento>", "local_datetime": "YYYY-MM-DDTHH:mm" o null, ' +
   '"date": "YYYY-MM-DD" o null, "duration_minutes": 60} para crear uno: con hora, local_datetime en hora de Madrid; ' +
   "de todo el día, date. Si pide que se le avise, es un recordatorio.";
