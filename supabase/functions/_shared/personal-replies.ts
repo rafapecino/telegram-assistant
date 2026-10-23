@@ -1,4 +1,5 @@
-// Respuestas de las funciones que no dependen del banco: compra, notas, cumpleaños, hábitos y calendario.
+// Respuestas de las funciones que no dependen del banco: compra, notas, cumpleaños, hábitos y agenda (calendario y
+// recordatorios).
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
 import {
   type BirthdayRequest,
@@ -39,6 +40,7 @@ import {
   type NoteRequest,
   saveNote,
 } from "./notes.ts";
+import { formatRemindersBetween, listRemindersBetween } from "./reminders.ts";
 import {
   addShoppingItems,
   clearShoppingList,
@@ -127,10 +129,24 @@ async function replyToHabit(db: SupabaseClient, request: HabitRequest, today: st
   return describeAnswer(habit, request.done, await recordHabit(db, habit, today, request.done));
 }
 
+/** "¿Qué tengo hoy?": recordatorios y eventos del calendario de esos días. */
+async function replyToAgenda(db: SupabaseClient, dateFrom: string, dateTo: string): Promise<string> {
+  const reminders = formatRemindersBetween(await listRemindersBetween(db, dateFrom, dateTo));
+  let events: string;
+  try {
+    events = formatEvents(await listEvents(db, dateFrom, dateTo));
+  } catch (error) {
+    // Sin calendario conectado se enseñan igualmente los recordatorios.
+    if (!(error instanceof CalendarNotConnectedError)) throw error;
+    events = error.message;
+  }
+  return `${reminders}\n\n${events}`;
+}
+
 async function replyToCalendar(db: SupabaseClient, request: CalendarRequest): Promise<string> {
   if (request.kind === "invalid") return request.message;
+  if (request.kind === "calendar_list") return replyToAgenda(db, request.dateFrom, request.dateTo);
   try {
-    if (request.kind === "calendar_list") return formatEvents(await listEvents(db, request.dateFrom, request.dateTo));
     await createEvent(db, request);
     return describeCreatedEvent(request);
   } catch (error) {

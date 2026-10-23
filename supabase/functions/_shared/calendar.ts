@@ -15,8 +15,9 @@ const MAX_LIST_DAYS = 62;
 
 /** Formato que el modelo debe devolver cuando el mensaje habla del calendario (ver message-intent.ts). */
 export const CALENDAR_INTENT_FORMAT =
-  'Calendario de Google, solo si menciona el calendario, la agenda o qué tiene un día: {"intent": "calendar", ' +
-  '"action": "list", "date_from": "YYYY-MM-DD", "date_to": "YYYY-MM-DD"} para ver eventos ("¿qué tengo mañana?"), ' +
+  'Agenda (calendario de Google y recordatorios), si pregunta qué tiene o qué tiene que hacer algún día, por su ' +
+  'agenda o calendario, o qué recordatorios tiene: {"intent": "calendar", "action": "list", "date_from": "YYYY-MM-DD", ' +
+  '"date_to": "YYYY-MM-DD"} para verlos ("¿qué tengo mañana?"; sin días concretos, hoy y los 30 siguientes), ' +
   'o {"intent": "calendar", "action": "create", "title": "<evento>", "local_datetime": "YYYY-MM-DDTHH:mm" o null, ' +
   '"date": "YYYY-MM-DD" o null, "duration_minutes": 60} para crear uno: con hora, local_datetime en hora de Madrid; ' +
   "de todo el día, date. Si pide que se le avise, es un recordatorio.";

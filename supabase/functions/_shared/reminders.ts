@@ -139,6 +139,29 @@ export async function saveReminder(
   if (error) throw new Error(`No se pudo guardar el recordatorio: ${error.message}`);
 }
 
+/**
+ * Recordatorios de esos días (hora de Madrid), para "¿qué tengo hoy?". Incluye los ya avisados: siguen siendo parte
+ * de lo que hay que hacer ese día.
+ */
+export async function listRemindersBetween(
+  db: SupabaseClient,
+  dateFrom: string,
+  dateTo: string,
+): Promise<{ text: string; remind_at: string }[]> {
+  const { data, error } = await db.from("reminders").select("text, remind_at")
+    .gte("remind_at", madridLocalToUtc(`${dateFrom}T00:00`).toISOString())
+    .lt("remind_at", madridLocalToUtc(`${addDaysToDate(dateTo, 1)}T00:00`).toISOString())
+    .order("remind_at");
+  if (error) throw new Error(`No se pudieron leer los recordatorios: ${error.message}`);
+  return data ?? [];
+}
+
+export function formatRemindersBetween(reminders: { text: string; remind_at: string }[]): string {
+  if (reminders.length === 0) return "No tienes recordatorios esos días.";
+  const lines = reminders.map((reminder) => `• ${formatMadridDateTime(new Date(reminder.remind_at))} · ${reminder.text}`);
+  return ["Recordatorios:", ...lines].join("\n");
+}
+
 // --- Botones del aviso ---
 
 type ButtonAction = "done" | "1h" | "tomorrow";
