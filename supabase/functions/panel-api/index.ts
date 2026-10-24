@@ -7,6 +7,7 @@ import { recordHabit } from "../_shared/habits.ts";
 import { createBankLink, disconnectBank, hasBankConnections } from "../_shared/bank-connection.ts";
 import { parseChatInput, replyToChat } from "../_shared/panel-chat.ts";
 import { parseWeightRequest, saveWeight } from "../_shared/weight.ts";
+import { transcribeAudio } from "../_shared/groq.ts";
 
 const resources = new Set(["shopping_items", "notes", "birthdays", "habits", "reminders", "expenses", "incomes", "weight_entries"]);
 const editable = new Set(["shopping_items", "notes", "birthdays", "habits", "reminders", "weight_entries"]);
@@ -19,6 +20,20 @@ const fields: Record<string, string> = {
 const MAX_BODY = 4096;
 // El chat envía también los últimos mensajes de la conversación.
 const MAX_CHAT_BODY = 32768;
+// Unos 2 minutos de nota de voz comprimida, como el límite del bot de Telegram.
+const MAX_AUDIO_BYTES = 2_000_000;
+/** Groq reconoce el formato por la extensión: Chrome graba webm, Safari mp4 y Firefox ogg. */
+function audioFileName(contentType: string): string {
+  const extension = contentType.includes("mp4") ? "mp4" : contentType.includes("ogg") ? "ogg" : "webm";
+  return `nota-de-voz.${extension}`;
+}
+async function transcribeUpload(request: Request): Promise<string> {
+  if (Number(request.headers.get("content-length") ?? 0) > MAX_AUDIO_BYTES) throw new Error("La nota de voz es demasiado larga.");
+  const audio = await request.blob();
+  if (audio.size === 0) throw new Error("No se ha recibido audio.");
+  if (audio.size > MAX_AUDIO_BYTES) throw new Error("La nota de voz es demasiado larga.");
+  return transcribeAudio(audio, audioFileName(request.headers.get("content-type") ?? ""));
+}
 function json(data: unknown, status = 200, headers: HeadersInit = {}) {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers } });
 }
@@ -82,6 +97,7 @@ Deno.serve(async (request) => {
         return json({ connected: true, events: await listEvents(db, `${month}-01`, end) }, 200, cors);
       }
     }
+    if (request.method === "POST" && resource === "transcribe") return json({ text: await transcribeUpload(request) }, 200, cors);
     if (request.method === "POST") {
       const input = await body(request, resource === "chat" ? MAX_CHAT_BODY : MAX_BODY);
       if (resource === "chat") return json(await replyToChat(db, parseChatInput(input), now), 200, cors);
