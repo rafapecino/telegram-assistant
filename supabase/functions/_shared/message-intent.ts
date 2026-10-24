@@ -6,6 +6,7 @@ import { type ExpenseQueryRequest, EXPENSES_QUERY_INTENT_FORMAT, parseExpenseQue
 import { askGroqForJson } from "./groq.ts";
 import { HABIT_INTENT_FORMAT, type HabitRequest, parseHabitRequest } from "./habits.ts";
 import { type MadridClock, madridClock } from "./madrid-time.ts";
+import { MANUAL_EXPENSE_INTENT_FORMAT, type ManualExpenseRequest, parseManualExpense } from "./manual-expenses.ts";
 import { NOTE_INTENT_FORMAT, type NoteRequest, parseNoteRequest } from "./notes.ts";
 import { parseReminderRequest, REMINDER_INTENT_FORMAT, type ReminderRequest } from "./reminders.ts";
 import { parseShoppingRequest, SHOPPING_INTENT_FORMAT, type ShoppingRequest } from "./shopping.ts";
@@ -23,6 +24,7 @@ export type MessageIntent =
   | HabitRequest
   | CalendarRequest
   | WeightRequest
+  | ManualExpenseRequest
   | { kind: "unknown" };
 
 export function buildIntentPrompt(clock: MadridClock): string {
@@ -40,6 +42,7 @@ export function buildIntentPrompt(clock: MadridClock): string {
     `- ${HABIT_INTENT_FORMAT}`,
     `- ${CALENDAR_INTENT_FORMAT}`,
     `- ${WEIGHT_INTENT_FORMAT}`,
+    `- ${MANUAL_EXPENSE_INTENT_FORMAT}`,
     '- Cualquier otra cosa: {"intent": "unknown"}',
   ].join("\n");
 }
@@ -56,6 +59,7 @@ export function parseMessageIntent(raw: unknown, now: Date): MessageIntent {
   if (intent === "habit") return parseHabitRequest(raw);
   if (intent === "calendar") return parseCalendarRequest(raw);
   if (intent === "weight") return parseWeightRequest(raw, madridClock(now).localDate);
+  if (intent === "manual_expense") return parseManualExpense(raw, madridClock(now).localDate);
   return { kind: "unknown" };
 }
 
