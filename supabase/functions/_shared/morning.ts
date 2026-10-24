@@ -15,8 +15,24 @@ function localTime(instant: Date): string {
   return madridClock(instant).localDateTime.slice(11);
 }
 
+// Uno distinto cada día para que no suene a robot; con guasa porque así lo quiere Rafa.
+const GREETINGS = [
+  "☀️ Buenos días, Rafita.",
+  "☀️ Arriba, Petzi, que se te pegan las sábanas.",
+  "☀️ Venga, pringao, que el día no se hace solo.",
+  "☀️ Buenas, Rafa. A ver qué nos trae hoy.",
+  "☀️ Despierta, cabrón, que hay cosas que hacer.",
+  "☀️ Muy buenas, Petzi. Primero café y luego hablamos.",
+  "☀️ Hola, Rafa. Otro día más aguantándote.",
+];
+
+const MS_PER_DAY = 86_400_000;
+
 export function greetingLine(today: string): string {
-  return `☀️ Buenos días. Hoy es ${longDate.format(new Date(`${today}T00:00:00Z`))}.`;
+  const date = new Date(`${today}T00:00:00Z`);
+  // Por número de día y no al azar: rota sin repetirse en días seguidos y los tests son estables.
+  const greeting = GREETINGS[Math.floor(date.getTime() / MS_PER_DAY) % GREETINGS.length];
+  return `${greeting} Hoy es ${longDate.format(date)}.`;
 }
 
 export function reminderLines(reminders: { text: string; remind_at: string }[]): string[] {
