@@ -1,5 +1,12 @@
-import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { birthdayLines, buildMorningSummary, composeSummary, eventLines, reminderLines } from "./morning.ts";
+import { assertEquals, assertNotEquals, assertStringIncludes } from "jsr:@std/assert@1.0.19";
+import {
+  birthdayLines,
+  buildMorningSummary,
+  composeSummary,
+  eventLines,
+  greetingLine,
+  reminderLines,
+} from "./morning.ts";
 import { fakeDb, withFakeFetch } from "./testing.ts";
 
 const TODAY = "2026-10-22";
@@ -30,6 +37,11 @@ Deno.test("recordatorios y eventos van en hora de Madrid", () => {
   ]);
 });
 
+Deno.test("el saludo cambia de un día al siguiente y siempre dice la fecha", () => {
+  assertNotEquals(greetingLine("2026-10-22"), greetingLine("2026-10-23"));
+  assertStringIncludes(greetingLine("2026-10-23"), "Hoy es viernes, 23 de octubre.");
+});
+
 Deno.test("el resumen junta solo las partes que tienen algo", () => {
   assertEquals(composeSummary([["a"], [], ["b", "c"]]), "a\n\nb\nc");
 });
@@ -45,7 +57,7 @@ Deno.test("si el tiempo falla, el resumen lo dice y sigue con lo demás; sin cal
     assertEquals(
       await buildMorningSummary(db, NOW),
       [
-        "☀️ Buenos días. Hoy es jueves, 22 de octubre.",
+        "☀️ Buenos días, Rafita. Hoy es jueves, 22 de octubre.",
         "(No he podido consultar el tiempo: Open-Meteo respondió 503)",
         "⏰ Recordatorios de hoy:\n• 18:00 Llamar",
         "🛒 Tienes 1 cosa en la lista de la compra.",
