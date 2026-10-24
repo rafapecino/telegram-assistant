@@ -12,6 +12,7 @@ import {
 import { findExpenses, formatExpenseReport } from "./expense-queries.ts";
 import { askGroqForJson } from "./groq.ts";
 import { formatMadridDateTime } from "./madrid-time.ts";
+import { describeSavedManualExpense, saveManualExpense } from "./manual-expenses.ts";
 import { type ConversationTurn, interpretMessage, withConversation } from "./message-intent.ts";
 import { replyToPersonalIntent } from "./personal-replies.ts";
 import { describeRepeat, saveReminder } from "./reminders.ts";
@@ -29,6 +30,7 @@ const CAPABILITIES = [
   "hábitos diarios con rachas",
   "consultar y crear eventos en Google Calendar",
   "registro del peso corporal para ver si sube o baja",
+  "apuntar a mano energéticas o tabaco pagados en efectivo",
   "un resumen cada mañana a las 8:00 con el tiempo, recordatorios, eventos y cumpleaños",
 ].join("; ");
 
@@ -88,6 +90,9 @@ export async function replyToText(
       return replyToBudgetDelete(db, intent.category);
     case "budget_list":
       return formatBudgetList(await loadBudgetStatuses(db, now));
+    case "manual_expense":
+      await saveManualExpense(db, intent);
+      return describeSavedManualExpense(intent);
     case "balance_query":
       return formatBalance(await findBalance(db, intent.dateFrom, intent.dateTo), intent.dateFrom, intent.dateTo);
     default:

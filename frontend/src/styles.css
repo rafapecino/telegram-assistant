@@ -4,3 +4,5 @@
 .chat-card .error{color:#b35345;font-size:12px;margin:6px 0 0}
 .weight-chart{display:block;width:100%;height:auto;max-height:220px;margin-bottom:12px}.weight-chart polyline{fill:none;stroke:#1779db;stroke-width:3;stroke-linejoin:round;stroke-linecap:round}.weight-chart circle{fill:#fff;stroke:#1779db;stroke-width:2.5}.weight-chart text{fill:#8694a7;font-size:11px}
 .sidebar nav{flex:1;min-height:0;overflow-y:auto;align-content:start}.sidebar-top{padding-bottom:22px}.bizum-totals{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:8px}.bizum-totals div{background:#f4f7fc;border-radius:12px;padding:14px 16px}.bizum-totals span{display:block;font-size:11px;color:#768881}.bizum-totals strong{font:800 20px Manrope,sans-serif;letter-spacing:-.04em}
+/* Inicio tiene 6 métricas: en 3 columnas quedan dos filas completas. */
+@media(min-width:1151px){.overview-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
