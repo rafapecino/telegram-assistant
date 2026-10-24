@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Sparkles, Scale, Cigarette, CupSoda } from 'lucide-react';
+import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Sparkles, Scale, Cigarette, CupSoda, Mic, Square } from 'lucide-react';
 import chatbotLogo from './assets/chatbot-logo.png';
 
 type Row = Record<string, any>;
@@ -105,9 +105,31 @@ type ChatMessage = {role:'user'|'assistant'; text:string; buttons?:{text:string;
 // El servidor acepta como mucho 10 mensajes previos de hasta 2000 caracteres.
 const chatHistory = (messages:ChatMessage[]) => messages.slice(-10).map(m=>({role:m.role,text:m.text.slice(0,2000)}));
 const chatSuggestions = ['¿Cuánto he gastado este mes?','Añade leche y pan a la compra','¿Qué puedes hacer?'];
+// Igual que en el bot de Telegram, las notas de voz no pasan de 2 minutos.
+const MAX_RECORDING_MS = 120_000;
+
+/** Empieza a grabar del micrófono; al parar (o a los 2 minutos) entrega el audio y suelta el micrófono. */
+async function startRecording(onDone:(audio:Blob)=>void):Promise<MediaRecorder>{
+  const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+  const recorder=new MediaRecorder(stream),chunks:Blob[]=[];
+  const timer=setTimeout(()=>{if(recorder.state==='recording')recorder.stop()},MAX_RECORDING_MS);
+  recorder.ondataavailable=e=>chunks.push(e.data);
+  recorder.onstop=()=>{clearTimeout(timer);stream.getTracks().forEach(track=>track.stop());onDone(new Blob(chunks,{type:recorder.mimeType}))};
+  recorder.start();
+  return recorder;
+}
+
+async function transcribe(audio:Blob, token:string):Promise<string>{
+  const url=new URL(apiUrl);url.searchParams.set('resource','transcribe');
+  const response=await fetch(url,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':audio.type||'audio/webm'},body:audio});
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error??'No se pudo transcribir la nota de voz.');
+  return String(result.text??'').trim();
+}
+
 function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>}) {
   const [messages,setMessages]=useState<ChatMessage[]>([]),[draft,setDraft]=useState(''),[busy,setBusy]=useState(false),[chatError,setChatError]=useState('');
-  const end=useRef<HTMLDivElement>(null);
+  const end=useRef<HTMLDivElement>(null),recorder=useRef<MediaRecorder|null>(null),[recording,setRecording]=useState(false);
   useEffect(()=>{end.current?.scrollIntoView({block:'nearest'})},[messages,busy]);
   async function ask(payload:object, apply:(reply:ChatMessage)=>void){
     setBusy(true);setChatError('');
@@ -120,6 +142,20 @@ function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>
     const history=chatHistory(messages);setDraft('');setMessages(m=>[...m,{role:'user',text:message}]);
     await ask({message,history},reply=>setMessages(m=>[...m,reply]));
   }
+  // Lo dicho se manda como si se hubiera escrito, así se ve lo que ha entendido.
+  async function sendAudio(audio:Blob){
+    recorder.current=null;setRecording(false);setBusy(true);setChatError('');
+    let text='';
+    try{text=await transcribe(audio,token)}
+    catch(e){setChatError(e instanceof Error?e.message:'No se pudo transcribir la nota de voz.')}
+    finally{setBusy(false)}
+    if(text)await send(text);else setChatError(current=>current||'No he entendido la nota de voz.');
+  }
+  async function toggleRecording(){
+    if(recorder.current){recorder.current.stop();return}
+    try{setChatError('');recorder.current=await startRecording(audio=>void sendAudio(audio));setRecording(true)}
+    catch{setChatError('No puedo usar el micrófono. Revisa el permiso del navegador.')}
+  }
   // Como en Telegram, pulsar un botón actualiza el mensaje que lo contenía (por ejemplo, tachar de la compra).
   async function press(index:number,data:string){await ask({button:data},reply=>setMessages(m=>m.map((msg,i)=>i===index?reply:msg)))}
   return <Card title="Pregúntale a tu asistente" aside={messages.length?<button className="text-link" onClick={()=>setMessages([])}>Nueva conversación</button>:undefined} className="chat-card">
@@ -130,7 +166,7 @@ function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>
       <div ref={end}/>
     </div>
     {chatError&&<p className="error" role="alert">{chatError}</p>}
-    <form className="inline-form chat-form" onSubmit={e=>{e.preventDefault();void send(draft)}}><label className="sr-only" htmlFor="chat-input">Mensaje para el asistente</label><input id="chat-input" value={draft} maxLength={1000} placeholder="Escribe un mensaje…" onChange={e=>setDraft(e.target.value)} autoComplete="off"/><button className="primary icon-button" type="submit" disabled={busy||!draft.trim()} aria-label="Enviar mensaje"><Send size={18}/></button></form>
+    <form className="inline-form chat-form" onSubmit={e=>{e.preventDefault();void send(draft)}}><label className="sr-only" htmlFor="chat-input">Mensaje para el asistente</label><input id="chat-input" value={draft} maxLength={1000} placeholder={recording?'Grabando… pulsa ■ para enviar':'Escribe un mensaje…'} disabled={recording} onChange={e=>setDraft(e.target.value)} autoComplete="off"/><button className={`icon-button ${recording?'primary recording':'secondary'}`} type="button" onClick={()=>void toggleRecording()} disabled={busy} aria-label={recording?'Parar y enviar la nota de voz':'Grabar una nota de voz'}>{recording?<Square size={16}/>:<Mic size={18}/>}</button><button className="primary icon-button" type="submit" disabled={busy||recording||!draft.trim()} aria-label="Enviar mensaje"><Send size={18}/></button></form>
   </Card>;
 }
 
