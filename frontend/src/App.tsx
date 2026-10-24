@@ -47,6 +47,13 @@ function InlineForm({label,placeholder,onSubmit,type='text'}:{label:string;place
   return <form className="inline-form" onSubmit={submit}><label className="sr-only" htmlFor={`input-${label}`}>{label}</label><input id={`input-${label}`} type={type} value={value} placeholder={placeholder} onChange={e=>setValue(e.target.value)} required/><button className="primary icon-button" type="submit" disabled={busy} aria-label={label}><Plus size={19}/></button></form>
 }
 
+// En el gráfico, tabaco y energéticas van aparte de la categoría que les puso el banco, para ver cuánto suponen.
+function chartCategory(r:Row):string{
+  if(isTobaccoShop(String(r.description??'')))return 'Tabaco';
+  if(energyDrinkCans(r)>0)return 'Energéticas';
+  return r.category||'Otros';
+}
+
 function SpendingChart({expenses,period}:{expenses:Row[];period:number}) {
   const now=new Date(), bars=period===7?7:period===30?10:13, daysPerBar=period===7?1:period===30?3:7;
   const buckets=Array.from({length:bars},(_,i)=>{
@@ -56,13 +63,15 @@ function SpendingChart({expenses,period}:{expenses:Row[];period:number}) {
     return {from,to,value:expenses.filter(r=>r.booking_date>=from&&r.booking_date<=to).reduce((n,r)=>n+Number(r.amount),0)};
   });
   const highest=Math.max(1,...buckets.map(b=>b.value)), total=expenses.reduce((n,r)=>n+Number(r.amount),0);
-  const categories=Object.entries(expenses.reduce((acc:Record<string,number>,r)=>{const c=r.category||'Otros';acc[c]=(acc[c]||0)+Number(r.amount);return acc},{})).sort((a,b)=>b[1]-a[1]);
+  const categories=Object.entries(expenses.reduce((acc:Record<string,number>,r)=>{const c=chartCategory(r);acc[c]=(acc[c]||0)+Number(r.amount);return acc},{})).sort((a,b)=>b[1]-a[1]);
+  const tobaccoPurchases=expenses.filter(r=>chartCategory(r)==='Tabaco').length, cans=expenses.reduce((n,r)=>n+energyDrinkCans(r),0);
+  const quantity:Record<string,string>={Tabaco:tobaccoPurchases===1?'1 compra':`${tobaccoPurchases} compras`,'Energéticas':cans===1?'1 lata':`${cans} latas`};
   let start=0;
   const slices=categories.map(([,value],i)=>{const end=start+value/total*100;const slice=`${chartColors[i%chartColors.length]} ${start}% ${end}%`;start=end;return slice});
   return <div className="finance-visuals"><div className="chart-heading"><div><span className="eyebrow">EVOLUCIÓN</span><h3>Gasto en el periodo</h3></div><strong>{euro(total)}</strong></div>
     {total>0?<><div className="spending-bars" role="img" aria-label={`Gráfico de gastos de los últimos ${period} días`}>{buckets.map((b,i)=><div className="bar-slot" key={i} title={`${b.from} – ${b.to}: ${euro(b.value)}`}><span className={`bar-fill ${b.value===highest?'highest':''}`} style={{height:`${b.value?Math.max(5,b.value/highest*100):0}%`}}/></div>)}</div>
     <div className="chart-axis"><span>{buckets[0].from}</span><span>Hoy</span></div>
-    <div className="category-summary"><div className="donut" style={{background:`conic-gradient(${slices.join(',')})`}} role="img" aria-label="Distribución de gastos por categoría"><span>{categories.length}<small>categorías</small></span></div><div className="category-legend">{categories.slice(0,5).map(([name,value],i)=><div key={name}><i style={{background:chartColors[i%chartColors.length]}}/><span>{name}</span><strong>{euro(value)}</strong></div>)}</div></div></>
+    <div className="category-summary"><div className="donut" style={{background:`conic-gradient(${slices.join(',')})`}} role="img" aria-label="Distribución de gastos por categoría"><span>{categories.length}<small>categorías</small></span></div><div className="category-legend">{categories.map(([name,value],i)=><div key={name}><i style={{background:chartColors[i%chartColors.length]}}/><span>{name}{quantity[name]?` · ${quantity[name]}`:''}</span><strong>{euro(value)}</strong></div>)}</div></div></>
     :<p className="empty">Todavía no hay gastos en este periodo.</p>}</div>
 }
 
