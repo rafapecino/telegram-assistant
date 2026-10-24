@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Sparkles, Scale, Cigarette, CupSoda, Mic, Square } from 'lucide-react';
+import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Scale, Cigarette, CupSoda, Mic, Square } from 'lucide-react';
 import chatbotLogo from './assets/chatbot-logo.png';
 
 type Row = Record<string, any>;
@@ -101,10 +101,14 @@ function EventForm({save}:{save:(data:object)=>Promise<boolean>}) {
     <label className="optional-time"><input type="checkbox" checked={hasTime} onChange={e=>setHasTime(e.target.checked)}/> Añadir hora (si no, será todo el día)</label></form>
 }
 
+// Uno distinto cada día, con la guasa que pidió Rafa. Sin «buenos días» porque el panel se abre a cualquier hora.
+const GREETINGS = ['¿Qué pasa, Petzi? 👋','Buenas, Rafita 😏','¿Qué quieres ahora, pringao? 🙄','Aquí estoy, cabrón 😎','Dime, Rafa 👊','A sus órdenes, Petzi 🫡','¿Otra vez por aquí, Rafita? 😂'];
+const DAY_MS = 86_400_000;
+const dailyGreeting = () => GREETINGS[Math.floor(Date.parse(`${todayInMadrid()}T00:00:00Z`)/DAY_MS)%GREETINGS.length];
+
 type ChatMessage = {role:'user'|'assistant'; text:string; buttons?:{text:string;callback_data:string}[][]};
 // El servidor acepta como mucho 10 mensajes previos de hasta 2000 caracteres.
 const chatHistory = (messages:ChatMessage[]) => messages.slice(-10).map(m=>({role:m.role,text:m.text.slice(0,2000)}));
-const chatSuggestions = ['¿Cuánto he gastado este mes?','Añade leche y pan a la compra','¿Qué puedes hacer?'];
 // Igual que en el bot de Telegram, las notas de voz no pasan de 2 minutos.
 const MAX_RECORDING_MS = 120_000;
 
@@ -160,9 +164,9 @@ function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>
   async function press(index:number,data:string){await ask({button:data},reply=>setMessages(m=>m.map((msg,i)=>i===index?reply:msg)))}
   return <Card title="Pregúntale a tu asistente" aside={messages.length?<button className="text-link" onClick={()=>setMessages([])}>Nueva conversación</button>:undefined} className="chat-card">
     <div className="chat-log" aria-live="polite">
-      {!messages.length&&<div className="chat-welcome"><span className="row-symbol mint"><Sparkles size={18}/></span><p>Pregúntame lo que quieras o pídeme algo: tus gastos, la compra, recordatorios, hábitos…</p><div className="chat-suggestions">{chatSuggestions.map(s=><button key={s} className="secondary" onClick={()=>void send(s)} disabled={busy}>{s}</button>)}</div></div>}
-      {messages.map((m,i)=><div key={i} className={`chat-message ${m.role}`}><p>{m.text}</p>{m.buttons&&<div className="chat-buttons">{m.buttons.flat().map(b=><button key={b.callback_data} className="secondary" onClick={()=>void press(i,b.callback_data)} disabled={busy}>{b.text}</button>)}</div>}</div>)}
-      {busy&&<div className="chat-message assistant typing"><p>Pensando…</p></div>}
+      {!messages.length&&<div className="chat-welcome"><img className="chat-avatar large" src={chatbotLogo} alt=""/><p>Dime, que para eso estoy.</p></div>}
+      {messages.map((m,i)=><div key={i} className={`chat-row ${m.role}`}>{m.role==='assistant'&&<img className="chat-avatar" src={chatbotLogo} alt=""/>}<div className={`chat-message ${m.role}`}><p>{m.text}</p>{m.buttons&&<div className="chat-buttons">{m.buttons.flat().map(b=><button key={b.callback_data} className="secondary" onClick={()=>void press(i,b.callback_data)} disabled={busy}>{b.text}</button>)}</div>}</div></div>)}
+      {busy&&<div className="chat-row assistant"><img className="chat-avatar" src={chatbotLogo} alt=""/><div className="chat-message assistant typing"><p>Pensando…</p></div></div>}
       <div ref={end}/>
     </div>
     {chatError&&<p className="error" role="alert">{chatError}</p>}
@@ -314,7 +318,7 @@ export function App(){
   if(!token)return <LoginScreen onNotice={setNotice} error={error} notice={notice} setError={setError}/>;
   return <div className="shell"><aside className={`sidebar ${mobileOpen?'open':''}`}><div className="sidebar-top"><div className="identity"><img src={chatbotLogo} alt="Mi asistente"/><small>PANEL PERSONAL</small></div><button className="mobile-close icon-button" aria-label="Cerrar menú" onClick={()=>setMobileOpen(false)}><X/></button></div><nav aria-label="Navegación principal">{navigation.map(({id,label,icon:Icon})=><button key={id} className={section===id?'nav-item active':'nav-item'} aria-current={section===id?'page':undefined} onClick={()=>{setSection(id);setMobileOpen(false);setNotice('')}}><Icon size={19} strokeWidth={1.8}/>{label}</button>)}</nav><div className="sidebar-bottom"><div className="sidebar-note"><span className="status-dot"/>Conectado a tu asistente</div><button className="nav-item logout" onClick={logout}><LogOut size={18}/> Cerrar sesión</button></div></aside>{mobileOpen&&<div className="backdrop" onClick={()=>setMobileOpen(false)}/>}
   <div className="workspace"><header className="topbar"><button className="mobile-menu icon-button" aria-label="Abrir menú" onClick={()=>setMobileOpen(true)}><Menu/></button><div className="breadcrumbs">Mi espacio <span>/</span> <strong>{current.label}</strong></div><button className="refresh icon-button" onClick={()=>void refresh()} disabled={loading} aria-label="Actualizar datos"><RefreshCw size={18} className={loading?'spin':''}/></button></header>
-  <main className="content"><div className="page-heading"><div><div className="eyebrow">PANEL PERSONAL</div><h1>{section==='overview'?'Buenos días 👋':current.label}</h1><p>{section==='overview'?'Aquí tienes lo importante de un vistazo.':section==='finances'?'Tus ingresos, gastos y límites en un mismo lugar.':'Organiza y consulta tus cosas sin salir del panel.'}</p></div><span className="today">{new Intl.DateTimeFormat('es-ES',{dateStyle:'full',timeZone:'Europe/Madrid'}).format(new Date())}</span></div>
+  <main className="content"><div className="page-heading"><div><div className="eyebrow">PANEL PERSONAL</div><h1>{section==='overview'?dailyGreeting():current.label}</h1><p>{section==='overview'?'Aquí tienes lo importante de un vistazo.':section==='finances'?'Tus ingresos, gastos y límites en un mismo lugar.':'Organiza y consulta tus cosas sin salir del panel.'}</p></div><span className="today">{new Intl.DateTimeFormat('es-ES',{dateStyle:'full',timeZone:'Europe/Madrid'}).format(new Date())}</span></div>
   {error&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{error}</span><button onClick={()=>setError('')} aria-label="Cerrar error"><X size={16}/></button></div>}{notice&&<div className="notice" role="status"><Check size={17}/>{notice}</div>}
   {section==='overview'&&<><AssistantChat token={token} onChange={()=>refresh()}/>
     <section className="dashboard-hero"><div><span className="hero-kicker">TU DÍA EN ORDEN</span><h2>Tu asistente, de un vistazo.</h2><p>Los números, recordatorios y próximos planes reunidos aquí.</p><div className="hero-actions"><button onClick={()=>setSection('finances')}>Ver finanzas <ArrowUpRight size={16}/></button><button onClick={()=>setSection('reminders')}>Mis recordatorios <Bell size={16}/></button></div></div><div className="hero-balance"><small>Balance · últimos {period} días</small><strong>{euro(totals.earned-totals.spent)}</strong><span>{expenses.length} movimientos · {rows('reminders').length} recordatorios</span></div></section>
