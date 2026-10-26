@@ -57,7 +57,7 @@ Deno.test("si el tiempo falla, el resumen lo dice y sigue con lo demás; sin cal
     assertEquals(
       await buildMorningSummary(db, NOW),
       [
-        "☀️ Venga, tronco, que el gimnasio no se va a ir a buscarte. Hoy es jueves, 22 de octubre.",
+        "☀️ Buenos días, Petzi. Hoy es jueves, 22 de octubre.",
         "(No he podido consultar el tiempo: Open-Meteo respondió 404)",
         "⏰ Recordatorios de hoy:\n• 18:00 Llamar",
         "🛒 Tienes 1 cosa en la lista de la compra.",
