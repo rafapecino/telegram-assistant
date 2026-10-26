@@ -16,7 +16,9 @@ Bot personal de Telegram que:
 - Recuerda cumpleaños y avisa el día antes y el mismo día.
 - Sigue hábitos diarios: cada noche a las 21:00 pregunta si los has hecho, con botones Sí/No, y lleva la racha.
 - Consulta y crea eventos en Google Calendar ("¿qué tengo mañana?").
-- Responde preguntas generales, como un chat normal, cuando el mensaje no es de ninguna de sus funciones.
+- Responde preguntas generales, como un chat normal, cuando el mensaje no es de ninguna de sus funciones. Si en esa
+  conversación cuentas algo nuevo de ti ("en abril corro la maratón"), propone apuntarlo en la memoria con los botones
+  Guárdalo y No. Nunca lo guarda sin que pulses Guárdalo.
 - Cada día a las 8:00 manda un resumen: tiempo, recordatorios y eventos del día, cumpleaños y lista de la compra.
 
 Funciona en Supabase (Edge Functions, Postgres y pg_cron). Las frases y las categorías las interpreta
@@ -141,8 +143,9 @@ insert into public.panel_users (user_id) select id from auth.users where email =
 3. Para producción, el proyecto de Vercel compila `frontend/` (Root Directory `frontend`) al fusionar en `main`.
 
 En el Inicio hay un chat con el asistente: entiende lo mismo que el bot de Telegram (gastos, compra, recordatorios…)
-y contesta preguntas generales con el mismo modelo de Groq, teniendo en cuenta los últimos mensajes de la conversación.
-La conversación no se guarda: desaparece al recargar la página.
+y contesta preguntas generales con el mismo modelo de Groq, teniendo en cuenta los últimos 10 mensajes de la
+conversación. La conversación se guarda en la tabla `chat_messages`: al abrir el panel se ven los últimos 50 mensajes,
+sin los botones, y «Nueva conversación» la borra entera. La de Telegram no se guarda.
 
 La conexión con Google Calendar utiliza el mismo flujo OAuth del bot. El panel muestra los eventos del mes en curso.
 El periodo de finanzas se elige entre 7, 30 y 90 días; los presupuestos siempre corresponden al mes actual.
