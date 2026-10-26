@@ -3,6 +3,7 @@ import { type Birthday, birthdaysOn, listBirthdays, nameWithAge } from "./birthd
 import { type CalendarEvent, isCalendarConnected, listEvents } from "./calendar.ts";
 import { errorMessage } from "./env.ts";
 import { addDaysToDate, madridClock, madridLocalToUtc } from "./madrid-time.ts";
+import { inventFunnyLine } from "./memory.ts";
 import { listShoppingItems } from "./shopping.ts";
 import { sendTelegramMessage } from "./telegram.ts";
 import { DEFAULT_CITY, describeWeather, fetchTodayWeather } from "./weather.ts";
@@ -15,24 +16,56 @@ function localTime(instant: Date): string {
   return madridClock(instant).localDateTime.slice(11);
 }
 
-// Uno distinto cada día para que no suene a robot; con guasa porque así lo quiere Rafa.
+// Uno distinto cada día para que no suene a robot; con guasa porque así lo quiere Rafa (que no le llamen Rafita).
 const GREETINGS = [
-  "☀️ Buenos días, Rafita.",
+  "☀️ Buenos días, Petzi.",
   "☀️ Arriba, Petzi, que se te pegan las sábanas.",
   "☀️ Venga, pringao, que el día no se hace solo.",
   "☀️ Buenas, Rafa. A ver qué nos trae hoy.",
   "☀️ Despierta, cabrón, que hay cosas que hacer.",
   "☀️ Muy buenas, Petzi. Primero café y luego hablamos.",
   "☀️ Hola, Rafa. Otro día más aguantándote.",
+  "☀️ Buenos días, ingeniero. La tesis no se escribe sola.",
+  "☀️ Arriba, Rafa, que la energética no se bebe sola.",
+  "☀️ Buenos días, Petzi. Hoy toca gimnasio, no te hagas el loco.",
+  "☀️ Venga, cabrón, que hoy es un gran día para no procrastinar.",
+  "☀️ Buenos días, Rafa. Te he preparado el día; el café ya es cosa tuya.",
+  "☀️ Despierta, pringao, que el mundo no se consulta solo.",
+  "☀️ Buenas, Petzi. ¿Hoy sí o hoy tampoco?",
+  "☀️ Arriba, Rafa, que hasta el banco ha madrugado más que tú.",
+  "☀️ Buenos días, máquina. Bueno, máquina a medias.",
+  "☀️ Hola, Petzi. Tu asistente favorito ya está currando, ¿y tú?",
+  "☀️ Buenos días, cabrón. Menos móvil y más tesis.",
+  "☀️ Arriba, Rafa. Hoy te veo con cara de ir al gimnasio. O no.",
+  "☀️ Buenos días, Petzi. Que no se te olvide que yo me acuerdo de todo.",
 ];
+// Uno de cada tantos días el saludo lo inventa Groq con la memoria, para que sorprenda.
+const SURPRISE_EVERY_DAYS = 3;
 
 const MS_PER_DAY = 86_400_000;
 
+function dayNumber(today: string): number {
+  return Math.floor(Date.parse(`${today}T00:00:00Z`) / MS_PER_DAY);
+}
+
+function todayText(today: string): string {
+  return `Hoy es ${longDate.format(new Date(`${today}T00:00:00Z`))}.`;
+}
+
 export function greetingLine(today: string): string {
-  const date = new Date(`${today}T00:00:00Z`);
   // Por número de día y no al azar: rota sin repetirse en días seguidos y los tests son estables.
-  const greeting = GREETINGS[Math.floor(date.getTime() / MS_PER_DAY) % GREETINGS.length];
-  return `${greeting} Hoy es ${longDate.format(date)}.`;
+  return `${GREETINGS[dayNumber(today) % GREETINGS.length]} ${todayText(today)}`;
+}
+
+/** Los días de sorpresa, frase inventada por Groq; si falla, el saludo de siempre (el resumen tiene que llegar). */
+export async function morningGreeting(db: SupabaseClient, today: string): Promise<string> {
+  if (dayNumber(today) % SURPRISE_EVERY_DAYS !== 0) return greetingLine(today);
+  try {
+    return `☀️ ${await inventFunnyLine(db)} ${todayText(today)}`;
+  } catch (error) {
+    console.error("Resumen de la mañana: no se pudo inventar el saludo", error);
+    return greetingLine(today);
+  }
 }
 
 export function reminderLines(reminders: { text: string; remind_at: string }[]): string[] {
@@ -92,7 +125,7 @@ export async function buildMorningSummary(db: SupabaseClient, now: Date): Promis
   const today = madridClock(now).localDate;
   const city = Deno.env.get("WEATHER_CITY")?.trim() || DEFAULT_CITY;
   return composeSummary([
-    [greetingLine(today)],
+    [await morningGreeting(db, today)],
     await section("el tiempo", async () => [describeWeather(await fetchTodayWeather(city))]),
     await section("los recordatorios", async () => reminderLines(await todayReminders(db, today))),
     // Sin calendario conectado no hay nada que decir: no es un fallo.

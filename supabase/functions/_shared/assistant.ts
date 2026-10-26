@@ -13,6 +13,7 @@ import { findExpenses, formatExpenseReport } from "./expense-queries.ts";
 import { askGroqForJson } from "./groq.ts";
 import { formatMadridDateTime } from "./madrid-time.ts";
 import { describeSavedManualExpense, saveManualExpense } from "./manual-expenses.ts";
+import { loadMemory, memoryContext } from "./memory.ts";
 import { type ConversationTurn, interpretMessage, withConversation } from "./message-intent.ts";
 import { replyToPersonalIntent } from "./personal-replies.ts";
 import { describeRepeat, saveReminder } from "./reminders.ts";
@@ -47,14 +48,20 @@ export function parseGeneralAnswer(raw: unknown): string {
 }
 
 /** Para lo que no es ninguna funcionalidad: una respuesta normal, como cualquier chat. */
-export async function answerGeneralQuestion(message: string, history: ConversationTurn[]): Promise<string> {
+export async function answerGeneralQuestion(
+  db: SupabaseClient,
+  message: string,
+  history: ConversationTurn[],
+): Promise<string> {
+  const memory = memoryContext(await loadMemory(db));
   const raw = await askGroqForJson(
     [
       "Eres el asistente personal de Rafa y le respondes en español, breve y con naturalidad, como un colega de " +
       "confianza: pícaro, con guasa y un poco vacilón, nada robótico.",
-      "Le llamas Rafa, Rafita o Petzi, variando. De vez en cuando, en plan cariñoso, le llamas pringao o cabrón, " +
+      "Le llamas Rafa o Petzi, variando (nunca Rafita). De vez en cuando, en plan cariñoso, le llamas pringao o cabrón, " +
       "pero no en todos los mensajes.",
       "Si el tema es serio o delicado (salud, un problema personal), deja la guasa y sé claro.",
+      memory,
       `Además de conversar, sabes hacer esto con sus datos: ${CAPABILITIES}.`,
       "Si pregunta por algo que depende de información de última hora (noticias, resultados, precios), di que no " +
       "tienes acceso a internet.",
@@ -62,7 +69,7 @@ export async function answerGeneralQuestion(message: string, history: Conversati
       "Aquí no ves sus datos (recordatorios, gastos, calendario, notas…): nunca digas que los has consultado ni te " +
       'inventes ninguno. Si los pide, dile que lo pregunte directamente, por ejemplo "¿qué tengo hoy?".',
       'Responde solo con JSON {"answer": "<tu respuesta>"}.',
-    ].join("\n"),
+    ].filter(Boolean).join("\n"),
     withConversation(message, history),
   );
   return parseGeneralAnswer(raw);
@@ -78,7 +85,7 @@ export async function replyToText(
   const intent = await interpretMessage(text, now, history);
   switch (intent.kind) {
     case "unknown":
-      return answerGeneralQuestion(text, history);
+      return answerGeneralQuestion(db, text, history);
     case "invalid":
       return intent.message;
     case "reminder":
@@ -100,6 +107,6 @@ export async function replyToText(
     case "balance_query":
       return formatBalance(await findBalance(db, intent.dateFrom, intent.dateTo), intent.dateFrom, intent.dateTo);
     default:
-      return await replyToPersonalIntent(db, intent, now) ?? answerGeneralQuestion(text, history);
+      return await replyToPersonalIntent(db, intent, now) ?? answerGeneralQuestion(db, text, history);
   }
 }

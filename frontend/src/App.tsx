@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Scale, Cigarette, CupSoda, Mic, Square } from 'lucide-react';
+import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Scale, Cigarette, CupSoda, Mic, Square, Brain } from 'lucide-react';
 import chatbotLogo from './assets/chatbot-logo.png';
 
 type Row = Record<string, any>;
-type Section = 'overview'|'finances'|'reminders'|'shopping_items'|'birthdays'|'habits'|'weight'|'calendar';
+type Section = 'overview'|'finances'|'reminders'|'shopping_items'|'birthdays'|'habits'|'weight'|'calendar'|'memory';
 
 // La clave publicable de Supabase está pensada para ir en el navegador; los permisos los decide panel-api.
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? 'https://znzyzstvfqsrilhzyqub.supabase.co';
@@ -16,9 +16,10 @@ const chartColors = ['#1779db','#f08143','#32ad91','#8a66d7','#e6b33e','#ea7091'
 const navigation: {id:Section; label:string; icon:typeof LayoutDashboard}[] = [
   {id:'overview',label:'Inicio',icon:LayoutDashboard},{id:'finances',label:'Finanzas',icon:Wallet},{id:'reminders',label:'Recordatorios',icon:Bell},
   {id:'shopping_items',label:'Lista de la compra',icon:ShoppingBasket},
-  {id:'birthdays',label:'Cumpleaños',icon:Cake},{id:'habits',label:'Hábitos',icon:Flame},{id:'weight',label:'Peso',icon:Scale},{id:'calendar',label:'Calendario',icon:CalendarDays}
+  {id:'birthdays',label:'Cumpleaños',icon:Cake},{id:'habits',label:'Hábitos',icon:Flame},{id:'weight',label:'Peso',icon:Scale},{id:'calendar',label:'Calendario',icon:CalendarDays},
+  {id:'memory',label:'Memoria',icon:Brain}
 ];
-const resources = ['expenses','incomes','budgets','reminders','shopping_items','birthdays','habits','habit_checks','weight_entries','calendar','bank_connection'] as const;
+const resources = ['expenses','incomes','budgets','reminders','shopping_items','birthdays','habits','habit_checks','weight_entries','calendar','bank_connection','memory'] as const;
 const euro = (v:number) => new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(v);
 const dateTime = (v:string) => new Intl.DateTimeFormat('es-ES',{dateStyle:'medium',timeStyle:'short',timeZone:'Europe/Madrid'}).format(new Date(v));
 const todayInMadrid = () => new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Madrid'}).format(new Date());
@@ -102,7 +103,14 @@ function EventForm({save}:{save:(data:object)=>Promise<boolean>}) {
 }
 
 // Uno distinto cada día, con la guasa que pidió Rafa. Sin «buenos días» porque el panel se abre a cualquier hora.
-const GREETINGS = ['¿Qué pasa, Petzi? 👋','Buenas, Rafita 😏','¿Qué quieres ahora, pringao? 🙄','Aquí estoy, cabrón 😎','Dime, Rafa 👊','A sus órdenes, Petzi 🫡','¿Otra vez por aquí, Rafita? 😂'];
+const GREETINGS = [
+  '¿Qué pasa, Petzi? 👋','Buenas, Rafa 😏','¿Qué quieres ahora, pringao? 🙄','Aquí estoy, cabrón 😎','Dime, Rafa 👊',
+  'A sus órdenes, Petzi 🫡','¿Otra vez por aquí, Rafa? 😂','¿Qué tal la tesis, ingeniero? 📚','¿Ya vas por la segunda energética, Petzi? 🥤',
+  'Mira quién se ha acordado de mí 🙃','¿Hoy toca gimnasio o excusa, Rafa? 🏋️','Habla, cabrón, que no muerdo 🐶',
+  '¿Vienes a ver cuánto has gastado, pringao? 💸','Petzi, el ingeniero más procrastinador de Madrid 🏆','Bienvenido a tu centro de mando, Rafa 🚀',
+  '¿Otra pausa de la tesis, Petzi? 👀','Aquí tu asistente, más currante que tú 💪','¿Qué se le ofrece al señorito? 🎩',
+  'Rafa, que te veo venir 🕵️','Venga, Petzi, sorpréndeme 🎲',
+];
 const DAY_MS = 86_400_000;
 const dailyGreeting = () => GREETINGS[Math.floor(Date.parse(`${todayInMadrid()}T00:00:00Z`)/DAY_MS)%GREETINGS.length];
 
@@ -213,6 +221,13 @@ function WeightChart({entries}:{entries:Row[]}) {
   </svg>;
 }
 
+const MAX_MEMORY_LENGTH = 4000;
+function MemorySection({content,save}:{content:string;save:(content:string)=>Promise<boolean>}) {
+  const [draft,setDraft]=useState(content);
+  useEffect(()=>setDraft(content),[content]);
+  return <Card title="Tu memoria" aside={<span className="count">{draft.length}/{MAX_MEMORY_LENGTH}</span>}><form className="memory-form" onSubmit={e=>{e.preventDefault();void save(draft)}}><label className="sr-only" htmlFor="memory">Lo que sabe de ti</label><textarea id="memory" value={draft} maxLength={MAX_MEMORY_LENGTH} onChange={e=>setDraft(e.target.value)} placeholder="Cuéntale cosas de ti: a qué te dedicas, tu tesis, tus manías…"/><button className="primary" type="submit" disabled={draft===content}>Guardar</button></form></Card>;
+}
+
 function WeightSection({entries,save,remove}:{entries:Row[];save:(payload:object)=>Promise<boolean>;remove:(id:number)=>void}) {
   const [date,setDate]=useState(todayInMadrid()),[kg,setKg]=useState(''),[busy,setBusy]=useState(false);
   const ordered=[...entries].sort((a,b)=>a.date.localeCompare(b.date)), last=ordered.at(-1), previous=ordered.at(-2), first=ordered[0];
@@ -281,7 +296,7 @@ export function App(){
   const [token,setToken]=useState(''),[authReady,setAuthReady]=useState(false);
   const [section,setSection]=useState<Section>('overview'),[mobileOpen,setMobileOpen]=useState(false);
   const [data,setData]=useState<Record<string,any>>({}),[loading,setLoading]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
-  const [period,setPeriod]=useState(30);
+  const [period,setPeriod]=useState(30),[funnyLine,setFunnyLine]=useState('');
   useEffect(()=>{
     const {data:{subscription}}=supabase.auth.onAuthStateChange((_event,session)=>{setToken(session?.access_token??'');setAuthReady(true)});
     void supabase.auth.getSession().then(({data:{session}})=>{setToken(session?.access_token??'');setAuthReady(true)});
@@ -304,6 +319,8 @@ export function App(){
     }
   },[token,period]);
   useEffect(()=>{void refresh()},[refresh]);
+  // La frase sorpresa es un extra: si Groq falla se queda el subtítulo de siempre, sin molestar con un aviso.
+  useEffect(()=>{if(token)api('greeting',token).then(r=>setFunnyLine(String(r.text??''))).catch(e=>console.error('No se pudo inventar la frase',e))},[token]);
   async function action(resource:string,method:string,payload?:object,params?:Record<string,string>):Promise<boolean>{
     setNotice('');setError('');
     try{await api(resource,token,method,payload,params);setNotice('Cambios guardados.');await refresh();return true}
@@ -318,7 +335,7 @@ export function App(){
   if(!token)return <LoginScreen onNotice={setNotice} error={error} notice={notice} setError={setError}/>;
   return <div className="shell"><aside className={`sidebar ${mobileOpen?'open':''}`}><div className="sidebar-top"><div className="identity"><img src={chatbotLogo} alt="Mi asistente"/><small>PANEL PERSONAL</small></div><button className="mobile-close icon-button" aria-label="Cerrar menú" onClick={()=>setMobileOpen(false)}><X/></button></div><nav aria-label="Navegación principal">{navigation.map(({id,label,icon:Icon})=><button key={id} className={section===id?'nav-item active':'nav-item'} aria-current={section===id?'page':undefined} onClick={()=>{setSection(id);setMobileOpen(false);setNotice('')}}><Icon size={19} strokeWidth={1.8}/>{label}</button>)}</nav><div className="sidebar-bottom"><div className="sidebar-note"><span className="status-dot"/>Conectado a tu asistente</div><button className="nav-item logout" onClick={logout}><LogOut size={18}/> Cerrar sesión</button></div></aside>{mobileOpen&&<div className="backdrop" onClick={()=>setMobileOpen(false)}/>}
   <div className="workspace"><header className="topbar"><button className="mobile-menu icon-button" aria-label="Abrir menú" onClick={()=>setMobileOpen(true)}><Menu/></button><div className="breadcrumbs">Mi espacio <span>/</span> <strong>{current.label}</strong></div><button className="refresh icon-button" onClick={()=>void refresh()} disabled={loading} aria-label="Actualizar datos"><RefreshCw size={18} className={loading?'spin':''}/></button></header>
-  <main className="content"><div className="page-heading"><div><div className="eyebrow">PANEL PERSONAL</div><h1>{section==='overview'?dailyGreeting():current.label}</h1><p>{section==='overview'?'Aquí tienes lo importante de un vistazo.':section==='finances'?'Tus ingresos, gastos y límites en un mismo lugar.':'Organiza y consulta tus cosas sin salir del panel.'}</p></div><span className="today">{new Intl.DateTimeFormat('es-ES',{dateStyle:'full',timeZone:'Europe/Madrid'}).format(new Date())}</span></div>
+  <main className="content"><div className="page-heading"><div><div className="eyebrow">PANEL PERSONAL</div><h1>{section==='overview'?dailyGreeting():current.label}</h1><p>{section==='overview'?funnyLine||'Aquí tienes lo importante de un vistazo.':section==='memory'?'Lo que tu asistente sabe de ti. Lo usa para hablarte con gracia.':section==='finances'?'Tus ingresos, gastos y límites en un mismo lugar.':'Organiza y consulta tus cosas sin salir del panel.'}</p></div><span className="today">{new Intl.DateTimeFormat('es-ES',{dateStyle:'full',timeZone:'Europe/Madrid'}).format(new Date())}</span></div>
   {error&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{error}</span><button onClick={()=>setError('')} aria-label="Cerrar error"><X size={16}/></button></div>}{notice&&<div className="notice" role="status"><Check size={17}/>{notice}</div>}
   {section==='overview'&&<><AssistantChat token={token} onChange={()=>refresh()}/>
     <section className="dashboard-hero"><div><span className="hero-kicker">TU DÍA EN ORDEN</span><h2>Tu asistente, de un vistazo.</h2><p>Los números, recordatorios y próximos planes reunidos aquí.</p><div className="hero-actions"><button onClick={()=>setSection('finances')}>Ver finanzas <ArrowUpRight size={16}/></button><button onClick={()=>setSection('reminders')}>Mis recordatorios <Bell size={16}/></button></div></div><div className="hero-balance"><small>Balance · últimos {period} días</small><strong>{euro(totals.earned-totals.spent)}</strong><span>{expenses.length} movimientos · {rows('reminders').length} recordatorios</span></div></section>
@@ -331,5 +348,6 @@ export function App(){
   {section==='habits'&&<Card title="Mis hábitos" aside={<span className="count">{rows('habits').length} hábitos</span>}><InlineForm label="Crear hábito" placeholder="Por ejemplo: leer 20 minutos…" onSubmit={name=>action('habits','POST',{name})}/>{rows('habits').map(r=>{const check=rows('habit_checks').find(c=>c.habit_id===r.id&&c.date===todayInMadrid());return <div className="list-row" key={r.id}><span className="row-symbol warm"><Flame size={18}/></span><span className="row-main"><strong>{r.name}</strong><small>{check?check.done?'Hecho hoy':'Pendiente hoy':'¿Lo has hecho hoy?'}</small></span><button className={`habit-answer ${check?.done?'done':''}`} aria-pressed={check?.done===true} onClick={()=>void action('habit_checks','POST',{habit_id:r.id,done:!check?.done})}>{check?.done?'Hecho':'Marcar hecho'}</button><button className="delete icon-button" aria-label={`Eliminar hábito ${r.name}`} onClick={()=>void action('habits','DELETE',undefined,{id:String(r.id)})}><Trash2 size={17}/></button></div>})}{!rows('habits').length&&<Empty>Empieza con un hábito pequeño que quieras mantener.</Empty>}</Card>}
   {section==='weight'&&<WeightSection entries={rows('weight_entries')} save={payload=>action('weight_entries','POST',payload)} remove={id=>void action('weight_entries','DELETE',undefined,{id:String(id)})}/>}
   {section==='calendar'&&<Card title="Próximos eventos" aside={data.calendar?.connected?<span className="connected"><span className="status-dot"/> Google conectado</span>:undefined}>{data.calendar?.connected?<><EventForm save={payload=>action('calendar','POST',payload)}/>{data.calendar.events.map((e:Row,i:number)=><div className="list-row" key={i}><span className="row-symbol mint"><CalendarDays size={18}/></span><span className="row-main"><strong>{e.title}</strong><small>{e.start?dateTime(e.start):`${e.date} · Todo el día`}</small></span></div>)}{!data.calendar.events.length&&<Empty>No hay eventos en los próximos 14 días.</Empty>}</>:<div className="connect-calendar"><CalendarDays size={34}/><h3>Tu agenda, aquí mismo</h3><p>Conecta Google Calendar para consultar tus próximos eventos y crear otros nuevos.</p><button className="primary" onClick={async()=>{try{const result=await api('calendar_link',token,'POST',{});window.location.assign(result.url)}catch(e){setError(e instanceof Error?e.message:'No se pudo conectar')}}}>Conectar Google Calendar <ArrowUpRight size={18}/></button></div>}</Card>}
+  {section==='memory'&&<MemorySection content={String(data.memory?.content??'')} save={content=>action('memory','POST',{content})}/>}
   <footer>Tu asistente personal · Datos actualizados desde Supabase</footer></main></div></div>
 }
