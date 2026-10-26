@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert@1.0.19";
-import { inventFunnyLine, memoryContext, saveMemory } from "./memory.ts";
+import { inventFunnyLine, memoryContext, NICKNAMES, pickNicknames, saveMemory } from "./memory.ts";
 import { morningGreeting } from "./morning.ts";
 import { fakeDb, withFakeFetch } from "./testing.ts";
 
@@ -32,4 +32,11 @@ Deno.test("la memoria vacía no añade nada al chat y una demasiado larga no se 
   assertEquals(memoryContext(""), "");
   const { db } = fakeDb(() => ({ error: null }));
   await assertRejects(() => saveMemory(db, "x".repeat(4001)), Error, "4000 caracteres");
+});
+
+Deno.test("los motes salen variados y nunca Rafita", () => {
+  assertEquals(NICKNAMES.some((nickname) => /rafita/i.test(nickname)), false);
+  const picked = pickNicknames(4);
+  assertEquals(new Set(picked).size, 4);
+  assertEquals(picked.every((nickname) => NICKNAMES.includes(nickname)), true);
 });
