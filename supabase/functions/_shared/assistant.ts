@@ -13,7 +13,7 @@ import { findExpenses, formatExpenseReport } from "./expense-queries.ts";
 import { askGroqForJson } from "./groq.ts";
 import { formatMadridDateTime } from "./madrid-time.ts";
 import { describeSavedManualExpense, saveManualExpense } from "./manual-expenses.ts";
-import { loadMemory, memoryContext, nicknameGuide } from "./memory.ts";
+import { loadMemory, memoryContext, nicknameGuide, parseMemorySuggestion, suggestMemory } from "./memory.ts";
 import { type ConversationTurn, interpretMessage, withConversation } from "./message-intent.ts";
 import { replyToPersonalIntent } from "./personal-replies.ts";
 import { describeRepeat, saveReminder } from "./reminders.ts";
@@ -47,13 +47,17 @@ export function parseGeneralAnswer(raw: unknown): string {
   return answer.trim();
 }
 
-/** Para lo que no es ninguna funcionalidad: una respuesta normal, como cualquier chat. */
+/**
+ * Para lo que no es ninguna funcionalidad: una respuesta normal, como cualquier chat. Si Rafa cuenta algo nuevo de
+ * sí mismo, la respuesta pregunta si apuntarlo en la memoria. Se aprovecha la misma llamada para no gastar otra.
+ */
 export async function answerGeneralQuestion(
   db: SupabaseClient,
   message: string,
   history: ConversationTurn[],
-): Promise<string> {
-  const memory = memoryContext(await loadMemory(db));
+): Promise<string | BotReply> {
+  const savedMemory = await loadMemory(db);
+  const memory = memoryContext(savedMemory);
   const raw = await askGroqForJson(
     [
       "Eres el asistente personal de Rafa y le respondes en español, breve y con naturalidad, como un colega de " +
@@ -67,11 +71,16 @@ export async function answerGeneralQuestion(
       // Esta respuesta no lee la base de datos: sin esta regla, el modelo dice que la ha consultado y se inventa datos.
       "Aquí no ves sus datos (recordatorios, gastos, calendario, notas…): nunca digas que los has consultado ni te " +
       'inventes ninguno. Si los pide, dile que lo pregunte directamente, por ejemplo "¿qué tengo hoy?".',
-      'Responde solo con JSON {"answer": "<tu respuesta>"}.',
+      "Si en su mensaje actual Rafa cuenta algo nuevo y duradero sobre sí mismo (trabajo, estudios, gustos, gente " +
+      'cercana, planes, manías) que no sepas ya, resúmelo en "remember" en una frase corta en tercera persona, por ' +
+      'ejemplo "Le encanta el sushi". Si no, "remember" es null. Nada pasajero ("hoy estoy cansado") ni preguntas.',
+      'Responde solo con JSON {"answer": "<tu respuesta>", "remember": "<dato nuevo>" o null}.',
     ].filter(Boolean).join("\n"),
     withConversation(message, history),
   );
-  return parseGeneralAnswer(raw);
+  const answer = parseGeneralAnswer(raw);
+  const suggestion = parseMemorySuggestion(raw, savedMemory);
+  return suggestion ? suggestMemory(db, answer, suggestion) : answer;
 }
 
 /** `history` son los mensajes anteriores de la conversación, para entender "¿y el mes pasado?". */

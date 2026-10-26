@@ -119,9 +119,8 @@ const GREETINGS = [
 const DAY_MS = 86_400_000;
 const dailyGreeting = () => GREETINGS[Math.floor(Date.parse(`${todayInMadrid()}T00:00:00Z`)/DAY_MS)%GREETINGS.length];
 
+// Los mensajes guardados vuelven sin botones: los de una respuesta antigua ya no valdrían.
 type ChatMessage = {role:'user'|'assistant'; text:string; buttons?:{text:string;callback_data:string}[][]};
-// El servidor acepta como mucho 10 mensajes previos de hasta 2000 caracteres.
-const chatHistory = (messages:ChatMessage[]) => messages.slice(-10).map(m=>({role:m.role,text:m.text.slice(0,2000)}));
 // Igual que en el bot de Telegram, las notas de voz no pasan de 2 minutos.
 const MAX_RECORDING_MS = 120_000;
 
@@ -148,6 +147,8 @@ function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>
   const [messages,setMessages]=useState<ChatMessage[]>([]),[draft,setDraft]=useState(''),[busy,setBusy]=useState(false),[chatError,setChatError]=useState('');
   const end=useRef<HTMLDivElement>(null),recorder=useRef<MediaRecorder|null>(null),[recording,setRecording]=useState(false);
   useEffect(()=>{end.current?.scrollIntoView({block:'nearest'})},[messages,busy]);
+  // La conversación se guarda en el servidor: al volver al panel sigue donde se dejó.
+  useEffect(()=>{api('chat_messages',token).then(setMessages).catch(e=>setChatError(e instanceof Error?e.message:'No se pudo cargar la conversación.'))},[token]);
   async function ask(payload:object, apply:(reply:ChatMessage)=>void){
     setBusy(true);setChatError('');
     try{const reply=await api('chat',token,'POST',payload);apply({role:'assistant',text:reply.text,buttons:reply.buttons});await onChange()}
@@ -156,8 +157,8 @@ function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>
   }
   async function send(text:string){
     const message=text.trim();if(!message||busy)return;
-    const history=chatHistory(messages);setDraft('');setMessages(m=>[...m,{role:'user',text:message}]);
-    await ask({message,history},reply=>setMessages(m=>[...m,reply]));
+    setDraft('');setMessages(m=>[...m,{role:'user',text:message}]);
+    await ask({message},reply=>setMessages(m=>[...m,reply]));
   }
   // Lo dicho se manda como si se hubiera escrito, así se ve lo que ha entendido.
   async function sendAudio(audio:Blob){
@@ -174,8 +175,13 @@ function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>
     catch{setChatError('No puedo usar el micrófono. Revisa el permiso del navegador.')}
   }
   // Como en Telegram, pulsar un botón actualiza el mensaje que lo contenía (por ejemplo, tachar de la compra).
-  async function press(index:number,data:string){await ask({button:data},reply=>setMessages(m=>m.map((msg,i)=>i===index?reply:msg)))}
-  return <Card title="Pregúntale a tu asistente" aside={messages.length?<button className="text-link" onClick={()=>setMessages([])}>Nueva conversación</button>:undefined} className="chat-card">
+  async function press(index:number,data:string){await ask({button:data,original:messages[index].text},reply=>setMessages(m=>m.map((msg,i)=>i===index?reply:msg)))}
+  async function clear(){
+    setChatError('');
+    try{await api('chat_messages',token,'DELETE');setMessages([])}
+    catch(e){setChatError(e instanceof Error?e.message:'No se pudo borrar la conversación.')}
+  }
+  return <Card title="Pregúntale a tu asistente" aside={messages.length?<button className="text-link" onClick={()=>void clear()} disabled={busy}>Nueva conversación</button>:undefined} className="chat-card">
     <div className="chat-log" aria-live="polite">
       {!messages.length&&<div className="chat-welcome"><img className="chat-avatar large" src={chatbotLogo} alt=""/><p>Dime, que para eso estoy.</p></div>}
       {messages.map((m,i)=><div key={i} className={`chat-row ${m.role}`}>{m.role==='assistant'&&<img className="chat-avatar" src={chatbotLogo} alt=""/>}<div className={`chat-message ${m.role}`}><p>{m.text}</p>{m.buttons&&<div className="chat-buttons">{m.buttons.flat().map(b=><button key={b.callback_data} className="secondary" onClick={()=>void press(i,b.callback_data)} disabled={busy}>{b.text}</button>)}</div>}</div></div>)}

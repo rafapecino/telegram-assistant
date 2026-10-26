@@ -73,3 +73,26 @@ Deno.test("si el modelo no da una respuesta válida, falla con un mensaje claro"
     await assertRejects(() => replyToText(db, "hola", NOW), Error, "Groq no devolvió una respuesta");
   });
 });
+
+Deno.test("si cuenta algo nuevo de sí mismo, la respuesta pregunta si apuntarlo en la memoria", async () => {
+  const { db, queries } = fakeDb((query) =>
+    query[0] === 'from("memory_suggestions")' ? { data: { id: 3 } } : { data: { content: "Es ingeniero." } }
+  );
+  await withFakeFetch(
+    { GROQ_API_KEY: "g" },
+    groqAnswering({ intent: "unknown" }, { answer: "¡Buen plan, Petzi!", remember: "Corre una maratón en abril" }),
+    async () => {
+      assertEquals(await replyToText(db, "en abril corro la maratón de Madrid", NOW), {
+        text: "¡Buen plan, Petzi!\n\n🧠 ¿Lo apunto en tu memoria? «Corre una maratón en abril»",
+        buttons: [[
+          { text: "🧠 Guárdalo", callback_data: "memory:yes:3" },
+          { text: "No", callback_data: "memory:no:3" },
+        ]],
+      });
+    },
+  );
+  assertEquals(queries[1].slice(0, 2), [
+    'from("memory_suggestions")',
+    'insert({"text":"Corre una maratón en abril","answer":"¡Buen plan, Petzi!"})',
+  ]);
+});
