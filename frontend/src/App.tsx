@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Scale, Cigarette, CupSoda, Mic, Square, Brain } from 'lucide-react';
+import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Scale, Cigarette, CupSoda, Mic, Square, Brain, CloudSun, AlertTriangle } from 'lucide-react';
 import chatbotLogo from './assets/chatbot-logo.png';
 
 type Row = Record<string, any>;
@@ -19,7 +19,7 @@ const navigation: {id:Section; label:string; icon:typeof LayoutDashboard}[] = [
   {id:'birthdays',label:'Cumpleaños',icon:Cake},{id:'habits',label:'Hábitos',icon:Flame},{id:'weight',label:'Peso',icon:Scale},{id:'calendar',label:'Calendario',icon:CalendarDays},
   {id:'memory',label:'Memoria',icon:Brain}
 ];
-const resources = ['expenses','incomes','budgets','reminders','shopping_items','birthdays','habits','habit_checks','weight_entries','calendar','bank_connection','memory'] as const;
+const resources = ['expenses','incomes','budgets','reminders','shopping_items','birthdays','habits','habit_checks','weight_entries','calendar','bank_connection','memory','weather','weather_alerts'] as const;
 const euro = (v:number) => new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(v);
 const dateTime = (v:string) => new Intl.DateTimeFormat('es-ES',{dateStyle:'medium',timeStyle:'short',timeZone:'Europe/Madrid'}).format(new Date(v));
 const todayInMadrid = () => new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Madrid'}).format(new Date());
@@ -193,6 +193,16 @@ function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>
   </Card>;
 }
 
+const ALERT_LEVEL_EMOJI:Record<string,string>={amarillo:'🟡',naranja:'🟠',rojo:'🔴'};
+// El tiempo y los avisos llegan por separado: si uno falla, el otro se sigue viendo.
+function WeatherCard({weather,alerts,isLoaded}:{weather?:Row;alerts?:Row[];isLoaded:boolean}) {
+  if(!isLoaded)return <Card title="El tiempo hoy"><Empty>Consultando el tiempo…</Empty></Card>;
+  return <Card title="El tiempo hoy">
+    {weather?<div className="list-row"><span className="row-symbol warm"><CloudSun size={18}/></span><span className="row-main"><strong>{weather.city}: {weather.description}</strong><small>Entre {Math.round(weather.min)} y {Math.round(weather.max)} °C{weather.rainProbability!=null?` · ${weather.rainProbability} % de probabilidad de lluvia`:''}</small></span></div>:<Empty>No he podido consultar el tiempo.</Empty>}
+    {alerts?alerts.length?alerts.map(a=><div className="list-row" key={a.id}><span className="row-symbol peach"><AlertTriangle size={17}/></span><span className="row-main"><strong>{ALERT_LEVEL_EMOJI[a.level]} {a.event}</strong><small>{a.zone} · {dateTime(a.onset)} – {dateTime(a.expires)}</small></span></div>):<Empty>Sin avisos de AEMET en la Comunidad de Madrid.</Empty>:<Empty>No he podido consultar los avisos de AEMET.</Empty>}
+  </Card>;
+}
+
 function LoginScreen({onNotice,error,notice,setError}:{onNotice:(text:string)=>void;error:string;notice:string;setError:(text:string)=>void}) {
   const [mode,setMode]=useState<'login'|'signup'>('login'),[email,setEmail]=useState(''),[password,setPassword]=useState(''),[busy,setBusy]=useState(false);
   async function submit(e:FormEvent){
@@ -349,6 +359,7 @@ export function App(){
   <main className="content"><div className="page-heading"><div><div className="eyebrow">PANEL PERSONAL</div><h1>{section==='overview'?dailyGreeting():current.label}</h1><p>{section==='overview'?funnyLine||'Aquí tienes lo importante de un vistazo.':section==='memory'?'Lo que tu asistente sabe de ti. Lo usa para hablarte con gracia.':section==='finances'?'Tus ingresos, gastos y límites en un mismo lugar.':'Organiza y consulta tus cosas sin salir del panel.'}</p></div><span className="today">{new Intl.DateTimeFormat('es-ES',{dateStyle:'full',timeZone:'Europe/Madrid'}).format(new Date())}</span></div>
   {error&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{error}</span><button onClick={()=>setError('')} aria-label="Cerrar error"><X size={16}/></button></div>}{notice&&<div className="notice" role="status"><Check size={17}/>{notice}</div>}
   {section==='overview'&&<><AssistantChat token={token} onChange={()=>refresh()}/>
+    <WeatherCard weather={data.weather} alerts={Array.isArray(data.weather_alerts)?data.weather_alerts:undefined} isLoaded={Object.keys(data).length>0}/>
     <section className="dashboard-hero"><div><span className="hero-kicker">TU DÍA EN ORDEN</span><h2>Tu asistente, de un vistazo.</h2><p>Los números, recordatorios y próximos planes reunidos aquí.</p><div className="hero-actions"><button onClick={()=>setSection('finances')}>Ver finanzas <ArrowUpRight size={16}/></button><button onClick={()=>setSection('reminders')}>Mis recordatorios <Bell size={16}/></button></div></div><div className="hero-balance"><small>Balance · últimos {period} días</small><strong>{euro(totals.earned-totals.spent)}</strong><span>{expenses.length} movimientos · {rows('reminders').length} recordatorios</span></div></section>
     <div className="summary-grid overview-metrics"><div className="metric"><div className="metric-icon warm"><Wallet size={21}/></div><span>Balance del periodo</span><strong className={totals.earned-totals.spent>=0?'positive':'negative'}>{euro(totals.earned-totals.spent)}</strong><small>Ingresos menos gastos</small></div><div className="metric"><div className="metric-icon lilac"><Bell size={21}/></div><span>Recordatorios</span><strong>{rows('reminders').length}</strong><small>Pendientes</small></div><div className="metric"><div className="metric-icon peach"><ShoppingBasket size={21}/></div><span>Lista de la compra</span><strong>{rows('shopping_items').length}</strong><small>Productos por comprar</small></div><div className="metric"><div className="metric-icon mint"><Flame size={21}/></div><span>Hábitos</span><strong>{rows('habits').length}</strong><small>{rows('habit_checks').filter(r=>r.date===todayInMadrid()&&r.done).length} completados hoy</small></div><div className="metric"><div className="metric-icon peach"><Cigarette size={21}/></div><span>Tabaco</span><strong>{euro(tobaccoTotal(expenses))}</strong><small>Últimos {period} días</small></div><div className="metric"><div className="metric-icon mint"><CupSoda size={21}/></div><span>Energéticas</span><strong>{expenses.reduce((n,r)=>n+energyDrinkCans(r),0)}</strong><small>Latas · últimos {period} días</small></div></div>
     <div className="two-cols"><Card title="Próximos recordatorios" aside={<button className="text-link" onClick={()=>setSection('reminders')}>Ver todos →</button>}>{rows('reminders').length?rows('reminders').slice(0,4).map(r=><div className="list-row" key={r.id}><span className="row-symbol lilac"><Bell size={17}/></span><span className="row-main"><strong>{r.text}</strong><small>{dateTime(r.remind_at)}</small></span></div>):<Empty>No tienes recordatorios pendientes.</Empty>}</Card><Card title="En tu calendario" aside={<button className="text-link" onClick={()=>setSection('calendar')}>Ver calendario →</button>}>{data.calendar?.connected?data.calendar.events.length?data.calendar.events.slice(0,4).map((e:Row,i:number)=><div className="list-row" key={i}><span className="row-symbol mint"><CalendarDays size={17}/></span><span className="row-main"><strong>{e.title}</strong><small>{e.start?dateTime(e.start):e.date}</small></span></div>):<Empty>No hay eventos en los próximos días.</Empty>:<Empty>Conecta Google Calendar para ver tus eventos.</Empty>}</Card></div></>}
