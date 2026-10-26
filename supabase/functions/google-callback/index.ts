@@ -26,7 +26,8 @@ Deno.serve(async (request) => {
   const db = createAdminClient();
   try {
     await completeCalendarLink(db, state, code, new Date());
-    const message = "Calendario conectado. Ya puedes preguntarme «¿qué tengo mañana?» o pedirme que añada eventos.";
+    const message = "Google conectado. Ya puedes preguntarme «¿qué tengo mañana?», pedirme que añada eventos o " +
+      "preguntarme por tu correo, por ejemplo «¿tengo correos sin leer?».";
     await sendTelegramMessage(message).catch((error) => console.error("No se pudo avisar por Telegram", error));
     return textPage(`${message}\n\nYa puedes cerrar esta pestaña y volver a Telegram.`);
   } catch (error) {

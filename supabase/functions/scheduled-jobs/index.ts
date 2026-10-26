@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
+import { notifyNewWeatherAlerts } from "../_shared/aemet.ts";
 import { checkBudgetAlerts } from "../_shared/budgets.ts";
 import { createAdminClient, functionUrl, getInternalSecret } from "../_shared/database.ts";
 import { errorMessage } from "../_shared/env.ts";
@@ -30,6 +31,10 @@ async function morningSummary(db: SupabaseClient, now: Date): Promise<string> {
   return "Enviado el resumen de la mañana";
 }
 
+async function weatherAlerts(db: SupabaseClient, now: Date): Promise<string> {
+  return `Enviados ${await notifyNewWeatherAlerts(db, now)} avisos de AEMET`;
+}
+
 async function habitQuestions(db: SupabaseClient, now: Date): Promise<string> {
   return `Preguntados ${await askHabits(db, now)} hábitos`;
 }
@@ -53,12 +58,13 @@ async function runAll(db: SupabaseClient, now: Date, tasks: ((db: SupabaseClient
 // pg_cron funciona en UTC: la hora de Madrid se comprueba aquí para no desfasarse con el cambio de horario.
 async function runHourlyJobs(db: SupabaseClient, now: Date): Promise<string> {
   const clock = madridClock(now);
-  const tasks: ((db: SupabaseClient, now: Date) => Promise<string>)[] = [];
+  // Los avisos de AEMET se miran cada hora: pueden publicarse en cualquier momento.
+  const tasks: ((db: SupabaseClient, now: Date) => Promise<string>)[] = [weatherAlerts];
   if (clock.hour === MORNING_SUMMARY_HOUR) tasks.push(morningSummary);
   if (clock.hour === DAILY_IMPORT_HOUR) tasks.push(importAndCheckBudgets);
   if (clock.isSunday && clock.hour === WEEKLY_SUMMARY_HOUR) tasks.push(importAndSummarize);
   if (clock.hour === HABIT_QUESTION_HOUR) tasks.push(habitQuestions);
-  return tasks.length === 0 ? "Nada que hacer a esta hora" : await runAll(db, now, tasks);
+  return await runAll(db, now, tasks);
 }
 
 async function runJob(db: SupabaseClient, job: string, now: Date): Promise<string> {
@@ -75,6 +81,8 @@ async function runJob(db: SupabaseClient, job: string, now: Date): Promise<strin
       return morningSummary(db, now);
     case "habits":
       return habitQuestions(db, now);
+    case "weather-alerts":
+      return weatherAlerts(db, now);
     case "setup-telegram-webhook":
       await setTelegramWebhook(functionUrl("telegram-webhook"), await getInternalSecret(db, "telegram_webhook_secret"));
       return "Webhook de Telegram configurado";
