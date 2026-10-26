@@ -20,7 +20,8 @@ Deno.test("lo que no es ninguna funcionalidad se contesta como pregunta general"
       assertEquals(requests.length, 2);
     },
   );
-  assertEquals(queries.length, 0);
+  // Solo lee la memoria, para hablarle con lo que sabe de él.
+  assertEquals(queries.map((query) => query[0]), ['from("memory")']);
 });
 
 Deno.test("lo que es una funcionalidad la ejecuta sobre los datos", async () => {

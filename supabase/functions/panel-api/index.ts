@@ -8,6 +8,7 @@ import { createBankLink, disconnectBank, hasBankConnections } from "../_shared/b
 import { parseChatInput, replyToChat } from "../_shared/panel-chat.ts";
 import { parseWeightRequest, saveWeight } from "../_shared/weight.ts";
 import { transcribeAudio } from "../_shared/groq.ts";
+import { inventFunnyLine, loadMemory, saveMemory } from "../_shared/memory.ts";
 
 const resources = new Set(["shopping_items", "notes", "birthdays", "habits", "reminders", "expenses", "incomes", "weight_entries"]);
 const editable = new Set(["shopping_items", "notes", "birthdays", "habits", "reminders", "weight_entries"]);
@@ -83,6 +84,8 @@ Deno.serve(async (request) => {
         const { data, error } = await query; if (error) throw error; return json(data, 200, cors);
       }
       if (resource === "budgets") return json(await loadBudgetStatuses(db, now), 200, cors);
+      if (resource === "memory") return json({ content: await loadMemory(db) }, 200, cors);
+      if (resource === "greeting") return json({ text: await inventFunnyLine(db) }, 200, cors);
       if (resource === "bank_connection") return json({ connected: await hasBankConnections(db) }, 200, cors);
       if (resource === "habit_checks") {
         const { data, error } = await db.from("habit_checks").select("habit_id,date,done").gte("date", addDaysToDate(today, -120));
@@ -99,8 +102,9 @@ Deno.serve(async (request) => {
     }
     if (request.method === "POST" && resource === "transcribe") return json({ text: await transcribeUpload(request) }, 200, cors);
     if (request.method === "POST") {
-      const input = await body(request, resource === "chat" ? MAX_CHAT_BODY : MAX_BODY);
+      const input = await body(request, resource === "chat" || resource === "memory" ? MAX_CHAT_BODY : MAX_BODY);
       if (resource === "chat") return json(await replyToChat(db, parseChatInput(input), now), 200, cors);
+      if (resource === "memory") { await saveMemory(db, input.content); return json({ ok: true }, 200, cors); }
       if (resource === "shopping_items" || resource === "notes") {
         const { error } = await db.from(resource).insert({ text: validText(input.text, resource === "notes" ? 1000 : 100) }); if (error) throw error;
       } else if (resource === "birthdays") {

@@ -24,8 +24,11 @@ export async function transcribeAudio(audio: Blob, fileName: string): Promise<st
   return typeof text === "string" ? text.trim() : "";
 }
 
-/** Pide al modelo una respuesta en JSON y la devuelve ya parseada (sin validar: eso lo hace quien llama). */
-export async function askGroqForJson(systemPrompt: string, userMessage: string): Promise<unknown> {
+/**
+ * Pide al modelo una respuesta en JSON y la devuelve ya parseada (sin validar: eso lo hace quien llama).
+ * Con temperatura 0 responde siempre igual, que es lo que se quiere al interpretar; para inventar, más alta.
+ */
+export async function askGroqForJson(systemPrompt: string, userMessage: string, temperature = 0): Promise<unknown> {
   const response = await fetch(GROQ_CHAT_URL, {
     method: "POST",
     headers: {
@@ -39,7 +42,7 @@ export async function askGroqForJson(systemPrompt: string, userMessage: string):
         { role: "user", content: userMessage },
       ],
       response_format: { type: "json_object" },
-      temperature: 0,
+      temperature,
     }),
   });
   if (!response.ok) throw new Error(`Groq respondió ${response.status}: ${await response.text()}`);
