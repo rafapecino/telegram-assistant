@@ -1,5 +1,11 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { describeWeather, describeWeatherCode, fetchTodayWeather } from "./weather.ts";
+import {
+  describeWeather,
+  describeWeatherCode,
+  fetchForecast,
+  fetchTodayWeather,
+  VILLANUEVA_DE_LA_CANADA,
+} from "./weather.ts";
 import { withFakeFetch } from "./testing.ts";
 
 function openMeteo(geocoding: unknown, forecast: unknown) {
@@ -26,6 +32,7 @@ Deno.test("describe el día con temperaturas redondeadas y la lluvia si se sabe"
 Deno.test("busca la ciudad y pide la previsión de hoy en hora de Madrid", async () => {
   const forecast = {
     daily: {
+      time: ["2026-10-26"],
       weather_code: [61],
       temperature_2m_max: [18],
       temperature_2m_min: [11],
@@ -63,6 +70,7 @@ Deno.test("un 503 pasajero se reintenta y el tiempo llega igual", async () => {
   let calls = 0;
   const forecast = {
     daily: {
+      time: ["2026-10-26"],
       weather_code: [0],
       temperature_2m_max: [20],
       temperature_2m_min: [10],
@@ -73,5 +81,26 @@ Deno.test("un 503 pasajero se reintenta y el tiempo llega igual", async () => {
     calls++ === 0 ? new Response("saturado", { status: 503 }) : openMeteo(MADRID, forecast)(request);
   await withFakeFetch({}, flaky, async () => {
     assertEquals((await fetchTodayWeather("Madrid", [0])).max, 20);
+  });
+});
+
+Deno.test("la previsión de la semana trae un día por fecha, con las coordenadas del sitio", async () => {
+  const forecast = {
+    daily: {
+      time: ["2026-10-26", "2026-10-27"],
+      weather_code: [61, 0],
+      temperature_2m_max: [18, 22],
+      temperature_2m_min: [11, 9],
+      precipitation_probability_max: [80, null],
+    },
+  };
+  await withFakeFetch({}, () => Response.json(forecast), async (requests) => {
+    assertEquals(await fetchForecast(VILLANUEVA_DE_LA_CANADA, 7, []), [
+      { date: "2026-10-26", min: 11, max: 18, code: 61, rainProbability: 80 },
+      { date: "2026-10-27", min: 9, max: 22, code: 0, rainProbability: null },
+    ]);
+    const url = new URL(requests[0].url);
+    assertEquals(url.searchParams.get("latitude"), "40.44689");
+    assertEquals(url.searchParams.get("forecast_days"), "7");
   });
 });
