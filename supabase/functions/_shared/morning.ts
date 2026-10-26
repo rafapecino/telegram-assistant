@@ -50,7 +50,6 @@ const GREETINGS = [
   "☀️ Buenos días, sinvergüenza. Hoy te portas bien, ¿vale?",
   "☀️ Arriba, campeón, que el día está para ganarlo.",
   "☀️ Buenos días, zángano. Hoy sí, ¿eh?",
-  "☀️ Hola, Míster Energética. ¿Empezamos con agua para variar?",
   "☀️ Buenos días, artista. Pinta bien el día.",
   "☀️ Despierta, cenutrio, que tienes cosas pendientes.",
   "☀️ Buenos días, jefe. Aquí tu becario digital, al pie del cañón.",

@@ -47,9 +47,6 @@ export const NICKNAMES = [
   "señor ingeniero",
   "doctorando",
   "becario de lujo",
-  "rey de la procrastinación",
-  "Míster Energética",
-  "fumeta de estanco",
   "tigre",
   "bestia",
 ];

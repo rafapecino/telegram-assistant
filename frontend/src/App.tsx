@@ -113,8 +113,7 @@ const GREETINGS = [
   '¿Qué pasa, máquina? ⚙️','Dime, fiera 🦁','Hombre, el crack ha vuelto ⚽','¿Qué se cuenta la figura? 🗿','A tus pies, campeón 🏅',
   '¿Qué tramas, bribón? 😼','Hola, golfo, ¿de dónde vienes? 🌙','Menudo elemento tenemos aquí 🧪','¿Qué hay, pájaro? 🐦',
   'Llegó el fenómeno 🌪️','Buenas, mamón 😜','¿Qué quieres, melón? 🍈','Dime, cenutrio, que tengo prisa 🏃',
-  'Bienvenido, señor ingeniero 👷','¿Cómo va eso, doctorando? 🎓','Ojo, que ha llegado Míster Energética ⚡',
-  '¿Y ahora qué, listillo? 🤓','Habla, tronco 🌳','¿Qué pasa, tigre? 🐯','Ya está aquí el rey de la procrastinación 👑',
+  'Bienvenido, señor ingeniero 👷','¿Cómo va eso, doctorando? 🎓','¿Y ahora qué, listillo? 🤓','Habla, tronco 🌳','¿Qué pasa, tigre? 🐯',
   'Hola, sinvergüenza 😈','¿Qué necesitas, maestro? 🧙','Dime, artista 🎨','A ver, canalla, ¿qué has liado? 🃏','Buenas, jefe 💼',
 ];
 const DAY_MS = 86_400_000;
