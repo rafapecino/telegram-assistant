@@ -10,7 +10,15 @@ import { parseWeightRequest, saveWeight } from "../_shared/weight.ts";
 import { transcribeAudio } from "../_shared/groq.ts";
 import { inventFunnyLine, loadMemory, saveMemory } from "../_shared/memory.ts";
 import { fetchWeatherAlerts } from "../_shared/aemet.ts";
-import { DEFAULT_CITY, describeWeatherCode, fetchTodayWeather } from "../_shared/weather.ts";
+import {
+  DEFAULT_CITY,
+  describeWeatherCode,
+  fetchForecast,
+  findPlace,
+  FORECAST_DAYS,
+  type Place,
+  VILLANUEVA_DE_LA_CANADA,
+} from "../_shared/weather.ts";
 
 const resources = new Set(["shopping_items", "notes", "birthdays", "habits", "reminders", "expenses", "incomes", "weight_entries"]);
 const editable = new Set(["shopping_items", "notes", "birthdays", "habits", "reminders", "weight_entries"]);
@@ -36,6 +44,11 @@ async function transcribeUpload(request: Request): Promise<string> {
   if (audio.size === 0) throw new Error("No se ha recibido audio.");
   if (audio.size > MAX_AUDIO_BYTES) throw new Error("La nota de voz es demasiado larga.");
   return transcribeAudio(audio, audioFileName(request.headers.get("content-type") ?? ""));
+}
+/** Los 7 días de un sitio, con el cielo ya en palabras. */
+async function weekForecast(place: Place) {
+  const days = await fetchForecast(place, FORECAST_DAYS);
+  return { place: place.name, days: days.map((day) => ({ ...day, description: describeWeatherCode(day.code) })) };
 }
 function json(data: unknown, status = 200, headers: HeadersInit = {}) {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers } });
@@ -90,8 +103,8 @@ Deno.serve(async (request) => {
       if (resource === "chat_messages") return json(await loadChatMessages(db), 200, cors);
       if (resource === "greeting") return json({ text: await inventFunnyLine(db) }, 200, cors);
       if (resource === "weather") {
-        const weather = await fetchTodayWeather(Deno.env.get("WEATHER_CITY")?.trim() || DEFAULT_CITY);
-        return json({ ...weather, description: describeWeatherCode(weather.code) }, 200, cors);
+        const places = [await findPlace(Deno.env.get("WEATHER_CITY")?.trim() || DEFAULT_CITY), VILLANUEVA_DE_LA_CANADA];
+        return json(await Promise.all(places.map(weekForecast)), 200, cors);
       }
       // Separado del tiempo: si AEMET falla, la previsión se sigue viendo.
       if (resource === "weather_alerts") {
