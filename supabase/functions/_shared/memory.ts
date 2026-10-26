@@ -1,8 +1,12 @@
 // Memoria: lo que el asistente sabe de Rafa (trabajo, tesis, manías…). Es un solo documento que se edita en el panel.
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
 import { askGroqForJson } from "./groq.ts";
+import type { ButtonResult } from "./personal-replies.ts";
+import type { BotReply } from "./telegram.ts";
+import { comparable } from "./text.ts";
 
 export const MAX_MEMORY_LENGTH = 4000;
+const MAX_SUGGESTION_LENGTH = 300;
 // Alta para que cada frase salga distinta aunque la memoria sea la misma.
 const FUNNY_LINE_TEMPERATURE = 1;
 
@@ -111,4 +115,78 @@ export async function inventFunnyLine(db: SupabaseClient): Promise<string> {
     FUNNY_LINE_TEMPERATURE,
   );
   return parseFunnyLine(raw);
+}
+
+/** El dato nuevo que el modelo propone apuntar, o null si no hay ninguno o ya está en la memoria. */
+export function parseMemorySuggestion(raw: unknown, memory: string): string | null {
+  const remember = (raw as { remember?: unknown } | null)?.remember;
+  if (typeof remember !== "string") return null;
+  const text = remember.trim().replace(/\s+/g, " ").replace(/\.$/, "");
+  if (!text || text.length > MAX_SUGGESTION_LENGTH) return null;
+  // El modelo a veces propone lo que ya sabe: si está tal cual en la memoria, no se pregunta.
+  return comparable(memory).includes(comparable(text)) ? null : text;
+}
+
+/** Guarda la propuesta y añade a la respuesta la pregunta con sus botones. */
+export async function suggestMemory(db: SupabaseClient, answer: string, text: string): Promise<BotReply> {
+  const { data, error } = await db.from("memory_suggestions").insert({ text, answer }).select("id").single();
+  if (error) throw new Error(`No se pudo guardar la propuesta para la memoria: ${error.message}`);
+  return {
+    text: `${answer}\n\n🧠 ¿Lo apunto en tu memoria? «${text}»`,
+    buttons: [[
+      { text: "🧠 Guárdalo", callback_data: `memory:yes:${data.id}` },
+      { text: "No", callback_data: `memory:no:${data.id}` },
+    ]],
+  };
+}
+
+export function parseMemoryButton(data: string): { suggestionId: number; accept: boolean } | null {
+  const match = data.match(/^memory:(yes|no):(\d+)$/);
+  return match ? { suggestionId: Number(match[2]), accept: match[1] === "yes" } : null;
+}
+
+/** El dato va como una línea más al final. Devuelve null si ya no cabe. */
+export function appendToMemory(memory: string, text: string): string | null {
+  const updated = memory.trim() ? `${memory.trim()}\n- ${text}` : `- ${text}`;
+  return updated.length <= MAX_MEMORY_LENGTH ? updated : null;
+}
+
+interface MemorySuggestion {
+  text: string;
+  answer: string;
+}
+
+async function acceptSuggestion(db: SupabaseClient, suggestion: MemorySuggestion): Promise<ButtonResult> {
+  const updated = appendToMemory(await loadMemory(db), suggestion.text);
+  if (!updated) {
+    return {
+      message: {
+        text: `${suggestion.answer}\n\n🧠 No cabe en la memoria (máximo ${MAX_MEMORY_LENGTH} caracteres). ` +
+          `Haz hueco en el panel y añádelo a mano: «${suggestion.text}»`,
+      },
+      toast: "Memoria llena",
+    };
+  }
+  await saveMemory(db, updated);
+  return {
+    message: { text: `${suggestion.answer}\n\n🧠 Apuntado en tu memoria: «${suggestion.text}»` },
+    toast: "Guardado",
+  };
+}
+
+/** «Guárdalo» o «No»: en los dos casos la propuesta se borra y el mensaje se queda con la respuesta. */
+export async function applyMemoryButton(
+  db: SupabaseClient,
+  button: { suggestionId: number; accept: boolean },
+): Promise<ButtonResult> {
+  const { data: suggestion, error } = await db.from("memory_suggestions").select("text,answer")
+    .eq("id", button.suggestionId).maybeSingle();
+  if (error) throw new Error(`No se pudo leer la propuesta para la memoria: ${error.message}`);
+  if (!suggestion) return { message: { text: "Esta propuesta ya está respondida." }, toast: "Ya respondida" };
+  const result = button.accept
+    ? await acceptSuggestion(db, suggestion)
+    : { message: { text: suggestion.answer }, toast: "Vale, no lo apunto" };
+  const { error: deleteError } = await db.from("memory_suggestions").delete().eq("id", button.suggestionId);
+  if (deleteError) throw new Error(`No se pudo borrar la propuesta para la memoria: ${deleteError.message}`);
+  return result;
 }
