@@ -46,14 +46,19 @@ Deno.test("el resumen junta solo las partes que tienen algo", () => {
   assertEquals(composeSummary([["a"], [], ["b", "c"]]), "a\n\nb\nc");
 });
 
-Deno.test("si el tiempo falla, el resumen lo dice y sigue con lo demás; sin calendario no habla de él", async () => {
+Deno.test("si el tiempo falla, el resumen lo dice y sigue; sin avisos ni Google no habla de ellos", async () => {
   const { db } = fakeDb((query) => {
     if (query[0] === 'from("reminders")') return { data: [{ text: "Llamar", remind_at: "2026-10-22T16:00:00Z" }] };
     if (query[0] === 'from("google_connections")') return { data: null };
     if (query[0] === 'from("birthdays")') return { data: [] };
     return { data: [{ id: 1, text: "leche" }] };
   });
-  await withFakeFetch({}, () => new Response("", { status: 404 }), async () => {
+  // AEMET contesta así cuando no hay avisos.
+  const respond = (request: Request) =>
+    request.url.includes("aemet")
+      ? Response.json({ descripcion: "No hay datos que satisfagan esos criterios", estado: 404 }, { status: 404 })
+      : new Response("", { status: 404 });
+  await withFakeFetch({ AEMET_API_KEY: "a" }, respond, async () => {
     assertEquals(
       await buildMorningSummary(db, NOW),
       [

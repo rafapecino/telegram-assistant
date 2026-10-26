@@ -92,11 +92,14 @@ Deno.test("los eventos de todo el día terminan el día siguiente, como los cuen
   assertEquals(timed.end, { dateTime: "2026-10-23T15:30:00.000Z", timeZone: "Europe/Madrid" });
 });
 
-Deno.test("el enlace para conectar pide solo los eventos y acceso permanente", async () => {
+Deno.test("el enlace para conectar pide los eventos, leer Gmail y acceso permanente", async () => {
   const { db } = fakeDb(() => ({ data: { state: "estado-1" } }));
   await withFakeFetch(GOOGLE_ENV, google(), async () => {
     const link = new URL(await createCalendarLink(db));
-    assertEquals(link.searchParams.get("scope"), "https://www.googleapis.com/auth/calendar.events");
+    assertEquals(
+      link.searchParams.get("scope"),
+      "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.readonly",
+    );
     assertEquals(link.searchParams.get("access_type"), "offline");
     assertEquals(link.searchParams.get("state"), "estado-1");
     assertEquals(link.searchParams.get("redirect_uri"), "https://x.supabase.co/functions/v1/google-callback");

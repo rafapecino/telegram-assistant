@@ -18,6 +18,8 @@ import {
   formatEvents,
   listEvents,
 } from "./calendar.ts";
+import { type BusRequest, replyToBus } from "./emt.ts";
+import { type GmailRequest, replyToGmail } from "./gmail.ts";
 import {
   createHabit,
   deleteHabit,
@@ -185,6 +187,7 @@ const BIRTHDAY_KINDS = new Set(["birthday_save", "birthday_delete", "birthday_li
 const HABIT_KINDS = new Set(["habit_create", "habit_delete", "habit_log", "habit_list"]);
 const CALENDAR_KINDS = new Set(["calendar_list", "calendar_create", "calendar_create_all_day"]);
 const WEIGHT_KINDS = new Set(["weight_save", "weight_list"]);
+const BUS_KINDS = new Set(["bus_arrivals", "bus_stop_save", "bus_stop_delete", "bus_stop_list"]);
 
 /** Responde a una intención de estas funciones, o devuelve null si no es de ninguna. */
 export async function replyToPersonalIntent(
@@ -199,6 +202,8 @@ export async function replyToPersonalIntent(
   if (HABIT_KINDS.has(intent.kind)) return { text: await replyToHabit(db, intent as HabitRequest, today) };
   if (CALENDAR_KINDS.has(intent.kind)) return { text: await replyToCalendar(db, intent as CalendarRequest, today) };
   if (WEIGHT_KINDS.has(intent.kind)) return { text: await replyToWeight(db, intent as WeightRequest) };
+  if (intent.kind === "gmail_search") return { text: await replyToGmail(db, intent as GmailRequest) };
+  if (BUS_KINDS.has(intent.kind)) return { text: await replyToBus(db, intent as BusRequest, now) };
   return null;
 }
 
