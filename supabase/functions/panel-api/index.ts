@@ -9,6 +9,8 @@ import { clearChatMessages, loadChatMessages, parseChatInput, replyToChat } from
 import { parseWeightRequest, saveWeight } from "../_shared/weight.ts";
 import { transcribeAudio } from "../_shared/groq.ts";
 import { inventFunnyLine, loadMemory, saveMemory } from "../_shared/memory.ts";
+import { fetchWeatherAlerts } from "../_shared/aemet.ts";
+import { DEFAULT_CITY, describeWeatherCode, fetchTodayWeather } from "../_shared/weather.ts";
 
 const resources = new Set(["shopping_items", "notes", "birthdays", "habits", "reminders", "expenses", "incomes", "weight_entries"]);
 const editable = new Set(["shopping_items", "notes", "birthdays", "habits", "reminders", "weight_entries"]);
@@ -87,6 +89,14 @@ Deno.serve(async (request) => {
       if (resource === "memory") return json({ content: await loadMemory(db) }, 200, cors);
       if (resource === "chat_messages") return json(await loadChatMessages(db), 200, cors);
       if (resource === "greeting") return json({ text: await inventFunnyLine(db) }, 200, cors);
+      if (resource === "weather") {
+        const weather = await fetchTodayWeather(Deno.env.get("WEATHER_CITY")?.trim() || DEFAULT_CITY);
+        return json({ ...weather, description: describeWeatherCode(weather.code) }, 200, cors);
+      }
+      // Separado del tiempo: si AEMET falla, la previsión se sigue viendo.
+      if (resource === "weather_alerts") {
+        return json((await fetchWeatherAlerts()).filter((alert) => alert.expires > now), 200, cors);
+      }
       if (resource === "bank_connection") return json({ connected: await hasBankConnections(db) }, 200, cors);
       if (resource === "habit_checks") {
         const { data, error } = await db.from("habit_checks").select("habit_id,date,done").gte("date", addDaysToDate(today, -120));
