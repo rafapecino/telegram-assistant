@@ -52,3 +52,11 @@ Deno.test("las funciones personales van a su propia validación", () => {
     "calendar_list",
   );
 });
+
+Deno.test("el correo y el autobús van a su propia validación", () => {
+  assertEquals(parseMessageIntent({ intent: "gmail", query: "from:hacienda" }, NOW), {
+    kind: "gmail_search",
+    query: "from:hacienda",
+  });
+  assertEquals(parseMessageIntent({ intent: "bus", action: "list" }, NOW), { kind: "bus_stop_list" });
+});

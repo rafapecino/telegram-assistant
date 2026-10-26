@@ -30,9 +30,12 @@ const CAPABILITIES = [
   "cumpleaños (avisa el día antes y el mismo día)",
   "hábitos diarios con rachas",
   "consultar y crear eventos en Google Calendar",
+  "buscar correos en Gmail (solo remitente, asunto y fecha; no puede enviar)",
+  "cuándo pasa el autobús de la EMT por una parada, con paradas guardadas por nombre",
+  "avisos meteorológicos de AEMET para la Comunidad de Madrid",
   "registro del peso corporal para ver si sube o baja",
   "apuntar a mano energéticas o tabaco pagados en efectivo",
-  "un resumen cada mañana a las 8:00 con el tiempo, recordatorios, eventos y cumpleaños",
+  "un resumen cada mañana a las 8:00 con el tiempo, avisos, recordatorios, eventos, correo y cumpleaños",
 ].join("; ");
 
 async function replyToBudgetDelete(db: SupabaseClient, category: string): Promise<string> {

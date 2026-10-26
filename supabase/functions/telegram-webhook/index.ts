@@ -27,11 +27,14 @@ const HELP_TEXT = [
   '• Cumpleaños: "el cumple de mamá es el 3 de marzo". Te aviso el día antes y el mismo día.',
   '• Hábitos: "quiero leer cada día". Te pregunto cada noche a las 21:00.',
   '• Calendario: "¿qué tengo mañana?" o "pon en el calendario dentista el martes a las 10".',
-  "• Cada día a las 8:00 te mando un resumen: tiempo, recordatorios, calendario y cumpleaños.",
+  '• Correo: "¿tengo correos sin leer?" o "¿me ha escrito Hacienda?". Solo leo remitente, asunto y fecha.',
+  '• Autobús EMT: "la parada de casa es la 1234" y luego "¿cuándo pasa el bus de casa?".',
+  "• Avisos de AEMET para Madrid: te escribo cuando sale uno nuevo y salen en el resumen de la mañana.",
+  "• Cada día a las 8:00 te mando un resumen: tiempo, avisos, recordatorios, calendario, correo y cumpleaños.",
   "• También me puedes mandar notas de voz.",
   "• /conectar_banco: conecta tu cuenta del banco para importar los gastos cada día a las 8:00.",
   "• /desconectar_banco: corta el acceso a tu banco. Los gastos ya importados se quedan.",
-  "• /conectar_calendario y /desconectar_calendario: tu calendario de Google.",
+  "• /conectar_calendario y /desconectar_calendario: tu cuenta de Google (calendario y Gmail).",
   "• Los domingos a las 20:00 te mando el resumen de gastos de la semana.",
 ].join("\n");
 

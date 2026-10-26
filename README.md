@@ -16,10 +16,16 @@ Bot personal de Telegram que:
 - Recuerda cumpleaños y avisa el día antes y el mismo día.
 - Sigue hábitos diarios: cada noche a las 21:00 pregunta si los has hecho, con botones Sí/No, y lleva la racha.
 - Consulta y crea eventos en Google Calendar ("¿qué tengo mañana?").
+- Busca en Gmail ("¿tengo algo de Hacienda?") y enseña remitente, asunto y fecha. Solo lee: no envía ni borra.
+- Dice cuándo pasa el autobús de la EMT por una parada, por número o con paradas guardadas por nombre ("la parada
+  de casa es la 1234" y luego "¿cuándo pasa el bus de casa?").
+- Avisa por Telegram cuando AEMET publica un aviso meteorológico (amarillo, naranja o rojo) en la Comunidad de
+  Madrid. Lo mira cada hora.
 - Responde preguntas generales, como un chat normal, cuando el mensaje no es de ninguna de sus funciones. Si en esa
   conversación cuentas algo nuevo de ti ("en abril corro la maratón"), propone apuntarlo en la memoria con los botones
   Guárdalo y No. Nunca lo guarda sin que pulses Guárdalo.
-- Cada día a las 8:00 manda un resumen: tiempo, recordatorios y eventos del día, cumpleaños y lista de la compra.
+- Cada día a las 8:00 manda un resumen: tiempo, avisos de AEMET, recordatorios y eventos del día, correos
+  importantes sin leer, cumpleaños y lista de la compra.
 
 Funciona en Supabase (Edge Functions, Postgres y pg_cron). Las frases y las categorías las interpreta
 `openai/gpt-oss-120b`, un modelo open source, a través de Groq, que también transcribe las notas de voz
@@ -56,17 +62,20 @@ ejecutarse sola, añade su tarea en `runJob` (`scheduled-jobs/index.ts`).
    | `GROQ_API_KEY`               | console.groq.com/keys                                           |
    | `ENABLE_BANKING_APP_ID`      | ID de la aplicación en enablebanking.com/cp/applications        |
    | `ENABLE_BANKING_PRIVATE_KEY` | Contenido del `.pem` que se descarga al registrar la aplicación |
-   | `GOOGLE_CLIENT_ID`           | Cliente OAuth de Google Cloud (paso 3). Solo para el calendario |
+   | `GOOGLE_CLIENT_ID`           | Cliente OAuth de Google Cloud (paso 3). Calendario y Gmail      |
    | `GOOGLE_CLIENT_SECRET`       | El secreto de ese mismo cliente                                 |
    | `WEATHER_CITY`               | Opcional. Ciudad del tiempo del resumen; por defecto, Madrid    |
+   | `AEMET_API_KEY`              | Clave gratuita de opendata.aemet.es (llega por correo)          |
+   | `EMT_EMAIL`                  | Cuenta de mobilitylabs.emtmadrid.es, con el correo confirmado   |
+   | `EMT_PASSWORD`               | La contraseña de esa cuenta                                     |
 
 2. En Enable Banking, la aplicación (entorno Production) debe tener como redirect URL
    `https://<ref>.supabase.co/functions/v1/bank-callback`.
 
-3. Para el calendario, en console.cloud.google.com:
-   - Activa la API de Google Calendar.
-   - En la pantalla de consentimiento OAuth, tipo de usuario Externo, añade el permiso
-     `https://www.googleapis.com/auth/calendar.events` y publica la aplicación (estado En producción). En estado de
+3. Para el calendario y Gmail, en console.cloud.google.com:
+   - Activa la API de Google Calendar y la de Gmail.
+   - En la pantalla de consentimiento OAuth, tipo de usuario Externo, añade los permisos
+     `https://www.googleapis.com/auth/calendar.events` y `https://www.googleapis.com/auth/gmail.readonly` y publica la aplicación (estado En producción). En estado de
      prueba, Google retira el acceso a los 7 días. Al autorizar verás el aviso «Google no ha verificado esta
      aplicación»: es tu propia aplicación, pulsa Configuración avanzada → Ir a la aplicación.
    - Crea un ID de cliente OAuth de tipo Aplicación web con URI de redirección
@@ -107,12 +116,17 @@ botones necesitan `callback_query`), repite también el paso 6.
 
 A Groq van el texto de tus mensajes, las notas de voz para transcribirlas, las descripciones de los gastos para
 clasificarlas y tus notas cuando les haces una pregunta o pides borrar una. Los números de tarjeta se ocultan antes
-(`****1234`). A Google van los eventos que creas y las fechas que consultas; a Open-Meteo, solo el nombre de la ciudad.
+(`****1234`). A Google van los eventos que creas, las fechas que consultas y las búsquedas de Gmail; el contenido
+de los correos no se lee y a Groq solo llega tu pregunta. A Open-Meteo, solo el nombre de la ciudad; a la EMT, el
+número de parada.
+
+Si conectaste Google antes de añadir Gmail, vuelve a escribir `/conectar_calendario` para dar el permiso nuevo.
 
 ## Lanzar una tarea a mano
 
 ```sql
-select private.call_scheduled_job('import-expenses');  -- o 'weekly-summary', 'reminders', 'morning-summary', 'habits'
+select private.call_scheduled_job('import-expenses');
+-- o 'weekly-summary', 'reminders', 'morning-summary', 'habits', 'weather-alerts'
 select status_code, content from net._http_response order by id desc limit 1;
 ```
 

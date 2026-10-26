@@ -1,7 +1,9 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
+import { fetchWeatherAlerts, morningAlertLines } from "./aemet.ts";
 import { type Birthday, birthdaysOn, listBirthdays, nameWithAge } from "./birthdays.ts";
 import { type CalendarEvent, isCalendarConnected, listEvents } from "./calendar.ts";
 import { errorMessage } from "./env.ts";
+import { MORNING_QUERY, morningEmailLines, searchEmails } from "./gmail.ts";
 import { addDaysToDate, madridClock, madridLocalToUtc } from "./madrid-time.ts";
 import { inventFunnyLine } from "./memory.ts";
 import { listShoppingItems } from "./shopping.ts";
@@ -146,12 +148,18 @@ export async function buildMorningSummary(db: SupabaseClient, now: Date): Promis
   return composeSummary([
     [await morningGreeting(db, today)],
     await section("el tiempo", async () => [describeWeather(await fetchTodayWeather(city))]),
+    await section("los avisos de AEMET", async () => morningAlertLines(await fetchWeatherAlerts(), now)),
     await section("los recordatorios", async () => reminderLines(await todayReminders(db, today))),
     // Sin calendario conectado no hay nada que decir: no es un fallo.
     await section(
       "el calendario",
       async () => await isCalendarConnected(db) ? eventLines(await listEvents(db, today, today)) : [],
     ),
+    await section("el correo", async () => {
+      if (!await isCalendarConnected(db)) return [];
+      const { emails, total } = await searchEmails(db, MORNING_QUERY);
+      return morningEmailLines(emails, total);
+    }),
     await section("los cumpleaños", async () => birthdayLines(await listBirthdays(db), today)),
     await section("la lista de la compra", async () => shoppingLines((await listShoppingItems(db)).length)),
   ]);
