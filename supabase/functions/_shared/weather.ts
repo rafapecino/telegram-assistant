@@ -3,6 +3,8 @@
 const GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search";
 const FORECAST_URL = "https://api.open-meteo.com/v1/forecast";
 export const DEFAULT_CITY = "Madrid";
+// A las horas en punto Open-Meteo se satura y a veces responde 503 (pasó a las 8:00 del resumen): se reintenta.
+export const RETRY_DELAYS_MS = [2_000, 5_000];
 
 export interface DayWeather {
   city: string;
@@ -34,15 +36,22 @@ export function describeWeather(weather: DayWeather): string {
   } °C${rain}.`;
 }
 
-async function getJson(url: string): Promise<Record<string, unknown>> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Open-Meteo respondió ${response.status}`);
-  return response.json();
+/** Los errores 5xx son pasajeros: se reintenta tras cada espera de `retryDelaysMs` antes de rendirse. */
+async function getJson(url: string, retryDelaysMs: number[]): Promise<Record<string, unknown>> {
+  for (const delay of [...retryDelaysMs, null]) {
+    const response = await fetch(url);
+    if (response.ok) return response.json();
+    await response.body?.cancel();
+    if (response.status < 500 || delay === null) throw new Error(`Open-Meteo respondió ${response.status}`);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+  throw new Error("Open-Meteo no respondió");
 }
 
-export async function fetchTodayWeather(city: string): Promise<DayWeather> {
+export async function fetchTodayWeather(city: string, retryDelaysMs = RETRY_DELAYS_MS): Promise<DayWeather> {
   const geocoding = await getJson(
     `${GEOCODING_URL}?${new URLSearchParams({ name: city, count: "1", language: "es" })}`,
+    retryDelaysMs,
   );
   const place = (geocoding.results as { name: string; latitude: number; longitude: number }[] | undefined)?.[0];
   if (!place) throw new Error(`Open-Meteo no conoce la ciudad "${city}"`);
@@ -54,6 +63,7 @@ export async function fetchTodayWeather(city: string): Promise<DayWeather> {
       timezone: "Europe/Madrid",
       forecast_days: "1",
     })}`,
+    retryDelaysMs,
   );
   const daily = forecast.daily as Record<string, (number | null)[]> | undefined;
   const max = daily?.temperature_2m_max?.[0];

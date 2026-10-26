@@ -110,6 +110,12 @@ const GREETINGS = [
   '¿Vienes a ver cuánto has gastado, pringao? 💸','Petzi, el ingeniero más procrastinador de Madrid 🏆','Bienvenido a tu centro de mando, Rafa 🚀',
   '¿Otra pausa de la tesis, Petzi? 👀','Aquí tu asistente, más currante que tú 💪','¿Qué se le ofrece al señorito? 🎩',
   'Rafa, que te veo venir 🕵️','Venga, Petzi, sorpréndeme 🎲',
+  '¿Qué pasa, máquina? ⚙️','Dime, fiera 🦁','Hombre, el crack ha vuelto ⚽','¿Qué se cuenta la figura? 🗿','A tus pies, campeón 🏅',
+  '¿Qué tramas, bribón? 😼','Hola, golfo, ¿de dónde vienes? 🌙','Menudo elemento tenemos aquí 🧪','¿Qué hay, pájaro? 🐦',
+  'Llegó el fenómeno 🌪️','Buenas, mamón 😜','¿Qué quieres, melón? 🍈','Dime, cenutrio, que tengo prisa 🏃',
+  'Bienvenido, señor ingeniero 👷','¿Cómo va eso, doctorando? 🎓','Ojo, que ha llegado Míster Energética ⚡',
+  '¿Y ahora qué, listillo? 🤓','Habla, tronco 🌳','¿Qué pasa, tigre? 🐯','Ya está aquí el rey de la procrastinación 👑',
+  'Hola, sinvergüenza 😈','¿Qué necesitas, maestro? 🧙','Dime, artista 🎨','A ver, canalla, ¿qué has liado? 🃏','Buenas, jefe 💼',
 ];
 const DAY_MS = 86_400_000;
 const dailyGreeting = () => GREETINGS[Math.floor(Date.parse(`${todayInMadrid()}T00:00:00Z`)/DAY_MS)%GREETINGS.length];

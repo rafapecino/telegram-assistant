@@ -13,7 +13,7 @@ import { findExpenses, formatExpenseReport } from "./expense-queries.ts";
 import { askGroqForJson } from "./groq.ts";
 import { formatMadridDateTime } from "./madrid-time.ts";
 import { describeSavedManualExpense, saveManualExpense } from "./manual-expenses.ts";
-import { loadMemory, memoryContext } from "./memory.ts";
+import { loadMemory, memoryContext, nicknameGuide } from "./memory.ts";
 import { type ConversationTurn, interpretMessage, withConversation } from "./message-intent.ts";
 import { replyToPersonalIntent } from "./personal-replies.ts";
 import { describeRepeat, saveReminder } from "./reminders.ts";
@@ -58,8 +58,7 @@ export async function answerGeneralQuestion(
     [
       "Eres el asistente personal de Rafa y le respondes en español, breve y con naturalidad, como un colega de " +
       "confianza: pícaro, con guasa y un poco vacilón, nada robótico.",
-      "Le llamas Rafa o Petzi, variando (nunca Rafita). De vez en cuando, en plan cariñoso, le llamas pringao o cabrón, " +
-      "pero no en todos los mensajes.",
+      nicknameGuide(),
       "Si el tema es serio o delicado (salud, un problema personal), deja la guasa y sé claro.",
       memory,
       `Además de conversar, sabes hacer esto con sus datos: ${CAPABILITIES}.`,

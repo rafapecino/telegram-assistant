@@ -53,12 +53,12 @@ Deno.test("si el tiempo falla, el resumen lo dice y sigue con lo demás; sin cal
     if (query[0] === 'from("birthdays")') return { data: [] };
     return { data: [{ id: 1, text: "leche" }] };
   });
-  await withFakeFetch({}, () => new Response("", { status: 503 }), async () => {
+  await withFakeFetch({}, () => new Response("", { status: 404 }), async () => {
     assertEquals(
       await buildMorningSummary(db, NOW),
       [
-        "☀️ Arriba, Rafa, que la energética no se bebe sola. Hoy es jueves, 22 de octubre.",
-        "(No he podido consultar el tiempo: Open-Meteo respondió 503)",
+        "☀️ Venga, tronco, que el gimnasio no se va a ir a buscarte. Hoy es jueves, 22 de octubre.",
+        "(No he podido consultar el tiempo: Open-Meteo respondió 404)",
         "⏰ Recordatorios de hoy:\n• 18:00 Llamar",
         "🛒 Tienes 1 cosa en la lista de la compra.",
       ].join("\n\n"),

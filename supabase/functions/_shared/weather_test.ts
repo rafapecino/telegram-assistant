@@ -53,7 +53,25 @@ Deno.test("si la ciudad no existe o falta la previsión, falla con un mensaje cl
   await withFakeFetch({}, openMeteo(MADRID, { daily: {} }), async () => {
     await assertRejects(() => fetchTodayWeather("Madrid"), Error, "no ha devuelto la previsión");
   });
-  await withFakeFetch({}, () => new Response("caído", { status: 503 }), async () => {
-    await assertRejects(() => fetchTodayWeather("Madrid"), Error, "Open-Meteo respondió 503");
+  await withFakeFetch({}, () => new Response("caído", { status: 503 }), async (requests) => {
+    await assertRejects(() => fetchTodayWeather("Madrid", [0, 0]), Error, "Open-Meteo respondió 503");
+    assertEquals(requests.length, 3);
+  });
+});
+
+Deno.test("un 503 pasajero se reintenta y el tiempo llega igual", async () => {
+  let calls = 0;
+  const forecast = {
+    daily: {
+      weather_code: [0],
+      temperature_2m_max: [20],
+      temperature_2m_min: [10],
+      precipitation_probability_max: [0],
+    },
+  };
+  const flaky = (request: Request) =>
+    calls++ === 0 ? new Response("saturado", { status: 503 }) : openMeteo(MADRID, forecast)(request);
+  await withFakeFetch({}, flaky, async () => {
+    assertEquals((await fetchTodayWeather("Madrid", [0])).max, 20);
   });
 });
