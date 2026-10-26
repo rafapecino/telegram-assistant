@@ -33,6 +33,7 @@ import {
   recordHabit,
 } from "./habits.ts";
 import { madridClock } from "./madrid-time.ts";
+import { applyMemoryButton, parseMemoryButton } from "./memory.ts";
 import type { MessageIntent } from "./message-intent.ts";
 import {
   answerFromNotes,
@@ -207,7 +208,7 @@ export interface ButtonResult {
   toast: string;
 }
 
-/** Botones de la lista de la compra y de los hábitos. Devuelve null si el botón no es de estas funciones. */
+/** Botones de la lista de la compra, de los hábitos y de la memoria. Devuelve null si no es de estas funciones. */
 export async function applyPersonalButton(db: SupabaseClient, data: string): Promise<ButtonResult | null> {
   const shoppingItemId = parseShoppingButton(data);
   if (shoppingItemId !== null) {
@@ -221,5 +222,7 @@ export async function applyPersonalButton(db: SupabaseClient, data: string): Pro
     const streak = await recordHabit(db, habit, habitButton.date, habitButton.done);
     return { message: { text: describeAnswer(habit, habitButton.done, streak) }, toast: "Apuntado" };
   }
+  const memoryButton = parseMemoryButton(data);
+  if (memoryButton) return applyMemoryButton(db, memoryButton);
   return null;
 }

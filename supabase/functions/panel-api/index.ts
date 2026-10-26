@@ -5,7 +5,7 @@ import { loadBudgetStatuses, parseBudgetRequest, saveBudget, deleteBudget } from
 import { parseReminderRequest, saveReminder } from "../_shared/reminders.ts";
 import { recordHabit } from "../_shared/habits.ts";
 import { createBankLink, disconnectBank, hasBankConnections } from "../_shared/bank-connection.ts";
-import { parseChatInput, replyToChat } from "../_shared/panel-chat.ts";
+import { clearChatMessages, loadChatMessages, parseChatInput, replyToChat } from "../_shared/panel-chat.ts";
 import { parseWeightRequest, saveWeight } from "../_shared/weight.ts";
 import { transcribeAudio } from "../_shared/groq.ts";
 import { inventFunnyLine, loadMemory, saveMemory } from "../_shared/memory.ts";
@@ -19,7 +19,7 @@ const fields: Record<string, string> = {
   incomes: "id,booking_date,amount,description,currency", weight_entries: "id,date,kg",
 };
 const MAX_BODY = 4096;
-// El chat envía también los últimos mensajes de la conversación.
+// El mensaje del chat (1000 caracteres) y la memoria (4000) pueden ocupar varios bytes por carácter.
 const MAX_CHAT_BODY = 32768;
 // Unos 2 minutos de nota de voz comprimida, como el límite del bot de Telegram.
 const MAX_AUDIO_BYTES = 2_000_000;
@@ -85,6 +85,7 @@ Deno.serve(async (request) => {
       }
       if (resource === "budgets") return json(await loadBudgetStatuses(db, now), 200, cors);
       if (resource === "memory") return json({ content: await loadMemory(db) }, 200, cors);
+      if (resource === "chat_messages") return json(await loadChatMessages(db), 200, cors);
       if (resource === "greeting") return json({ text: await inventFunnyLine(db) }, 200, cors);
       if (resource === "bank_connection") return json({ connected: await hasBankConnections(db) }, 200, cors);
       if (resource === "habit_checks") {
@@ -157,6 +158,8 @@ Deno.serve(async (request) => {
         await deleteBudget(db, category);
       } else if (resource === "bank_connection") {
         await disconnectBank(db, now);
+      } else if (resource === "chat_messages") {
+        await clearChatMessages(db);
       } else if (editable.has(resource)) {
         const id = validId(url.searchParams.get("id")); const { error } = await db.from(resource).delete().eq("id", id); if (error) throw error;
       } else return json({ error: "Recurso no encontrado." }, 404, cors);
