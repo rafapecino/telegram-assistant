@@ -1,11 +1,24 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.19";
-import { formatEmails, morningEmailLines, parseGmailRequest, replyToGmail, senderName } from "./gmail.ts";
+import {
+  formatEmails,
+  morningEmailLines,
+  NOISE_CATEGORIES,
+  parseGmailRequest,
+  replyToGmail,
+  senderName,
+  withoutNoise,
+} from "./gmail.ts";
 import { fakeDb, withFakeFetch } from "./testing.ts";
 
 const GOOGLE_ENV = { GOOGLE_CLIENT_ID: "cliente", GOOGLE_CLIENT_SECRET: "secreto" };
 
-function dbWithConnection(refreshToken: string | null) {
-  return fakeDb(() => ({ data: refreshToken ? { refresh_token: refreshToken } : null }));
+/** Base de datos con la conexión de Google (o sin ella) y los remitentes filtrados. */
+function dbWithConnection(refreshToken: string | null, blockedSenders: string[] = []) {
+  return fakeDb((query) =>
+    query[0] === 'from("email_filters")'
+      ? { data: blockedSenders.map((sender) => ({ sender })) }
+      : { data: refreshToken ? { refresh_token: refreshToken } : null }
+  );
 }
 
 const MESSAGE = {
@@ -55,6 +68,27 @@ Deno.test("busca con la consulta y lee solo remitente, asunto y fecha de cada co
     assertEquals(detail.searchParams.get("format"), "metadata");
     assertEquals(detail.searchParams.getAll("metadataHeaders"), ["From", "Subject", "Date"]);
   });
+});
+
+Deno.test("sin remitente concreto, quita promociones, social, foros y los remitentes filtrados", async () => {
+  const { db } = dbWithConnection("refresco", ["aliexpress.com", "uber@uber.com"]);
+  await withFakeFetch(GOOGLE_ENV, gmail([]), async (requests) => {
+    await replyToGmail(db, { kind: "gmail_search", query: "is:unread in:inbox" });
+    assertEquals(
+      new URL(requests[1].url).searchParams.get("q"),
+      `is:unread in:inbox ${NOISE_CATEGORIES} -from:(aliexpress.com OR uber@uber.com)`,
+    );
+  });
+});
+
+Deno.test("se ven las promociones importantes; sin filtros guardados solo se quitan pestañas", () => {
+  assertStringIncludes(NOISE_CATEGORIES, "-(category:promotions -is:important)");
+  assertEquals(withoutNoise("is:unread", []), `is:unread ${NOISE_CATEGORIES}`);
+});
+
+Deno.test("si pregunta por un remitente, lo busca aunque esté filtrado", () => {
+  assertEquals(withoutNoise("from:uber newer_than:7d", ["uber@uber.com"]), "from:uber newer_than:7d");
+  assertEquals(withoutNoise("is:unread -from:github", ["uber@uber.com"]), "is:unread -from:github");
 });
 
 Deno.test("si hay más de los que enseña, lo dice", () => {
