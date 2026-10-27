@@ -25,6 +25,11 @@ export function fakeDb(respond: (query: string[]) => unknown): { db: SupabaseCli
       });
       return builder;
     },
+    rpc(name: string, args: unknown) {
+      const query = [`rpc(${JSON.stringify(name)}, ${JSON.stringify(args)})`];
+      queries.push(query);
+      return Promise.resolve().then(() => respond(query));
+    },
   };
   return { db: db as unknown as SupabaseClient, queries };
 }
