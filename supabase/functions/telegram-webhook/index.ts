@@ -1,7 +1,6 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
 import { replyToText } from "../_shared/assistant.ts";
-import { createBankLink, disconnectBank } from "../_shared/bank-connection.ts";
-import { createCalendarLink, disconnectCalendar } from "../_shared/calendar.ts";
+import { replyToCommand } from "../_shared/commands.ts";
 import { createAdminClient, getInternalSecret } from "../_shared/database.ts";
 import { errorMessage } from "../_shared/env.ts";
 import { transcribeAudio } from "../_shared/groq.ts";
@@ -15,28 +14,6 @@ import {
   isAuthorizedUser,
   sendTelegramMessage,
 } from "../_shared/telegram.ts";
-
-const HELP_TEXT = [
-  "Esto es lo que sé hacer:",
-  '• Recordatorios: "recuérdame llamar a Juan el jueves a las 17:00" o "cada lunes a las 9 sacar la basura".',
-  '• Consultar tus gastos: "¿cuánto he gastado esta semana?" o "gastos de ayer en restaurantes".',
-  '• Presupuestos: "pon un límite de 200 € al mes en restaurantes" o "¿cómo voy con los presupuestos?".',
-  '• Balance: "¿cuánto he ahorrado este mes?".',
-  '• Lista de la compra: "añade leche y pan a la compra" o "¿qué hay en la lista?".',
-  '• Notas: "apunta que la talla de Marta es la 38" y luego "¿qué talla usa Marta?".',
-  '• Cumpleaños: "el cumple de mamá es el 3 de marzo". Te aviso el día antes y el mismo día.',
-  '• Hábitos: "quiero leer cada día". Te pregunto cada noche a las 21:00.',
-  '• Calendario: "¿qué tengo mañana?" o "pon en el calendario dentista el martes a las 10".',
-  '• Correo: "¿tengo correos sin leer?" o "¿me ha escrito Hacienda?". Solo leo remitente, asunto y fecha.',
-  '• Autobús EMT: "la parada de casa es la 1234" y luego "¿cuándo pasa el bus de casa?".',
-  "• Avisos de AEMET para Madrid: te escribo cuando sale uno nuevo y salen en el resumen de la mañana.",
-  "• Cada día a las 8:00 te mando un resumen: tiempo, avisos, recordatorios, calendario, correo y cumpleaños.",
-  "• También me puedes mandar notas de voz.",
-  "• /conectar_banco: conecta tu cuenta del banco para importar los gastos cada día a las 8:00.",
-  "• /desconectar_banco: corta el acceso a tu banco. Los gastos ya importados se quedan.",
-  "• /conectar_calendario y /desconectar_calendario: tu cuenta de Google (calendario y Gmail).",
-  "• Los domingos a las 20:00 te mando el resumen de gastos de la semana.",
-].join("\n");
 
 // Límite para no mandar audios largos a Groq: un recordatorio o una pregunta caben de sobra.
 const MAX_VOICE_SECONDS = 120;
@@ -55,31 +32,8 @@ interface TelegramCallbackQuery {
   message?: { message_id: number };
 }
 
-function describeDisconnection(closedConnections: number): string {
-  if (closedConnections === 0) return "No había ninguna conexión con el banco activa.";
-  // Enable Banking cierra el permiso en el banco "si es posible": por eso se dice que se ha pedido, no que esté hecho.
-  return [
-    "Banco desconectado: he cerrado el acceso en Enable Banking y he pedido al banco que retire el permiso.",
-    "Ya no importaré más gastos; los que ya tengo siguen guardados. Para volver a conectarlo, usa /conectar_banco.",
-  ].join("\n");
-}
-
 async function buildReply(db: SupabaseClient, text: string, now: Date): Promise<string | BotReply> {
-  if (text === "/start" || text === "/ayuda") return HELP_TEXT;
-  if (text === "/conectar_banco") {
-    return `Autoriza el acceso desde tu banco en este enlace (caduca en 30 minutos):\n${await createBankLink(db, now)}`;
-  }
-  if (text === "/desconectar_banco") return describeDisconnection(await disconnectBank(db, now));
-  if (text === "/conectar_calendario") {
-    const link = await createCalendarLink(db);
-    return `Autoriza el acceso a tu calendario de Google en este enlace (caduca en 30 minutos):\n${link}`;
-  }
-  if (text === "/desconectar_calendario") {
-    return await disconnectCalendar(db)
-      ? "Calendario desconectado: he retirado el permiso en Google."
-      : "No tenías el calendario conectado.";
-  }
-  return replyToText(db, text, now);
+  return await replyToCommand(db, text, now) ?? replyToText(db, text, now);
 }
 
 function toBotReply(reply: string | BotReply): BotReply {

@@ -1,6 +1,7 @@
 // Chat del panel web: mismas respuestas que el bot de Telegram, con la conversación guardada en la base de datos.
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
 import { replyToText } from "./assistant.ts";
+import { replyToCommand } from "./commands.ts";
 import type { ConversationTurn } from "./message-intent.ts";
 import { applyPersonalButton } from "./personal-replies.ts";
 import type { BotReply } from "./telegram.ts";
@@ -66,7 +67,7 @@ export async function replyToChat(db: SupabaseClient, input: ChatInput, now: Dat
   if (input.kind === "button") return replyToButton(db, input);
   const history = (await loadChatMessages(db, MAX_HISTORY_TURNS))
     .map((turn) => ({ ...turn, text: turn.text.slice(0, MAX_TURN_LENGTH) }));
-  const reply = await replyToText(db, input.message, now, history);
+  const reply = await replyToCommand(db, input.message, now) ?? await replyToText(db, input.message, now, history);
   const botReply = typeof reply === "string" ? { text: reply } : reply;
   // Se guardan juntos al final: si la respuesta falla, no queda una pregunta sin contestar en el historial.
   await saveTurns(db, [{ role: "user", text: input.message }, { role: "assistant", text: botReply.text }]);
