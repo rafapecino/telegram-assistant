@@ -195,6 +195,7 @@ const CALENDAR_KINDS = new Set(["calendar_list", "calendar_create", "calendar_cr
 const WEIGHT_KINDS = new Set(["weight_save", "weight_list"]);
 const BUS_KINDS = new Set(["bus_arrivals", "bus_stop_save", "bus_stop_delete", "bus_stop_list"]);
 const CONNECTION_KINDS = new Set(["connection_connect", "connection_disconnect"]);
+const GMAIL_KINDS = new Set(["gmail_search", "gmail_block", "gmail_unblock", "gmail_filters"]);
 
 /** Responde a una intención de estas funciones, o devuelve null si no es de ninguna. */
 export async function replyToPersonalIntent(
@@ -209,7 +210,7 @@ export async function replyToPersonalIntent(
   if (HABIT_KINDS.has(intent.kind)) return { text: await replyToHabit(db, intent as HabitRequest, today) };
   if (CALENDAR_KINDS.has(intent.kind)) return { text: await replyToCalendar(db, intent as CalendarRequest, today) };
   if (WEIGHT_KINDS.has(intent.kind)) return { text: await replyToWeight(db, intent as WeightRequest) };
-  if (intent.kind === "gmail_search") return { text: await replyToGmail(db, intent as GmailRequest) };
+  if (GMAIL_KINDS.has(intent.kind)) return { text: await replyToGmail(db, intent as GmailRequest) };
   if (BUS_KINDS.has(intent.kind)) return { text: await replyToBus(db, intent as BusRequest, now) };
   if (CONNECTION_KINDS.has(intent.kind)) return replyToConnection(db, intent as ConnectionRequest, now);
   return null;

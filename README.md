@@ -18,7 +18,9 @@ Bot personal de Telegram que:
 - Consulta y crea eventos en Google Calendar ("¿qué tengo mañana?").
 - Busca en Gmail ("¿tengo algo de Hacienda?") y enseña remitente, asunto y fecha. Solo lee: no envía ni borra.
   No enseña Promociones (salvo las que Gmail marca como importantes), Social ni Foros, ni los remitentes de la
-  tabla `email_filters` (un dominio vale también para sus subdominios), salvo si preguntas por un remitente concreto.
+  tabla `email_filters` (un dominio vale también para sus subdominios), salvo si preguntas por un remitente concreto
+  o el asunto parece importante (factura, pedido, entrevista, código…). La lista se cambia con "no me enseñes los
+  correos de X" y "vuelve a enseñarme los de X".
 - Dice cuándo pasa el autobús de la EMT por una parada, por número o con paradas guardadas por nombre ("la parada
   de casa es la 1234" y luego "¿cuándo pasa el bus de casa?").
 - Avisa por Telegram cuando AEMET publica un aviso meteorológico (amarillo, naranja o rojo) en la Comunidad de
