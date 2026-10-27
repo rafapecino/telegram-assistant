@@ -19,6 +19,7 @@ export const HELP_TEXT = [
   '• Hábitos: "quiero leer cada día". Te pregunto cada noche a las 21:00.',
   '• Calendario: "¿qué tengo mañana?" o "pon en el calendario dentista el martes a las 10".',
   '• Correo: "¿tengo correos sin leer?" o "¿me ha escrito Hacienda?". Solo leo remitente, asunto y fecha.',
+  '• Filtros del correo: "no me enseñes los correos de Uber", "vuelve a enseñarme los de Uber" o "¿qué filtras?".',
   '• Autobús EMT: "la parada de casa es la 1234" y luego "¿cuándo pasa el bus de casa?".',
   "• Avisos de AEMET para Madrid: te escribo cuando sale uno nuevo y salen en el resumen de la mañana.",
   "• Cada día a las 8:00 te mando un resumen: tiempo, avisos, recordatorios, calendario, correo y cumpleaños.",
