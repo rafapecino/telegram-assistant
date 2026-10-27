@@ -8,7 +8,7 @@ import { addDaysToDate, madridClock, madridLocalToUtc } from "./madrid-time.ts";
 import { inventFunnyLine } from "./memory.ts";
 import { listShoppingItems } from "./shopping.ts";
 import { sendTelegramMessage } from "./telegram.ts";
-import { DEFAULT_CITY, describeWeather, fetchTodayWeather } from "./weather.ts";
+import { describeWeather, fetchTodayWeather, mainPlace } from "./weather.ts";
 
 export const MORNING_SUMMARY_HOUR = 8;
 
@@ -144,10 +144,9 @@ async function todayReminders(db: SupabaseClient, today: string) {
 
 export async function buildMorningSummary(db: SupabaseClient, now: Date): Promise<string> {
   const today = madridClock(now).localDate;
-  const city = Deno.env.get("WEATHER_CITY")?.trim() || DEFAULT_CITY;
   return composeSummary([
     [await morningGreeting(db, today)],
-    await section("el tiempo", async () => [describeWeather(await fetchTodayWeather(city))]),
+    await section("el tiempo", async () => [describeWeather(await fetchTodayWeather(await mainPlace()))]),
     await section("los avisos de AEMET", async () => morningAlertLines(await fetchWeatherAlerts(), now)),
     await section("los recordatorios", async () => reminderLines(await todayReminders(db, today))),
     // Sin calendario conectado no hay nada que decir: no es un fallo.

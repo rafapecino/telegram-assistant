@@ -2,7 +2,6 @@
 
 const GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search";
 const FORECAST_URL = "https://api.open-meteo.com/v1/forecast";
-export const DEFAULT_CITY = "Madrid";
 // A las horas en punto Open-Meteo se satura y a veces responde 503 (pasó a las 8:00 del resumen): se reintenta.
 export const RETRY_DELAYS_MS = [2_000, 5_000];
 
@@ -73,6 +72,15 @@ export interface DayForecast {
   rainProbability: number | null;
 }
 
+/** Oficina de Stratesys en Madrid (calle de Torrelaguna, 77): el sitio principal del tiempo. */
+export const STRATESYS: Place = { name: "Stratesys", latitude: 40.44689, longitude: -3.65645 };
+
+/** El sitio del resumen de la mañana y el primero del panel: WEATHER_CITY si está configurada; si no, Stratesys. */
+export async function mainPlace(retryDelaysMs = RETRY_DELAYS_MS): Promise<Place> {
+  const city = Deno.env.get("WEATHER_CITY")?.trim();
+  return city ? await findPlace(city, retryDelaysMs) : STRATESYS;
+}
+
 export async function findPlace(city: string, retryDelaysMs = RETRY_DELAYS_MS): Promise<Place> {
   const geocoding = await getJson(
     `${GEOCODING_URL}?${new URLSearchParams({ name: city, count: "1", language: "es" })}`,
@@ -119,8 +127,7 @@ export async function fetchForecast(
   }));
 }
 
-export async function fetchTodayWeather(city: string, retryDelaysMs = RETRY_DELAYS_MS): Promise<DayWeather> {
-  const place = await findPlace(city, retryDelaysMs);
+export async function fetchTodayWeather(place: Place, retryDelaysMs = RETRY_DELAYS_MS): Promise<DayWeather> {
   const [today] = await fetchForecast(place, 1, retryDelaysMs);
   return { city: place.name, min: today.min, max: today.max, code: today.code, rainProbability: today.rainProbability };
 }

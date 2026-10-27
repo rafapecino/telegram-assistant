@@ -4,6 +4,9 @@ import {
   describeWeatherCode,
   fetchForecast,
   fetchTodayWeather,
+  findPlace,
+  mainPlace,
+  STRATESYS,
   VILLANUEVA_DE_LA_CANADA,
 } from "./weather.ts";
 import { withFakeFetch } from "./testing.ts";
@@ -29,7 +32,17 @@ Deno.test("describe el día con temperaturas redondeadas y la lluvia si se sabe"
   assertEquals(describeWeather({ ...weather, rainProbability: null }), "🌤️ Madrid: algunas nubes, entre 10 y 21 °C.");
 });
 
-Deno.test("busca la ciudad y pide la previsión de hoy en hora de Madrid", async () => {
+Deno.test("por defecto el tiempo es el de la oficina de Stratesys, sin buscar ninguna ciudad", async () => {
+  await withFakeFetch({}, () => new Response("no debería llamarse", { status: 500 }), async (requests) => {
+    assertEquals(await mainPlace(), STRATESYS);
+    assertEquals(requests.length, 0);
+  });
+  await withFakeFetch({ WEATHER_CITY: "Madrid" }, openMeteo(MADRID, {}), async () => {
+    assertEquals((await mainPlace([])).name, "Madrid");
+  });
+});
+
+Deno.test("pide la previsión de hoy del sitio en hora de Madrid", async () => {
   const forecast = {
     daily: {
       time: ["2026-10-26"],
@@ -40,28 +53,28 @@ Deno.test("busca la ciudad y pide la previsión de hoy en hora de Madrid", async
     },
   };
   await withFakeFetch({}, openMeteo(MADRID, forecast), async (requests) => {
-    assertEquals(await fetchTodayWeather("Madrid"), {
-      city: "Madrid",
+    assertEquals(await fetchTodayWeather(STRATESYS), {
+      city: "Stratesys",
       min: 11,
       max: 18,
       code: 61,
       rainProbability: 80,
     });
-    const forecastUrl = new URL(requests[1].url);
-    assertEquals(forecastUrl.searchParams.get("latitude"), "40.4");
+    const forecastUrl = new URL(requests[0].url);
+    assertEquals(forecastUrl.searchParams.get("latitude"), "40.44689");
     assertEquals(forecastUrl.searchParams.get("timezone"), "Europe/Madrid");
   });
 });
 
 Deno.test("si la ciudad no existe o falta la previsión, falla con un mensaje claro", async () => {
   await withFakeFetch({}, openMeteo({}, {}), async () => {
-    await assertRejects(() => fetchTodayWeather("Villaninguna"), Error, 'no conoce la ciudad "Villaninguna"');
+    await assertRejects(() => findPlace("Villaninguna"), Error, 'no conoce la ciudad "Villaninguna"');
   });
   await withFakeFetch({}, openMeteo(MADRID, { daily: {} }), async () => {
-    await assertRejects(() => fetchTodayWeather("Madrid"), Error, "no ha devuelto la previsión");
+    await assertRejects(() => fetchTodayWeather(STRATESYS), Error, "no ha devuelto la previsión");
   });
   await withFakeFetch({}, () => new Response("caído", { status: 503 }), async (requests) => {
-    await assertRejects(() => fetchTodayWeather("Madrid", [0, 0]), Error, "Open-Meteo respondió 503");
+    await assertRejects(() => fetchTodayWeather(STRATESYS, [0, 0]), Error, "Open-Meteo respondió 503");
     assertEquals(requests.length, 3);
   });
 });
@@ -80,7 +93,7 @@ Deno.test("un 503 pasajero se reintenta y el tiempo llega igual", async () => {
   const flaky = (request: Request) =>
     calls++ === 0 ? new Response("saturado", { status: 503 }) : openMeteo(MADRID, forecast)(request);
   await withFakeFetch({}, flaky, async () => {
-    assertEquals((await fetchTodayWeather("Madrid", [0])).max, 20);
+    assertEquals((await fetchTodayWeather(STRATESYS, [0])).max, 20);
   });
 });
 
