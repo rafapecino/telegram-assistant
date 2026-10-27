@@ -8,6 +8,9 @@ const MESSAGES_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages";
 const MAX_LISTED_EMAILS = 10;
 const MAX_QUERY_LENGTH = 200;
 const DEFAULT_QUERY = "is:unread in:inbox";
+// Promociones (salvo las que Gmail marca como importantes), Social y Foros. Lo de importante es por las respuestas
+// de reclutadores, que Gmail a veces mete en Promociones.
+export const NOISE_CATEGORIES = "-(category:promotions -is:important) -category:social -category:forums";
 /** Lo del resumen de la mañana: importantes sin leer que han llegado desde el día anterior. */
 export const MORNING_QUERY = "is:unread is:important newer_than:1d";
 
@@ -83,15 +86,30 @@ export function toEmailSummary(message: { payload?: { headers?: GmailHeader[] } 
   };
 }
 
+/** Remitentes que no se enseñan (tabla email_filters). La tabla ya valida el formato, para no romper la búsqueda. */
+export async function loadBlockedSenders(db: SupabaseClient): Promise<string[]> {
+  const { data, error } = await db.from("email_filters").select("sender").order("sender");
+  if (error) throw new Error(`No se pudieron leer los filtros del correo: ${error.message}`);
+  return (data ?? []).map((row) => row.sender);
+}
+
+/** Quita el ruido, salvo si la búsqueda pide un remitente concreto: "¿me ha escrito Uber?" debe encontrarlo. */
+export function withoutNoise(query: string, blockedSenders: string[]): string {
+  if (/(^|\s|-)from:/i.test(query)) return query;
+  const senders = blockedSenders.length > 0 ? ` -from:(${blockedSenders.join(" OR ")})` : "";
+  return `${query} ${NOISE_CATEGORIES}${senders}`;
+}
+
 /** Los correos que encuentra la búsqueda, del más reciente al más antiguo, y cuántos hay en total (aproximado). */
 export async function searchEmails(
   db: SupabaseClient,
   query: string,
 ): Promise<{ emails: EmailSummary[]; total: number }> {
   const accessToken = await getAccessToken(db);
+  const q = withoutNoise(query, await loadBlockedSenders(db));
   const list = await callGmail(
     accessToken,
-    `${MESSAGES_URL}?${new URLSearchParams({ q: query, maxResults: String(MAX_LISTED_EMAILS) })}`,
+    `${MESSAGES_URL}?${new URLSearchParams({ q, maxResults: String(MAX_LISTED_EMAILS) })}`,
   );
   const ids = ((list.messages ?? []) as { id: string }[]).map((message) => message.id);
   const metadata = new URLSearchParams({ format: "metadata" });

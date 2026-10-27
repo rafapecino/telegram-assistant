@@ -17,6 +17,8 @@ Bot personal de Telegram que:
 - Sigue hábitos diarios: cada noche a las 21:00 pregunta si los has hecho, con botones Sí/No, y lleva la racha.
 - Consulta y crea eventos en Google Calendar ("¿qué tengo mañana?").
 - Busca en Gmail ("¿tengo algo de Hacienda?") y enseña remitente, asunto y fecha. Solo lee: no envía ni borra.
+  No enseña Promociones (salvo las que Gmail marca como importantes), Social ni Foros, ni los remitentes de la
+  tabla `email_filters` (un dominio vale también para sus subdominios), salvo si preguntas por un remitente concreto.
 - Dice cuándo pasa el autobús de la EMT por una parada, por número o con paradas guardadas por nombre ("la parada
   de casa es la 1234" y luego "¿cuándo pasa el bus de casa?").
 - Avisa por Telegram cuando AEMET publica un aviso meteorológico (amarillo, naranja o rojo) en la Comunidad de
