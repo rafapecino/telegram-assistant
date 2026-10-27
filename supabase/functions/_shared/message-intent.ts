@@ -2,6 +2,7 @@ import { BALANCE_QUERY_INTENT_FORMAT, type BalanceRequest, parseBalanceQuery } f
 import { BIRTHDAY_INTENT_FORMAT, type BirthdayRequest, parseBirthdayRequest } from "./birthdays.ts";
 import { BUDGET_INTENT_FORMAT, type BudgetRequest, parseBudgetRequest } from "./budgets.ts";
 import { CALENDAR_INTENT_FORMAT, type CalendarRequest, parseCalendarRequest } from "./calendar.ts";
+import { CONNECTION_INTENT_FORMAT, type ConnectionRequest, parseConnectionRequest } from "./connections.ts";
 import { BUS_INTENT_FORMAT, type BusRequest, parseBusRequest } from "./emt.ts";
 import { type ExpenseQueryRequest, EXPENSES_QUERY_INTENT_FORMAT, parseExpenseQuery } from "./expense-queries.ts";
 import { GMAIL_INTENT_FORMAT, type GmailRequest, parseGmailRequest } from "./gmail.ts";
@@ -29,6 +30,7 @@ export type MessageIntent =
   | ManualExpenseRequest
   | GmailRequest
   | BusRequest
+  | ConnectionRequest
   | { kind: "unknown" };
 
 export function buildIntentPrompt(clock: MadridClock): string {
@@ -49,6 +51,7 @@ export function buildIntentPrompt(clock: MadridClock): string {
     `- ${MANUAL_EXPENSE_INTENT_FORMAT}`,
     `- ${GMAIL_INTENT_FORMAT}`,
     `- ${BUS_INTENT_FORMAT}`,
+    `- ${CONNECTION_INTENT_FORMAT}`,
     '- Cualquier otra cosa: {"intent": "unknown"}',
   ].join("\n");
 }
@@ -68,6 +71,7 @@ export function parseMessageIntent(raw: unknown, now: Date): MessageIntent {
   if (intent === "manual_expense") return parseManualExpense(raw, madridClock(now).localDate);
   if (intent === "gmail") return parseGmailRequest(raw);
   if (intent === "bus") return parseBusRequest(raw);
+  if (intent === "connection") return parseConnectionRequest(raw);
   return { kind: "unknown" };
 }
 

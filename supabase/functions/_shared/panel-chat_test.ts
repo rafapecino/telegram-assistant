@@ -81,6 +81,17 @@ Deno.test("la conversación guardada da contexto al modelo y se guarda con la re
   ]);
 });
 
+Deno.test("en el panel los comandos funcionan igual que en Telegram, sin llamar a Groq", async () => {
+  const { db, queries } = fakeDb(() => ({ data: [] }));
+  const groqDown = () => new Response("no debería llamarse", { status: 500 });
+  await withFakeFetch({ GROQ_API_KEY: "g" }, groqDown, async (requests) => {
+    const reply = await replyToChat(db, parseChatInput({ message: "/ayuda" }), NOW);
+    assertEquals(reply.text.startsWith("Esto es lo que sé hacer:"), true);
+    assertEquals(requests.length, 0);
+  });
+  assertEquals(queries.at(-1)?.[1].startsWith('insert([{"role":"user","text":"/ayuda"}'), true);
+});
+
 Deno.test("si la respuesta falla no se guarda nada en la conversación", async () => {
   const { db, queries } = fakeDb(() => ({ data: [] }));
   await withFakeFetch({ GROQ_API_KEY: "g" }, () => new Response("caído", { status: 500 }), async () => {
