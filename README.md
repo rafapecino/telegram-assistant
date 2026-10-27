@@ -68,7 +68,7 @@ ejecutarse sola, añade su tarea en `runJob` (`scheduled-jobs/index.ts`).
    | `ENABLE_BANKING_PRIVATE_KEY` | Contenido del `.pem` que se descarga al registrar la aplicación |
    | `GOOGLE_CLIENT_ID`           | Cliente OAuth de Google Cloud (paso 3). Calendario y Gmail      |
    | `GOOGLE_CLIENT_SECRET`       | El secreto de ese mismo cliente                                 |
-   | `WEATHER_CITY`               | Opcional. Ciudad del tiempo del resumen; por defecto, Madrid    |
+   | `WEATHER_CITY`               | Opcional. Ciudad del tiempo; por defecto, la oficina Stratesys  |
    | `AEMET_API_KEY`              | Clave gratuita de opendata.aemet.es (llega por correo)          |
    | `EMT_EMAIL`                  | Cuenta de mobilitylabs.emtmadrid.es, con el correo confirmado   |
    | `EMT_PASSWORD`               | La contraseña de esa cuenta                                     |
