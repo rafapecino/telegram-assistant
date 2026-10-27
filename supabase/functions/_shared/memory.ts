@@ -1,5 +1,6 @@
 // Memoria: lo que el asistente sabe de Rafa (trabajo, tesis, manías…). Es un solo documento que se edita en el panel.
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
+import { UserFacingError } from "./errors.ts";
 import { askGroqForJson } from "./groq.ts";
 import type { ButtonResult } from "./personal-replies.ts";
 import type { BotReply } from "./telegram.ts";
@@ -77,7 +78,7 @@ export async function loadMemory(db: SupabaseClient): Promise<string> {
 
 export async function saveMemory(db: SupabaseClient, content: unknown): Promise<void> {
   if (typeof content !== "string" || content.length > MAX_MEMORY_LENGTH) {
-    throw new Error(`La memoria puede tener como mucho ${MAX_MEMORY_LENGTH} caracteres.`);
+    throw new UserFacingError(`La memoria puede tener como mucho ${MAX_MEMORY_LENGTH} caracteres.`);
   }
   const { error } = await db.from("memory").upsert({
     id: 1,

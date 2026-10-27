@@ -224,27 +224,19 @@ function WeatherSection({forecasts,alerts}:{forecasts?:Row[];alerts?:Row[]}) {
   </>;
 }
 
-function LoginScreen({onNotice,error,notice,setError}:{onNotice:(text:string)=>void;error:string;notice:string;setError:(text:string)=>void}) {
-  const [mode,setMode]=useState<'login'|'signup'>('login'),[email,setEmail]=useState(''),[password,setPassword]=useState(''),[busy,setBusy]=useState(false);
+function LoginScreen({error,setError}:{error:string;setError:(text:string)=>void}) {
+  const [email,setEmail]=useState(''),[password,setPassword]=useState(''),[busy,setBusy]=useState(false);
   async function submit(e:FormEvent){
     e.preventDefault();setBusy(true);setError('');
-    const {error:authError}=mode==='signup'?await supabase.auth.signUp({email,password}):await supabase.auth.signInWithPassword({email,password});
+    const {error:authError}=await supabase.auth.signInWithPassword({email,password});
     setBusy(false);setPassword('');
-    if(authError){setError(authError.code==='email_not_confirmed'?'Confirma tu correo con el enlace que te enviamos y vuelve a entrar. Revisa también la carpeta de spam.':mode==='signup'?'No se pudo crear la cuenta. Revisa el correo y prueba otra contraseña.':'No se pudo iniciar sesión. Revisa el correo y la contraseña.');return}
-    if(mode==='signup'){await supabase.auth.signOut();setMode('login');onNotice('Cuenta creada. Confirma el correo que te hemos enviado y después entra con tu contraseña.')}
+    if(authError)setError('No se pudo iniciar sesión. Revisa el correo y la contraseña.');
   }
-  async function resend(){
-    if(!email)return;setBusy(true);setError('');
-    const {error:resendError}=await supabase.auth.resend({type:'signup',email});setBusy(false);
-    if(resendError)setError('No se pudo reenviar el correo ahora. Inténtalo en unos minutos.');else onNotice('Te hemos enviado otro correo de confirmación. Revisa también la carpeta de spam.');
-  }
+  // Sin registro: el panel es de una sola persona y su cuenta ya existe.
   return <div className="login-screen"><div className="login-intro"><img src={chatbotLogo} alt="Mi asistente"/><span className="eyebrow">TU ESPACIO PERSONAL</span><h1>Un lugar para tenerlo <em>todo claro.</em></h1><p>Finanzas, agenda y tareas. Tu información real, organizada en un panel fácil de consultar.</p><div className="login-pills"><span>Finanzas</span><span>Recordatorios</span><span>Agenda</span></div></div>
-    <div className="login-card"><span className="eyebrow">ACCESO SEGURO</span><h2>{mode==='signup'?'Crea tu cuenta':'Bienvenido de nuevo'}</h2><p>{mode==='signup'?'Confirma el correo después de crear la cuenta.':'Entra con tu correo y contraseña para ver tu dashboard.'}</p>
-      <form onSubmit={submit}><label htmlFor="email">Correo electrónico</label><input id="email" type="email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} required placeholder="tu@correo.com"/><label htmlFor="password">Contraseña</label><input id="password" type="password" autoComplete={mode==='signup'?'new-password':'current-password'} minLength={6} value={password} onChange={e=>setPassword(e.target.value)} required placeholder="Tu contraseña"/><button className="primary full" disabled={busy}>{busy?'Un momento…':mode==='signup'?'Crear cuenta':'Entrar al panel'} <ArrowUpRight size={18}/></button></form>
-      <button className="login-switch" onClick={()=>{setError('');onNotice('');setMode(mode==='login'?'signup':'login')}}>{mode==='login'?'¿Primera vez? Crear cuenta':'Ya tengo cuenta · Entrar'}</button>
+    <div className="login-card"><span className="eyebrow">ACCESO SEGURO</span><h2>Bienvenido de nuevo</h2><p>Entra con tu correo y contraseña para ver tu dashboard.</p>
+      <form onSubmit={submit}><label htmlFor="email">Correo electrónico</label><input id="email" type="email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} required placeholder="tu@correo.com"/><label htmlFor="password">Contraseña</label><input id="password" type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required placeholder="Tu contraseña"/><button className="primary full" disabled={busy}>{busy?'Un momento…':'Entrar al panel'} <ArrowUpRight size={18}/></button></form>
       {error&&<p className="error" role="alert">{error}</p>}
-      {error.includes('Confirma tu correo')&&<button className="login-switch" disabled={busy} onClick={()=>void resend()}>Reenviar correo de confirmación</button>}
-      {notice&&<p className="login-notice" role="status">{notice}</p>}
     </div></div>
 }
 
@@ -374,7 +366,7 @@ export function App(){
   const totals=useMemo(()=>({spent:expenses.reduce((n,r)=>n+Number(r.amount),0),earned:incomes.reduce((n,r)=>n+Number(r.amount),0)}),[expenses,incomes]);
   const current=navigation.find(n=>n.id===section)!;
   if(!authReady)return <div className="login-screen"><div className="login-card">Cargando acceso…</div></div>;
-  if(!token)return <LoginScreen onNotice={setNotice} error={error} notice={notice} setError={setError}/>;
+  if(!token)return <LoginScreen error={error} setError={setError}/>;
   return <div className="shell"><aside className={`sidebar ${mobileOpen?'open':''}`}><div className="sidebar-top"><div className="identity"><img src={chatbotLogo} alt="Mi asistente"/><small>PANEL PERSONAL</small></div><button className="mobile-close icon-button" aria-label="Cerrar menú" onClick={()=>setMobileOpen(false)}><X/></button></div><nav aria-label="Navegación principal">{navigation.map(({id,label,icon:Icon})=><button key={id} className={section===id?'nav-item active':'nav-item'} aria-current={section===id?'page':undefined} onClick={()=>{setSection(id);setMobileOpen(false);setNotice('')}}><Icon size={19} strokeWidth={1.8}/>{label}</button>)}</nav><div className="sidebar-bottom"><div className="sidebar-note"><span className="status-dot"/>Conectado a tu asistente</div><button className="nav-item logout" onClick={logout}><LogOut size={18}/> Cerrar sesión</button></div></aside>{mobileOpen&&<div className="backdrop" onClick={()=>setMobileOpen(false)}/>}
   <div className="workspace"><header className="topbar"><button className="mobile-menu icon-button" aria-label="Abrir menú" onClick={()=>setMobileOpen(true)}><Menu/></button><div className="breadcrumbs">Mi espacio <span>/</span> <strong>{current.label}</strong></div><button className="refresh icon-button" onClick={()=>void refresh()} disabled={loading} aria-label="Actualizar datos"><RefreshCw size={18} className={loading?'spin':''}/></button></header>
   <main className="content"><div className="page-heading"><div><div className="eyebrow">PANEL PERSONAL</div><h1>{section==='overview'?dailyGreeting():current.label}</h1><p>{section==='overview'?funnyLine||'Aquí tienes lo importante de un vistazo.':section==='memory'?'Lo que tu asistente sabe de ti. Lo usa para hablarte con gracia.':section==='finances'?'Tus ingresos, gastos y límites en un mismo lugar.':section==='weather'?'Previsión de los próximos 7 días y avisos de AEMET.':'Organiza y consulta tus cosas sin salir del panel.'}</p></div><span className="today">{new Intl.DateTimeFormat('es-ES',{dateStyle:'full',timeZone:'Europe/Madrid'}).format(new Date())}</span></div>
