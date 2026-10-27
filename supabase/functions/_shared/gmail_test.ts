@@ -81,7 +81,7 @@ Deno.test("sin remitente concreto, quita promociones, social, foros y los remite
   });
 });
 
-Deno.test("las promociones que Gmail marca como importantes se ven, y sin filtros guardados solo van las pestañas", () => {
+Deno.test("se ven las promociones importantes; sin filtros guardados solo se quitan pestañas", () => {
   assertStringIncludes(NOISE_CATEGORIES, "-(category:promotions -is:important)");
   assertEquals(withoutNoise("is:unread", []), `is:unread ${NOISE_CATEGORIES}`);
 });
