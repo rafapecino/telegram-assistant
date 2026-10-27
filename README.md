@@ -150,8 +150,9 @@ recordatorios, lista de la compra, notas, cumpleaños, hábitos y eventos del ca
 las operaciones pasan por la función `panel-api`, que comprueba la sesión y accede a Supabase con la clave secreta solo
 en el servidor. No pongas `SUPABASE_SECRET_KEYS` en variables `VITE_`.
 
-El acceso es con correo y contraseña (Supabase Auth). Cualquiera puede crearse una cuenta desde la pantalla de
-acceso, pero solo entran las que autorices en la tabla `panel_users`:
+El acceso es con correo y contraseña (Supabase Auth). La pantalla de acceso no permite registrarse: crea la cuenta
+desde Authentication → Users en Supabase, desactiva «Allow new users to sign up» y autorízala en la tabla
+`panel_users`:
 
 ```sql
 insert into public.panel_users (user_id) select id from auth.users where email = 'tu@correo.com';
@@ -161,6 +162,18 @@ insert into public.panel_users (user_id) select id from auth.users where email =
 2. Desde `frontend/`, ejecuta `npm ci` y `npm run dev`. Sin `frontend/.env`, el panel usa el proyecto de producción;
    para otro proyecto, copia `frontend/.env.example` a `frontend/.env` y rellénalo.
 3. Para producción, el proyecto de Vercel compila `frontend/` (Root Directory `frontend`) al fusionar en `main`.
+
+Seguridad del panel:
+
+- Las tablas tienen RLS sin políticas y sin permisos para `anon` ni `authenticated`: el navegador no puede leerlas
+  directamente con la clave publicable; todo pasa por `panel-api`.
+- `panel-api` solo responde a CORS desde el dominio de producción, sus previsualizaciones de Vercel y `localhost`.
+- Límite de 300 peticiones por minuto (abrir el panel ya hace unas 16), y de 10 para las que usan Groq (chat, notas
+  de voz y saludo). Se cuentan en `panel_request_counts`.
+- Los accesos denegados quedan en los logs de la función (sin el token) y, si hay 5 en 10 minutos, avisa por Telegram.
+- Al navegador solo le llegan los mensajes de error pensados para el usuario (`UserFacingError`); el resto, genérico.
+- `frontend/vercel.json` añade Content-Security-Policy, `X-Content-Type-Options`, `Referrer-Policy` y
+  `Permissions-Policy`. Si el panel empieza a usar otro dominio (una API, una fuente), hay que añadirlo a la CSP.
 
 En el Inicio hay un chat con el asistente: entiende lo mismo que el bot de Telegram (gastos, compra, recordatorios…)
 y contesta preguntas generales con el mismo modelo de Groq, teniendo en cuenta los últimos 10 mensajes de la

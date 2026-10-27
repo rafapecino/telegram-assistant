@@ -2,6 +2,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
 import { replyToText } from "./assistant.ts";
 import { replyToCommand } from "./commands.ts";
+import { UserFacingError } from "./errors.ts";
 import type { ConversationTurn } from "./message-intent.ts";
 import { applyPersonalButton } from "./personal-replies.ts";
 import type { BotReply } from "./telegram.ts";
@@ -26,7 +27,7 @@ export function parseChatInput(raw: Record<string, unknown>): ChatInput {
   }
   const message = typeof raw.message === "string" ? raw.message.trim() : "";
   if (!message || message.length > MAX_MESSAGE_LENGTH) {
-    throw new Error(`Escribe un mensaje de hasta ${MAX_MESSAGE_LENGTH} caracteres.`);
+    throw new UserFacingError(`Escribe un mensaje de hasta ${MAX_MESSAGE_LENGTH} caracteres.`);
   }
   return { kind: "message", message };
 }
