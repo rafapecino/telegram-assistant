@@ -18,6 +18,12 @@ import {
   formatEvents,
   listEvents,
 } from "./calendar.ts";
+import {
+  applyConnectionButton,
+  type ConnectionRequest,
+  parseConnectionButton,
+  replyToConnection,
+} from "./connections.ts";
 import { type BusRequest, replyToBus } from "./emt.ts";
 import { type GmailRequest, replyToGmail } from "./gmail.ts";
 import {
@@ -188,6 +194,7 @@ const HABIT_KINDS = new Set(["habit_create", "habit_delete", "habit_log", "habit
 const CALENDAR_KINDS = new Set(["calendar_list", "calendar_create", "calendar_create_all_day"]);
 const WEIGHT_KINDS = new Set(["weight_save", "weight_list"]);
 const BUS_KINDS = new Set(["bus_arrivals", "bus_stop_save", "bus_stop_delete", "bus_stop_list"]);
+const CONNECTION_KINDS = new Set(["connection_connect", "connection_disconnect"]);
 
 /** Responde a una intención de estas funciones, o devuelve null si no es de ninguna. */
 export async function replyToPersonalIntent(
@@ -204,6 +211,7 @@ export async function replyToPersonalIntent(
   if (WEIGHT_KINDS.has(intent.kind)) return { text: await replyToWeight(db, intent as WeightRequest) };
   if (intent.kind === "gmail_search") return { text: await replyToGmail(db, intent as GmailRequest) };
   if (BUS_KINDS.has(intent.kind)) return { text: await replyToBus(db, intent as BusRequest, now) };
+  if (CONNECTION_KINDS.has(intent.kind)) return replyToConnection(db, intent as ConnectionRequest, now);
   return null;
 }
 
@@ -213,8 +221,12 @@ export interface ButtonResult {
   toast: string;
 }
 
-/** Botones de la lista de la compra, de los hábitos y de la memoria. Devuelve null si no es de estas funciones. */
-export async function applyPersonalButton(db: SupabaseClient, data: string): Promise<ButtonResult | null> {
+/** Botones de la compra, los hábitos, la memoria y las conexiones. Devuelve null si no es de estas funciones. */
+export async function applyPersonalButton(
+  db: SupabaseClient,
+  data: string,
+  now = new Date(),
+): Promise<ButtonResult | null> {
   const shoppingItemId = parseShoppingButton(data);
   if (shoppingItemId !== null) {
     await tickShoppingItem(db, shoppingItemId);
@@ -229,5 +241,7 @@ export async function applyPersonalButton(db: SupabaseClient, data: string): Pro
   }
   const memoryButton = parseMemoryButton(data);
   if (memoryButton) return applyMemoryButton(db, memoryButton);
+  const connectionButton = parseConnectionButton(data);
+  if (connectionButton) return applyConnectionButton(db, connectionButton, now);
   return null;
 }
