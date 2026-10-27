@@ -31,18 +31,26 @@ export async function sendTelegramMessage(text: string, buttons?: TelegramButton
   });
 }
 
+// Pulsar dos veces un botón deja el mensaje igual y Telegram rechaza la edición, pero el mensaje ya está como debe.
+const UNCHANGED_MESSAGE = "message is not modified";
+
 /** Cambia el texto de un mensaje ya enviado. Sin `buttons`, Telegram le quita los botones. */
 export async function editTelegramMessage(
   messageId: number,
   text: string,
   buttons?: TelegramButton[][],
 ): Promise<void> {
-  await callTelegram("editMessageText", {
-    chat_id: ownerChatId(),
-    message_id: messageId,
-    text,
-    ...(buttons ? { reply_markup: { inline_keyboard: buttons } } : {}),
-  });
+  try {
+    await callTelegram("editMessageText", {
+      chat_id: ownerChatId(),
+      message_id: messageId,
+      text,
+      ...(buttons ? { reply_markup: { inline_keyboard: buttons } } : {}),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message.includes(UNCHANGED_MESSAGE)) return;
+    throw error;
+  }
 }
 
 /** Respuesta del bot: texto y, opcionalmente, botones debajo. */
