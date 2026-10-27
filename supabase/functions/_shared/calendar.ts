@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
 import { functionUrl } from "./database.ts";
 import { requireEnv } from "./env.ts";
+import { UserFacingError } from "./errors.ts";
 import { isCalendarDate } from "./expense-queries.ts";
 import { addDaysToDate, formatMadridDateTime, madridLocalToUtc } from "./madrid-time.ts";
 
@@ -112,7 +113,7 @@ async function postGoogleForm(url: string, form: Record<string, string>): Promis
   const result = parseJsonOrEmpty(text);
   if (!response.ok) {
     if (result.error === "invalid_grant") {
-      throw new Error("Google ha retirado el acceso al calendario. Vuelve a conectarlo con /conectar_calendario.");
+      throw new UserFacingError("Google ha retirado el acceso al calendario. Vuelve a conectarlo con /conectar_calendario.");
     }
     throw new Error(`Google respondió ${response.status} (${result.error ?? text})`);
   }
@@ -189,7 +190,7 @@ async function callCalendar(db: SupabaseClient, url: string, init: RequestInit =
     if (status === "PERMISSION_DENIED" &&
       (googleError?.code === 403 || response.status === 403) &&
       (JSON.stringify(details).includes("SERVICE_DISABLED") || errors?.some((error) => error.reason === "accessNotConfigured"))) {
-      throw new Error("La API de Google Calendar está desactivada. Actívala en Google Cloud y vuelve a actualizar el panel.");
+      throw new UserFacingError("La API de Google Calendar está desactivada. Actívala en Google Cloud y vuelve a actualizar el panel.");
     }
     throw new Error(`Google Calendar respondió ${response.status}: ${typeof googleError?.message === "string" ? googleError.message : "No se pudo consultar el calendario."}`);
   }
