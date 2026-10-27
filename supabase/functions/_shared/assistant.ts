@@ -33,6 +33,7 @@ const CAPABILITIES = [
   "buscar correos en Gmail (solo remitente, asunto y fecha; no puede enviar)",
   "cuándo pasa el autobús de la EMT por una parada, con paradas guardadas por nombre",
   "avisos meteorológicos de AEMET para la Comunidad de Madrid",
+  "conectar o desconectar el banco y la cuenta de Google",
   "registro del peso corporal para ver si sube o baja",
   "apuntar a mano energéticas o tabaco pagados en efectivo",
   "un resumen cada mañana a las 8:00 con el tiempo, avisos, recordatorios, eventos, correo y cumpleaños",

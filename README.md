@@ -24,6 +24,8 @@ Bot personal de Telegram que:
 - Responde preguntas generales, como un chat normal, cuando el mensaje no es de ninguna de sus funciones. Si en esa
   conversación cuentas algo nuevo de ti ("en abril corro la maratón"), propone apuntarlo en la memoria con los botones
   Guárdalo y No. Nunca lo guarda sin que pulses Guárdalo.
+- Conecta y desconecta el banco y la cuenta de Google con comandos (`/conectar_calendario`…) o con lenguaje natural
+  ("vuelve a conectar Google"), también desde el chat del panel. Desconectar con lenguaje natural pide confirmación.
 - Cada día a las 8:00 manda un resumen: tiempo, avisos de AEMET, recordatorios y eventos del día, correos
   importantes sin leer, cumpleaños y lista de la compra.
 

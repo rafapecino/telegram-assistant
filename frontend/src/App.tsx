@@ -119,6 +119,11 @@ const GREETINGS = [
 const DAY_MS = 86_400_000;
 const dailyGreeting = () => GREETINGS[Math.floor(Date.parse(`${todayInMadrid()}T00:00:00Z`)/DAY_MS)%GREETINGS.length];
 
+// Los enlaces de autorización (banco, Google) llegan en el texto: se abren en otra pestaña para no perder el panel.
+function linkify(text:string):ReactNode[]{
+  return text.split(/(https?:\/\/\S+)/).map((part,i)=>i%2?<a key={i} href={part} target="_blank" rel="noopener noreferrer">{part}</a>:part);
+}
+
 // Los mensajes guardados vuelven sin botones: los de una respuesta antigua ya no valdrían.
 type ChatMessage = {role:'user'|'assistant'; text:string; buttons?:{text:string;callback_data:string}[][]};
 // Igual que en el bot de Telegram, las notas de voz no pasan de 2 minutos.
@@ -184,7 +189,7 @@ function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>
   return <Card title="Pregúntale a tu asistente" aside={messages.length?<button className="text-link" onClick={()=>void clear()} disabled={busy}>Nueva conversación</button>:undefined} className="chat-card">
     <div className="chat-log" aria-live="polite">
       {!messages.length&&<div className="chat-welcome"><img className="chat-avatar large" src={chatbotLogo} alt=""/><p>Dime, que para eso estoy.</p></div>}
-      {messages.map((m,i)=><div key={i} className={`chat-row ${m.role}`}>{m.role==='assistant'&&<img className="chat-avatar" src={chatbotLogo} alt=""/>}<div className={`chat-message ${m.role}`}><p>{m.text}</p>{m.buttons&&<div className="chat-buttons">{m.buttons.flat().map(b=><button key={b.callback_data} className="secondary" onClick={()=>void press(i,b.callback_data)} disabled={busy}>{b.text}</button>)}</div>}</div></div>)}
+      {messages.map((m,i)=><div key={i} className={`chat-row ${m.role}`}>{m.role==='assistant'&&<img className="chat-avatar" src={chatbotLogo} alt=""/>}<div className={`chat-message ${m.role}`}><p>{linkify(m.text)}</p>{m.buttons&&<div className="chat-buttons">{m.buttons.flat().map(b=><button key={b.callback_data} className="secondary" onClick={()=>void press(i,b.callback_data)} disabled={busy}>{b.text}</button>)}</div>}</div></div>)}
       {busy&&<div className="chat-row assistant"><img className="chat-avatar" src={chatbotLogo} alt=""/><div className="chat-message assistant typing"><p>Pensando…</p></div></div>}
       <div ref={end}/>
     </div>
