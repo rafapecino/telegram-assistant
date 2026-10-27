@@ -59,6 +59,10 @@ Deno.test("el correo y el autobús van a su propia validación", () => {
     query: "from:hacienda",
   });
   assertEquals(parseMessageIntent({ intent: "bus", action: "list" }, NOW), { kind: "bus_stop_list" });
+  assertEquals(parseMessageIntent({ intent: "gmail", action: "block", sender: "uber" }, NOW), {
+    kind: "gmail_block",
+    sender: "uber",
+  });
 });
 
 Deno.test("conectar o desconectar servicios va a su propia validación", () => {

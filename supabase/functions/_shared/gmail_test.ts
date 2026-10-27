@@ -2,7 +2,8 @@ import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.19";
 import {
   formatEmails,
   morningEmailLines,
-  NOISE_CATEGORIES,
+  formatFilters,
+  IMPORTANT_SUBJECT,
   parseGmailRequest,
   replyToGmail,
   senderName,
@@ -76,14 +77,68 @@ Deno.test("sin remitente concreto, quita promociones, social, foros y los remite
     await replyToGmail(db, { kind: "gmail_search", query: "is:unread in:inbox" });
     assertEquals(
       new URL(requests[1].url).searchParams.get("q"),
-      `is:unread in:inbox ${NOISE_CATEGORIES} -from:(aliexpress.com OR uber@uber.com)`,
+      "is:unread in:inbox -({(category:promotions -is:important) category:social category:forums " +
+        `from:(aliexpress.com OR uber@uber.com)} -${IMPORTANT_SUBJECT})`,
     );
   });
 });
 
 Deno.test("se ven las promociones importantes; sin filtros guardados solo se quitan pestañas", () => {
-  assertStringIncludes(NOISE_CATEGORIES, "-(category:promotions -is:important)");
-  assertEquals(withoutNoise("is:unread", []), `is:unread ${NOISE_CATEGORIES}`);
+  assertEquals(
+    withoutNoise("is:unread", []),
+    `is:unread -({(category:promotions -is:important) category:social category:forums} -${IMPORTANT_SUBJECT})`,
+  );
+});
+
+Deno.test("un correo filtrado se enseña si el asunto parece importante", () => {
+  for (const word of ["factura", "pedido", "entrevista", "código", "codigo", "receipt", "invoice"]) {
+    assertStringIncludes(IMPORTANT_SUBJECT, word);
+  }
+  assertEquals(IMPORTANT_SUBJECT.startsWith("subject:("), true);
+});
+
+Deno.test("entiende filtrar, dejar de filtrar y ver los filtros, y solo acepta remitentes seguros", () => {
+  assertEquals(parseGmailRequest({ action: "block", sender: " Uber " }), { kind: "gmail_block", sender: "uber" });
+  assertEquals(parseGmailRequest({ action: "unblock", sender: "aliexpress.com" }), {
+    kind: "gmail_unblock",
+    sender: "aliexpress.com",
+  });
+  assertEquals(parseGmailRequest({ action: "filters" }), { kind: "gmail_filters" });
+  // Con espacios, paréntesis u OR podría colarse en la búsqueda de Gmail y cambiarla.
+  assertEquals(parseGmailRequest({ action: "block", sender: "uber) OR (x" }).kind, "invalid");
+  assertEquals(parseGmailRequest({ action: "block", sender: "banco santander" }).kind, "invalid");
+  assertEquals(parseGmailRequest({ action: "block", sender: "ab" }).kind, "invalid");
+});
+
+Deno.test("«no me enseñes los correos de X» lo guarda sin repetirlo", async () => {
+  const { db, queries } = fakeDb(() => ({}));
+  assertStringIncludes(
+    await replyToGmail(db, { kind: "gmail_block", sender: "uber" }),
+    "ya no te enseño los correos de «uber»",
+  );
+  assertEquals(queries[0], [
+    'from("email_filters")',
+    'upsert({"sender":"uber"}, {"onConflict":"sender","ignoreDuplicates":true})',
+  ]);
+});
+
+Deno.test("volver a enseñar quita los filtros que contienen lo que dice", async () => {
+  const { db, queries } = fakeDb(() => ({ data: [{ sender: "uber@uber.com" }] }));
+  assertEquals(
+    await replyToGmail(db, { kind: "gmail_unblock", sender: "uber" }),
+    "Vuelvo a enseñarte los correos de: uber@uber.com.",
+  );
+  assertEquals(queries[0], ['from("email_filters")', "delete()", 'ilike("sender", "%uber%")', 'select("sender")']);
+  const { db: empty } = fakeDb(() => ({ data: [] }));
+  assertEquals(
+    await replyToGmail(empty, { kind: "gmail_unblock", sender: "nadie" }),
+    "No tenía filtrado nada con «nadie».",
+  );
+});
+
+Deno.test("la lista de filtros explica también las pestañas y la excepción del asunto", () => {
+  assertStringIncludes(formatFilters(["uber"]), "ni los correos de: uber");
+  assertStringIncludes(formatFilters([]), "Si el asunto parece importante");
 });
 
 Deno.test("si pregunta por un remitente, lo busca aunque esté filtrado", () => {

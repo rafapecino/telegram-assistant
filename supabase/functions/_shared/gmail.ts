@@ -10,7 +10,16 @@ const MAX_QUERY_LENGTH = 200;
 const DEFAULT_QUERY = "is:unread in:inbox";
 // Promociones (salvo las que Gmail marca como importantes), Social y Foros. Lo de importante es por las respuestas
 // de reclutadores, que Gmail a veces mete en Promociones.
-export const NOISE_CATEGORIES = "-(category:promotions -is:important) -category:social -category:forums";
+const NOISE_CATEGORIES = ["(category:promotions -is:important)", "category:social", "category:forums"];
+// Un correo que sería ruido se enseña igual si el asunto tiene alguna de estas palabras. Van con y sin tilde por si
+// el remitente las escribe sin ella.
+const IMPORTANT_SUBJECT_WORDS = [
+  "factura", "recibo", "pedido", "envío", "envio", "entrega", "devolución", "devolucion", "reembolso", "pago",
+  "cita", "entrevista", "candidatura", "contraseña", "contrasena", "código", "codigo", "verificación",
+  "verificacion", "urgente", "importante", "invoice", "receipt", "order", "payment", "interview",
+];
+export const IMPORTANT_SUBJECT = `subject:(${IMPORTANT_SUBJECT_WORDS.join(" OR ")})`;
+const SENDER_FILTER = /^[a-z0-9.+_@-]{3,100}$/;
 /** Lo del resumen de la mañana: importantes sin leer que han llegado desde el día anterior. */
 export const MORNING_QUERY = "is:unread is:important newer_than:1d";
 
@@ -18,13 +27,32 @@ export const MORNING_QUERY = "is:unread is:important newer_than:1d";
 export const GMAIL_INTENT_FORMAT =
   'Correo de Gmail, si pregunta por sus correos o emails: {"intent": "gmail", "query": "<búsqueda>"} con la sintaxis ' +
   'de búsqueda de Gmail, por ejemplo "from:hacienda" ("¿tengo algo de Hacienda?"), "is:unread in:inbox" ' +
-  '("¿tengo correos sin leer?"), "subject:factura newer_than:7d". Sin más detalles, "is:unread in:inbox".';
+  '("¿tengo correos sin leer?"), "subject:factura newer_than:7d". Sin más detalles, "is:unread in:inbox". ' +
+  'Para dejar de ver los correos de alguien ("no me enseñes los correos de Uber"): {"intent": "gmail", "action": ' +
+  '"block", "sender": "<una palabra del remitente, su dominio o su dirección, en minúsculas y sin espacios>"}; para ' +
+  'volver a verlos, "action": "unblock" con el mismo "sender"; para ver cuáles no le enseñas, "action": "filters".';
 
 export type GmailRequest =
   | { kind: "gmail_search"; query: string }
+  | { kind: "gmail_block"; sender: string }
+  | { kind: "gmail_unblock"; sender: string }
+  | { kind: "gmail_filters" }
   | { kind: "invalid"; message: string };
 
+/** Lo que se filtra va tal cual a la búsqueda de Gmail: por eso solo letras, números y . + _ @ -. */
+function parseSenderFilter(raw: unknown, kind: "gmail_block" | "gmail_unblock"): GmailRequest {
+  const sender = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (!SENDER_FILTER.test(sender)) {
+    return { kind: "invalid", message: "Dime de quién: una palabra del remitente, su dominio o su dirección." };
+  }
+  return { kind, sender };
+}
+
 export function parseGmailRequest(raw: unknown): GmailRequest {
+  const candidate = raw as { action?: unknown; sender?: unknown } | null;
+  if (candidate?.action === "block") return parseSenderFilter(candidate.sender, "gmail_block");
+  if (candidate?.action === "unblock") return parseSenderFilter(candidate.sender, "gmail_unblock");
+  if (candidate?.action === "filters") return { kind: "gmail_filters" };
   const query = (raw as { query?: unknown } | null)?.query;
   if (query == null || query === "") return { kind: "gmail_search", query: DEFAULT_QUERY };
   if (typeof query !== "string" || query.trim().length > MAX_QUERY_LENGTH) {
@@ -93,11 +121,51 @@ export async function loadBlockedSenders(db: SupabaseClient): Promise<string[]> 
   return (data ?? []).map((row) => row.sender);
 }
 
-/** Quita el ruido, salvo si la búsqueda pide un remitente concreto: "¿me ha escrito Uber?" debe encontrarlo. */
+/**
+ * Quita el ruido (pestañas y remitentes filtrados) salvo que el asunto parezca importante. Si la búsqueda pide un
+ * remitente concreto no quita nada: "¿me ha escrito Uber?" debe encontrarlo.
+ */
 export function withoutNoise(query: string, blockedSenders: string[]): string {
   if (/(^|\s|-)from:/i.test(query)) return query;
-  const senders = blockedSenders.length > 0 ? ` -from:(${blockedSenders.join(" OR ")})` : "";
-  return `${query} ${NOISE_CATEGORIES}${senders}`;
+  const senders = blockedSenders.length > 0 ? [`from:(${blockedSenders.join(" OR ")})`] : [];
+  return `${query} -({${[...NOISE_CATEGORIES, ...senders].join(" ")}} -${IMPORTANT_SUBJECT})`;
+}
+
+export async function blockSender(db: SupabaseClient, sender: string): Promise<void> {
+  const { error } = await db.from("email_filters").upsert({ sender }, { onConflict: "sender", ignoreDuplicates: true });
+  if (error) throw new Error(`No se pudo guardar el filtro del correo: ${error.message}`);
+}
+
+/** Quita los filtros que contienen lo que dice ("uber" quita también "uber@uber.com"). Devuelve los que quitó. */
+export async function unblockSender(db: SupabaseClient, sender: string): Promise<string[]> {
+  const { data, error } = await db.from("email_filters").delete().ilike("sender", `%${sender}%`).select("sender");
+  if (error) throw new Error(`No se pudo quitar el filtro del correo: ${error.message}`);
+  return (data ?? []).map((row) => row.sender);
+}
+
+export function formatFilters(senders: string[]): string {
+  const tabs = "No te enseño Promociones (salvo las importantes), Social ni Foros";
+  const list = senders.length > 0 ? `, ni los correos de: ${senders.join(", ")}` : "";
+  return `${tabs}${list}. Si el asunto parece importante (factura, pedido, entrevista, código…), te lo enseño igual.`;
+}
+
+type SenderFilterRequest = Extract<GmailRequest, { kind: "gmail_block" | "gmail_unblock" | "gmail_filters" }>;
+
+async function replyToSenderFilter(db: SupabaseClient, request: SenderFilterRequest): Promise<string> {
+  switch (request.kind) {
+    case "gmail_block":
+      await blockSender(db, request.sender);
+      return `Vale, ya no te enseño los correos de «${request.sender}», salvo si el asunto parece importante. ` +
+        `Para volver a verlos, dime «vuelve a enseñarme los correos de ${request.sender}».`;
+    case "gmail_unblock": {
+      const removed = await unblockSender(db, request.sender);
+      return removed.length > 0
+        ? `Vuelvo a enseñarte los correos de: ${removed.join(", ")}.`
+        : `No tenía filtrado nada con «${request.sender}».`;
+    }
+    case "gmail_filters":
+      return formatFilters(await loadBlockedSenders(db));
+  }
 }
 
 /** Los correos que encuentra la búsqueda, del más reciente al más antiguo, y cuántos hay en total (aproximado). */
@@ -132,6 +200,7 @@ export function formatEmails(emails: EmailSummary[], total: number): string {
 
 export async function replyToGmail(db: SupabaseClient, request: GmailRequest): Promise<string> {
   if (request.kind === "invalid") return request.message;
+  if (request.kind !== "gmail_search") return replyToSenderFilter(db, request);
   try {
     const { emails, total } = await searchEmails(db, request.query);
     return formatEmails(emails, total);
