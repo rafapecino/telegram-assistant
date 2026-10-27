@@ -11,11 +11,10 @@ import { transcribeAudio } from "../_shared/groq.ts";
 import { inventFunnyLine, loadMemory, saveMemory } from "../_shared/memory.ts";
 import { fetchWeatherAlerts } from "../_shared/aemet.ts";
 import {
-  DEFAULT_CITY,
   describeWeatherCode,
   fetchForecast,
-  findPlace,
   FORECAST_DAYS,
+  mainPlace,
   type Place,
   VILLANUEVA_DE_LA_CANADA,
 } from "../_shared/weather.ts";
@@ -103,7 +102,7 @@ Deno.serve(async (request) => {
       if (resource === "chat_messages") return json(await loadChatMessages(db), 200, cors);
       if (resource === "greeting") return json({ text: await inventFunnyLine(db) }, 200, cors);
       if (resource === "weather") {
-        const places = [await findPlace(Deno.env.get("WEATHER_CITY")?.trim() || DEFAULT_CITY), VILLANUEVA_DE_LA_CANADA];
+        const places = [await mainPlace(), VILLANUEVA_DE_LA_CANADA];
         return json(await Promise.all(places.map(weekForecast)), 200, cors);
       }
       // Separado del tiempo: si AEMET falla, la previsión se sigue viendo.
