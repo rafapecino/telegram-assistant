@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Scale, Cigarette, CupSoda, Mic, Square, Brain, CloudSun, AlertTriangle } from 'lucide-react';
+import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Scale, Cigarette, CupSoda, Mic, Square, Brain, CloudSun, AlertTriangle, Settings, Download } from 'lucide-react';
 import chatbotLogo from './assets/chatbot-logo.png';
 
 type Row = Record<string, any>;
-type Section = 'overview'|'finances'|'reminders'|'shopping_items'|'birthdays'|'habits'|'weight'|'calendar'|'weather'|'memory';
+type Section = 'overview'|'finances'|'reminders'|'shopping_items'|'birthdays'|'habits'|'weight'|'calendar'|'weather'|'memory'|'settings';
 
 // La clave publicable de Supabase está pensada para ir en el navegador; los permisos los decide panel-api.
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? 'https://znzyzstvfqsrilhzyqub.supabase.co';
@@ -17,7 +17,7 @@ const navigation: {id:Section; label:string; icon:typeof LayoutDashboard}[] = [
   {id:'overview',label:'Inicio',icon:LayoutDashboard},{id:'finances',label:'Finanzas',icon:Wallet},{id:'reminders',label:'Recordatorios',icon:Bell},
   {id:'shopping_items',label:'Lista de la compra',icon:ShoppingBasket},
   {id:'birthdays',label:'Cumpleaños',icon:Cake},{id:'habits',label:'Hábitos',icon:Flame},{id:'weight',label:'Peso',icon:Scale},{id:'calendar',label:'Calendario',icon:CalendarDays},{id:'weather',label:'Tiempo',icon:CloudSun},
-  {id:'memory',label:'Memoria',icon:Brain}
+  {id:'memory',label:'Memoria',icon:Brain},{id:'settings',label:'Ajustes',icon:Settings}
 ];
 const resources = ['expenses','incomes','budgets','reminders','shopping_items','birthdays','habits','habit_checks','weight_entries','calendar','bank_connection','memory','weather','weather_alerts'] as const;
 const euro = (v:number) => new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(v);
@@ -327,6 +327,89 @@ function EnergyDrinkCard({expenses,period}:{expenses:Row[];period:number}) {
   </Card>;
 }
 
+const dayMonthYear=(v:string)=>new Intl.DateTimeFormat('es-ES',{dateStyle:'long',timeZone:'Europe/Madrid'}).format(new Date(v));
+
+/** Descarga un objeto como fichero .json sin pasar por el servidor otra vez. */
+function downloadJson(data:unknown,fileName:string){
+  const link=document.createElement('a');link.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
+  link.download=fileName;link.click();URL.revokeObjectURL(link.href);
+}
+
+function SettingsSection({token,onChange}:{token:string;onChange:()=>Promise<void>}) {
+  const [accounts,setAccounts]=useState<Row|null>(null),[summary,setSummary]=useState<Row[]|null>(null);
+  const [selected,setSelected]=useState<string[]>([]),[confirmText,setConfirmText]=useState('');
+  const [busy,setBusy]=useState(''),[message,setMessage]=useState(''),[problem,setProblem]=useState('');
+  // Se pide al abrir la sección y no con el resto del panel: consulta a Google qué permisos tiene.
+  const load=useCallback(async()=>{
+    const [loadedAccounts,loadedSummary]=await Promise.allSettled([api('connected_accounts',token),api('data_summary',token)]);
+    if(loadedAccounts.status==='fulfilled')setAccounts(loadedAccounts.value);else setProblem(loadedAccounts.reason.message);
+    if(loadedSummary.status==='fulfilled')setSummary(loadedSummary.value);else setProblem(current=>current||loadedSummary.reason.message);
+  },[token]);
+  useEffect(()=>{void load()},[load]);
+  async function run(task:string,work:()=>Promise<string>){
+    setBusy(task);setMessage('');setProblem('');
+    try{setMessage(await work());await load();await onChange()}
+    catch(e){setProblem(e instanceof Error?e.message:'No se pudo completar. Inténtalo de nuevo.')}
+    finally{setBusy('')}
+  }
+  async function connect(resource:'calendar_link'|'bank_link'){
+    setBusy(resource);setProblem('');
+    try{window.location.assign((await api(resource,token,'POST',{})).url)}
+    catch(e){setProblem(e instanceof Error?e.message:'No se pudo preparar la conexión.');setBusy('')}
+  }
+  function disconnect(resource:'google_connection'|'bank_connection',warning:string){
+    if(!window.confirm(warning))return;
+    void run(resource,async()=>{await api(resource,token,'DELETE');return resource==='google_connection'?'Google desconectado: he retirado el permiso del calendario y de Gmail.':'Banco desconectado: he pedido al banco que retire el permiso.'});
+  }
+  const exportData=()=>run('export',async()=>{downloadJson(await api('data_export',token),`mi-asistente-${todayInMadrid()}.json`);return 'Copia descargada.'});
+  const deleteData=()=>run('delete',async()=>{
+    const result=await api('personal_data',token,'DELETE',undefined,{categories:selected.join(','),confirm:'BORRAR'});
+    setSelected([]);setConfirmText('');return `Borrado: ${result.deleted.join(', ')}.`;
+  });
+  const chosen=(summary??[]).filter(c=>selected.includes(c.id)), canDelete=chosen.length>0&&confirmText.trim().toUpperCase()==='BORRAR';
+  const google=accounts?.google, bank:Row[]=accounts?.bank??[];
+  return <>
+    {problem&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{problem}</span></div>}
+    {message&&<div className="notice" role="status"><Check size={17}/>{message}</div>}
+    <div className="two-cols">
+      <Card title="Google" aside={google?.connected?<span className="connected"><span className="status-dot"/> Conectado</span>:undefined}>
+        {!accounts?<Empty>Cargando…</Empty>:google?.connected?<>
+          <p className="settings-text">Conectado desde el {dayMonthYear(google.since)}.</p>
+          {google.problem?<p className="error">{google.problem}</p>:<><p className="settings-text"><strong>Permisos concedidos:</strong></p><ul className="settings-list">{google.permissions.map((p:string)=><li key={p}>{p}</li>)}</ul></>}
+          <button className="secondary danger" disabled={!!busy} onClick={()=>disconnect('google_connection','Desconectar Google retira en Google el permiso del calendario y de Gmail. Dejaré de ver tus eventos y tu correo. ¿Seguro?')}>Desconectar Google</button>
+        </>:<><p className="settings-text">Sin conectar. Al conectarlo podré ver y crear eventos del calendario y leer el remitente y el asunto de tus correos.</p><button className="primary" disabled={!!busy} onClick={()=>void connect('calendar_link')}>Conectar Google <ArrowUpRight size={16}/></button></>}
+      </Card>
+      <Card title="Banco" aside={bank.length?<span className="connected"><span className="status-dot"/> Conectado</span>:undefined}>
+        {!accounts?<Empty>Cargando…</Empty>:bank.length?<>
+          {bank.map((access,i)=><p className="settings-text" key={i}>{access.accounts===1?'1 cuenta':`${access.accounts} cuentas`} · {new Date(access.validUntil)>new Date()?`acceso hasta el ${dayMonthYear(access.validUntil)}`:`el acceso caducó el ${dayMonthYear(access.validUntil)}`}.</p>)}
+          <p className="settings-text"><strong>Permisos concedidos:</strong></p><ul className="settings-list"><li>Leer los movimientos y el saldo (no puede hacer pagos)</li></ul>
+          <button className="secondary danger" disabled={!!busy} onClick={()=>disconnect('bank_connection','Desconectar el banco cierra el acceso en Enable Banking y pide al banco que retire el permiso. Dejaré de importar tus gastos; los que ya tengo se quedan. ¿Seguro?')}>Desconectar banco</button>
+        </>:<><p className="settings-text">Sin conectar. Al conectarlo importaré tus gastos e ingresos cada día.</p><button className="primary" disabled={!!busy} onClick={()=>void connect('bank_link')}>Conectar banco <ArrowUpRight size={16}/></button></>}
+      </Card>
+    </div>
+    <Card title="Descargar mis datos">
+      <p className="settings-text">Un fichero .json con todo lo que guarda el asistente: finanzas, recordatorios, notas, hábitos, memoria y conversación. No incluye las claves de conexión con Google ni con el banco.</p>
+      <button className="secondary" disabled={!!busy} onClick={()=>void exportData()}><Download size={16}/> {busy==='export'?'Preparando…':'Descargar copia'}</button>
+    </Card>
+    <Card title="Borrar datos">
+      <p className="settings-text">Elige qué quieres borrar. Se borra para siempre y no se puede deshacer, así que descarga antes una copia si la quieres. Las conexiones con Google y el banco se quitan desde arriba.</p>
+      {!summary?<Empty>Cargando…</Empty>:<fieldset className="delete-choices"><legend className="sr-only">Datos que se borrarán</legend>
+        {summary.map(c=><label key={c.id} className="checkbox-row"><input type="checkbox" checked={selected.includes(c.id)} onChange={e=>setSelected(current=>e.target.checked?[...current,c.id]:current.filter(id=>id!==c.id))}/><span>{c.label}</span><small>{c.count} {c.count===1?'registro':'registros'}</small></label>)}
+        <button type="button" className="text-link" onClick={()=>setSelected(selected.length===summary.length?[]:summary.map(c=>c.id))}>{selected.length===summary.length?'Quitar todo':'Seleccionar todo'}</button>
+      </fieldset>}
+      {chosen.length>0&&<div className="delete-summary">
+        <p><strong>Se borrará para siempre:</strong></p>
+        <ul className="settings-list">{chosen.map(c=><li key={c.id}>{c.label} ({c.count} {c.count===1?'registro':'registros'})</li>)}</ul>
+        {selected.includes('finances')&&bank.length>0&&<p>El banco sigue conectado: los movimientos de los últimos días se volverán a importar en la próxima sincronización.</p>}
+        <form onSubmit={e=>{e.preventDefault();if(canDelete)void deleteData()}}>
+          <label className="settings-text" htmlFor="confirm-delete">Escribe <strong>BORRAR</strong> para confirmar</label>
+          <div className="form-row"><input id="confirm-delete" value={confirmText} onChange={e=>setConfirmText(e.target.value)} autoComplete="off"/><button className="primary danger-fill" disabled={!canDelete||!!busy}>{busy==='delete'?'Borrando…':'Borrar para siempre'}</button></div>
+        </form>
+      </div>}
+    </Card>
+  </>;
+}
+
 export function App(){
   const [token,setToken]=useState(''),[authReady,setAuthReady]=useState(false);
   const [section,setSection]=useState<Section>('overview'),[mobileOpen,setMobileOpen]=useState(false);
@@ -370,7 +453,7 @@ export function App(){
   if(!token)return <LoginScreen error={error} setError={setError}/>;
   return <div className="shell"><aside className={`sidebar ${mobileOpen?'open':''}`}><div className="sidebar-top"><div className="identity"><img src={chatbotLogo} alt="Mi asistente"/><small>PANEL PERSONAL</small></div><button className="mobile-close icon-button" aria-label="Cerrar menú" onClick={()=>setMobileOpen(false)}><X/></button></div><nav aria-label="Navegación principal">{navigation.map(({id,label,icon:Icon})=><button key={id} className={section===id?'nav-item active':'nav-item'} aria-current={section===id?'page':undefined} onClick={()=>{setSection(id);setMobileOpen(false);setNotice('')}}><Icon size={19} strokeWidth={1.8}/>{label}</button>)}</nav><div className="sidebar-bottom"><div className="sidebar-note"><span className="status-dot"/>Conectado a tu asistente</div><button className="nav-item logout" onClick={logout}><LogOut size={18}/> Cerrar sesión</button></div></aside>{mobileOpen&&<div className="backdrop" onClick={()=>setMobileOpen(false)}/>}
   <div className="workspace"><header className="topbar"><button className="mobile-menu icon-button" aria-label="Abrir menú" onClick={()=>setMobileOpen(true)}><Menu/></button><div className="breadcrumbs">Mi espacio <span>/</span> <strong>{current.label}</strong></div><button className="refresh icon-button" onClick={()=>void refresh()} disabled={loading} aria-label="Actualizar datos"><RefreshCw size={18} className={loading?'spin':''}/></button></header>
-  <main className="content"><div className="page-heading"><div><div className="eyebrow">PANEL PERSONAL</div><h1>{section==='overview'?dailyGreeting():current.label}</h1><p>{section==='overview'?funnyLine||'Aquí tienes lo importante de un vistazo.':section==='memory'?'Lo que tu asistente sabe de ti. Lo usa para hablarte con gracia.':section==='finances'?'Tus ingresos, gastos y límites en un mismo lugar.':section==='weather'?'Previsión de los próximos 7 días y avisos de AEMET.':'Organiza y consulta tus cosas sin salir del panel.'}</p></div><span className="today">{new Intl.DateTimeFormat('es-ES',{dateStyle:'full',timeZone:'Europe/Madrid'}).format(new Date())}</span></div>
+  <main className="content"><div className="page-heading"><div><div className="eyebrow">PANEL PERSONAL</div><h1>{section==='overview'?dailyGreeting():current.label}</h1><p>{section==='overview'?funnyLine||'Aquí tienes lo importante de un vistazo.':section==='memory'?'Lo que tu asistente sabe de ti. Lo usa para hablarte con gracia.':section==='finances'?'Tus ingresos, gastos y límites en un mismo lugar.':section==='weather'?'Previsión de los próximos 7 días y avisos de AEMET.':section==='settings'?'Cuentas conectadas, permisos y tus datos.':'Organiza y consulta tus cosas sin salir del panel.'}</p></div><span className="today">{new Intl.DateTimeFormat('es-ES',{dateStyle:'full',timeZone:'Europe/Madrid'}).format(new Date())}</span></div>
   {error&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{error}</span><button onClick={()=>setError('')} aria-label="Cerrar error"><X size={16}/></button></div>}{notice&&<div className="notice" role="status"><Check size={17}/>{notice}</div>}
   {section==='overview'&&<><AssistantChat token={token} onChange={()=>refresh()}/>
     <section className="dashboard-hero"><div><span className="hero-kicker">TU DÍA EN ORDEN</span><h2>Tu asistente, de un vistazo.</h2><p>Los números, recordatorios y próximos planes reunidos aquí.</p><HeroWeather forecasts={Array.isArray(data.weather)?data.weather:undefined} alerts={Array.isArray(data.weather_alerts)?data.weather_alerts:undefined}/><div className="hero-actions"><button onClick={()=>setSection('finances')}>Ver finanzas <ArrowUpRight size={16}/></button><button onClick={()=>setSection('reminders')}>Mis recordatorios <Bell size={16}/></button></div></div><div className="hero-balance"><small>Balance · últimos {period} días</small><strong>{euro(totals.earned-totals.spent)}</strong><span>{expenses.length} movimientos · {rows('reminders').length} recordatorios</span></div></section>
@@ -384,6 +467,7 @@ export function App(){
   {section==='weight'&&<WeightSection entries={rows('weight_entries')} save={payload=>action('weight_entries','POST',payload)} remove={id=>void action('weight_entries','DELETE',undefined,{id:String(id)})}/>}
   {section==='calendar'&&<Card title="Próximos eventos" aside={data.calendar?.connected?<span className="connected"><span className="status-dot"/> Google conectado</span>:undefined}>{data.calendar?.connected?<><EventForm save={payload=>action('calendar','POST',payload)}/>{data.calendar.events.map((e:Row,i:number)=><div className="list-row" key={i}><span className="row-symbol mint"><CalendarDays size={18}/></span><span className="row-main"><strong>{e.title}</strong><small>{e.start?dateTime(e.start):`${e.date} · Todo el día`}</small></span></div>)}{!data.calendar.events.length&&<Empty>No hay eventos en los próximos 14 días.</Empty>}</>:<div className="connect-calendar"><CalendarDays size={34}/><h3>Tu agenda, aquí mismo</h3><p>Conecta Google Calendar para consultar tus próximos eventos y crear otros nuevos.</p><button className="primary" onClick={async()=>{try{const result=await api('calendar_link',token,'POST',{});window.location.assign(result.url)}catch(e){setError(e instanceof Error?e.message:'No se pudo conectar')}}}>Conectar Google Calendar <ArrowUpRight size={18}/></button></div>}</Card>}
   {section==='weather'&&<WeatherSection forecasts={Array.isArray(data.weather)?data.weather:undefined} alerts={Array.isArray(data.weather_alerts)?data.weather_alerts:undefined}/>}
+  {section==='settings'&&<SettingsSection token={token} onChange={()=>refresh()}/>}
   {section==='memory'&&<MemorySection content={String(data.memory?.content??'')} save={content=>action('memory','POST',{content})}/>}
   <footer>Tu asistente personal · Datos actualizados desde Supabase</footer></main></div></div>
 }

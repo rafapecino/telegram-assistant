@@ -10,9 +10,9 @@ const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke";
 const EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
 // Solo eventos (leer y crear), no la configuración de los calendarios ni compartirlos.
-const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 // Gmail va en la misma conexión, solo para leer: no puede enviar, borrar ni cambiar nada.
-const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 const AUTHORIZATION_LINK_LIFETIME_MINUTES = 30;
 const MAX_LIST_DAYS = 62;
 
