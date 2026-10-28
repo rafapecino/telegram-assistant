@@ -54,6 +54,14 @@ Deno.test("entiende ver eventos y crearlos con hora o de todo el día", () => {
   });
 });
 
+Deno.test("un evento a las 00:00 es que no se dijo hora: se crea de todo el día", () => {
+  assertEquals(parseCalendarRequest({ action: "create", title: "Galleta Day", local_datetime: "2026-10-28T00:00" }), {
+    kind: "calendar_create_all_day",
+    title: "Galleta Day",
+    date: "2026-10-28",
+  });
+});
+
 Deno.test("rechaza fechas raras, rangos al revés o de más de dos meses, y corrige duraciones absurdas", () => {
   assertEquals(
     parseCalendarRequest({ action: "list", date_from: "2026-10-23", date_to: "2026-10-01" }).kind,

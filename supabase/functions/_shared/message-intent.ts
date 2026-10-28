@@ -15,6 +15,7 @@ import { parsePricesRequest, PRICES_INTENT_FORMAT, type PricesRequest } from "./
 import { NOTE_INTENT_FORMAT, type NoteRequest, parseNoteRequest } from "./notes.ts";
 import { parseReminderRequest, REMINDER_INTENT_FORMAT, type ReminderRequest } from "./reminders.ts";
 import { parseShoppingRequest, SHOPPING_INTENT_FORMAT, type ShoppingRequest } from "./shopping.ts";
+import { parseWeatherRequest, WEATHER_INTENT_FORMAT, type WeatherRequest } from "./weather.ts";
 import { parseWeightRequest, WEIGHT_INTENT_FORMAT, type WeightRequest } from "./weight.ts";
 
 // Para añadir una funcionalidad: su formato va en buildIntentPrompt y su validación en parseMessageIntent.
@@ -35,6 +36,7 @@ export type MessageIntent =
   | ConnectionRequest
   | MarketsRequest
   | PricesRequest
+  | WeatherRequest
   | { kind: "unknown" };
 
 export function buildIntentPrompt(clock: MadridClock): string {
@@ -58,6 +60,7 @@ export function buildIntentPrompt(clock: MadridClock): string {
     `- ${CONNECTION_INTENT_FORMAT}`,
     `- ${MARKETS_INTENT_FORMAT}`,
     `- ${PRICES_INTENT_FORMAT}`,
+    `- ${WEATHER_INTENT_FORMAT}`,
     '- Cualquier otra cosa: {"intent": "unknown"}',
   ].join("\n");
 }
@@ -80,6 +83,7 @@ export function parseMessageIntent(raw: unknown, now: Date): MessageIntent {
   if (intent === "connection") return parseConnectionRequest(raw);
   if (intent === "markets") return parseMarketsRequest(raw);
   if (intent === "prices") return parsePricesRequest(raw);
+  if (intent === "weather") return parseWeatherRequest(raw, madridClock(now).localDate);
   return { kind: "unknown" };
 }
 
