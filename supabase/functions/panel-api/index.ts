@@ -15,6 +15,7 @@ import { transcribeAudio } from "../_shared/groq.ts";
 import { inventFunnyLine, loadMemory, saveMemory } from "../_shared/memory.ts";
 import { fetchWeatherAlerts } from "../_shared/aemet.ts";
 import { loadNews, NEWS_TOPICS } from "../_shared/news.ts";
+import { parseMovementFilters, searchEverything, searchMovements } from "../_shared/search.ts";
 import { UserFacingError } from "../_shared/errors.ts";
 import { corsHeaders, describeErrorForClient, isOverRateLimit, recordAccessDenied } from "../_shared/panel-security.ts";
 import {
@@ -134,6 +135,8 @@ Deno.serve(async (request) => {
       if (resource === "connected_accounts") {
         return json({ google: await describeGoogleAccount(db), bank: await listBankAccess(db) }, 200, cors);
       }
+      if (resource === "movements") return json(await searchMovements(db, parseMovementFilters(url.searchParams)), 200, cors);
+      if (resource === "search") return json(await searchEverything(db, url.searchParams.get("q"), today), 200, cors);
       if (resource === "news_topics") {
         return json(Object.entries(NEWS_TOPICS).map(([id, topic]) => ({ id, label: topic.label })), 200, cors);
       }
