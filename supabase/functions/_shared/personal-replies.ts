@@ -41,6 +41,7 @@ import {
   recordHabit,
 } from "./habits.ts";
 import { madridClock } from "./madrid-time.ts";
+import { type MarketsRequest, replyToMarkets } from "./markets.ts";
 import { applyMemoryButton, parseMemoryButton } from "./memory.ts";
 import type { MessageIntent } from "./message-intent.ts";
 import {
@@ -196,6 +197,7 @@ const WEIGHT_KINDS = new Set(["weight_save", "weight_list"]);
 const BUS_KINDS = new Set(["bus_arrivals", "bus_stop_save", "bus_stop_delete", "bus_stop_list"]);
 const CONNECTION_KINDS = new Set(["connection_connect", "connection_disconnect"]);
 const GMAIL_KINDS = new Set(["gmail_search", "gmail_block", "gmail_unblock", "gmail_filters"]);
+const MARKETS_KINDS = new Set(["markets_list", "markets_quote", "markets_follow", "markets_unfollow"]);
 
 /** Responde a una intención de estas funciones, o devuelve null si no es de ninguna. */
 export async function replyToPersonalIntent(
@@ -213,6 +215,7 @@ export async function replyToPersonalIntent(
   if (GMAIL_KINDS.has(intent.kind)) return { text: await replyToGmail(db, intent as GmailRequest) };
   if (BUS_KINDS.has(intent.kind)) return { text: await replyToBus(db, intent as BusRequest, now) };
   if (CONNECTION_KINDS.has(intent.kind)) return replyToConnection(db, intent as ConnectionRequest, now);
+  if (MARKETS_KINDS.has(intent.kind)) return { text: await replyToMarkets(db, intent as MarketsRequest, now) };
   return null;
 }
 

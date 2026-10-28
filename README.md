@@ -183,6 +183,16 @@ los hábitos de cada día, con icono, color y texto para distinguir cada tipo. E
 toca cada uno y se ven las últimas cuatro semanas: hecho, no hecho, sin apuntar o descanso. Los días de descanso no
 cuentan como fallo ni rompen la racha; se puede marcar cualquier día de los últimos cuatro meses pulsándolo.
 
+Mercados sigue índices y empresas (Yahoo Finance, sin API oficial), criptomonedas (CoinGecko) y divisas frente al
+euro (Frankfurter, del BCE), todo gratis y sin clave. Empieza con el Nasdaq-100, las siete grandes tecnológicas, seis
+criptomonedas y tres divisas (tabla `market_watchlist`), y se puede cambiar desde el panel o el chat («sigue AMD»,
+«deja de seguir Tesla», «¿cómo va el bitcoin?»). Las cotizaciones se guardan 5 minutos; si una fuente falla se enseña
+la última buena (de menos de una hora) avisando. CoinGecko se satura a veces: con `COINGECKO_API_KEY` (la clave «Demo»
+gratuita) tiene más margen. Finanzas muestra arriba las cuatro primeras.
+
+La curiosidad del día es un suceso de un día como hoy, de la Wikipedia en español; sale en el Inicio y al final del
+resumen de la mañana (si Wikipedia falla, el resumen sale sin ella).
+
 La sección Noticias enseña titulares por temas (destacadas, España, mundo, Madrid, economía, tecnología, ciencia,
 salud, clima, deportes, cultura y gastronomía) desde los RSS públicos de El País, elDiario.es, 20minutos, La
 Vanguardia, BBC Mundo, Telemadrid, Expansión y Xataka: sin clave ni coste. Cada sección del panel muestra arriba un
