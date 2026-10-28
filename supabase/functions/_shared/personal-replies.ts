@@ -55,6 +55,7 @@ import {
   saveNote,
 } from "./notes.ts";
 import { formatRemindersBetween, listRemindersBetween } from "./reminders.ts";
+import { replyToWeather } from "./weather.ts";
 import {
   addShoppingItems,
   clearShoppingList,
@@ -219,6 +220,7 @@ export async function replyToPersonalIntent(
   if (CONNECTION_KINDS.has(intent.kind)) return replyToConnection(db, intent as ConnectionRequest, now);
   if (MARKETS_KINDS.has(intent.kind)) return { text: await replyToMarkets(db, intent as MarketsRequest, now) };
   if (PRICES_KINDS.has(intent.kind)) return { text: await replyToPrices(db, intent as PricesRequest) };
+  if (intent.kind === "weather") return { text: await replyToWeather(intent, today) };
   return null;
 }
 

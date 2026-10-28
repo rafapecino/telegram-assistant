@@ -1,4 +1,6 @@
 // Previsión del tiempo con Open-Meteo: gratis, sin clave y sin registrar nada.
+import { isCalendarDate } from "./expense-queries.ts";
+import { addDaysToDate } from "./madrid-time.ts";
 
 const GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search";
 const FORECAST_URL = "https://api.open-meteo.com/v1/forecast";
@@ -81,14 +83,20 @@ export async function mainPlace(retryDelaysMs = RETRY_DELAYS_MS): Promise<Place>
   return city ? await findPlace(city, retryDelaysMs) : STRATESYS;
 }
 
-export async function findPlace(city: string, retryDelaysMs = RETRY_DELAYS_MS): Promise<Place> {
+/** El sitio con ese nombre, o null si Open-Meteo no lo conoce. */
+export async function searchPlace(city: string, retryDelaysMs = RETRY_DELAYS_MS): Promise<Place | null> {
   const geocoding = await getJson(
     `${GEOCODING_URL}?${new URLSearchParams({ name: city, count: "1", language: "es" })}`,
     retryDelaysMs,
   );
   const place = (geocoding.results as Place[] | undefined)?.[0];
+  return place ? { name: place.name, latitude: place.latitude, longitude: place.longitude } : null;
+}
+
+export async function findPlace(city: string, retryDelaysMs = RETRY_DELAYS_MS): Promise<Place> {
+  const place = await searchPlace(city, retryDelaysMs);
   if (!place) throw new Error(`Open-Meteo no conoce la ciudad "${city}"`);
-  return { name: place.name, latitude: place.latitude, longitude: place.longitude };
+  return place;
 }
 
 /** Previsión de los próximos `days` días, empezando hoy, en hora de Madrid. */
@@ -130,4 +138,51 @@ export async function fetchForecast(
 export async function fetchTodayWeather(place: Place, retryDelaysMs = RETRY_DELAYS_MS): Promise<DayWeather> {
   const [today] = await fetchForecast(place, 1, retryDelaysMs);
   return { city: place.name, min: today.min, max: today.max, code: today.code, rainProbability: today.rainProbability };
+}
+
+/** Formato que el modelo debe devolver cuando pregunta por el tiempo (ver message-intent.ts). */
+export const WEATHER_INTENT_FORMAT =
+  'El tiempo (temperatura, lluvia, si hará frío o calor) de hoy o de los próximos días: {"intent": "weather", ' +
+  '"date": "YYYY-MM-DD", "city": "<ciudad>" o null}. Sin día, hoy; sin ciudad, null.';
+
+export type WeatherRequest = { kind: "weather"; date: string; city: string | null } | {
+  kind: "invalid";
+  message: string;
+};
+
+export function parseWeatherRequest(raw: unknown, today: string): WeatherRequest {
+  const candidate = raw as { date?: unknown; city?: unknown } | null;
+  const rawDate = candidate?.date;
+  const date = isCalendarDate(rawDate) ? rawDate : today;
+  if (date < today || date > addDaysToDate(today, FORECAST_DAYS - 1)) {
+    return { kind: "invalid", message: `Solo tengo la previsión de hoy y los ${FORECAST_DAYS - 1} días siguientes.` };
+  }
+  const city = typeof candidate?.city === "string" && candidate.city.trim() ? candidate.city.trim().slice(0, 80) : null;
+  return { kind: "weather", date, city };
+}
+
+const weekdayAndDay = new Intl.DateTimeFormat("es-ES", { weekday: "long", day: "numeric", timeZone: "UTC" });
+
+function dayLabel(date: string, today: string): string {
+  if (date === today) return "hoy";
+  if (date === addDaysToDate(today, 1)) return "mañana";
+  return `el ${weekdayAndDay.format(new Date(`${date}T00:00:00Z`))}`;
+}
+
+export async function replyToWeather(
+  request: Extract<WeatherRequest, { kind: "weather" }>,
+  today: string,
+  retryDelaysMs = RETRY_DELAYS_MS,
+): Promise<string> {
+  const place = request.city ? await searchPlace(request.city, retryDelaysMs) : await mainPlace(retryDelaysMs);
+  if (!place) return `No encuentro «${request.city}». Prueba con el nombre de la ciudad.`;
+  const day = (await fetchForecast(place, FORECAST_DAYS, retryDelaysMs)).find(({ date }) => date === request.date);
+  if (!day) throw new Error(`Open-Meteo no ha devuelto la previsión del ${request.date}`);
+  return describeWeather({
+    city: `${place.name}, ${dayLabel(request.date, today)}`,
+    min: day.min,
+    max: day.max,
+    code: day.code,
+    rainProbability: day.rainProbability,
+  });
 }
