@@ -25,7 +25,7 @@ export const CALENDAR_INTENT_FORMAT =
   'domingo; sin días concretos, hoy y los 30 siguientes), ' +
   'o {"intent": "calendar", "action": "create", "title": "<evento>", "local_datetime": "YYYY-MM-DDTHH:mm" o null, ' +
   '"date": "YYYY-MM-DD" o null, "duration_minutes": 60} para crear uno: con hora, local_datetime en hora de Madrid; ' +
-  "de todo el día, date. Si pide que se le avise, es un recordatorio.";
+  "de todo el día o sin hora, date (nunca pongas las 00:00 por no saber la hora). Si pide que se le avise, es un recordatorio.";
 
 export type CalendarRequest =
   | { kind: "calendar_list"; dateFrom: string; dateTo: string }
@@ -50,6 +50,11 @@ export function parseCalendarRequest(raw: unknown): CalendarRequest {
   }
   const title = typeof candidate.title === "string" ? candidate.title.trim().slice(0, 200) : "";
   if (!title) return { kind: "invalid", message: "No he entendido qué evento quieres crear." };
+  // Si aun así el modelo pone las 00:00, es que no dijo hora: en Google saldría a medianoche en vez de todo el día.
+  const midnightDate = typeof candidate.local_datetime === "string" && candidate.local_datetime.endsWith("T00:00")
+    ? candidate.local_datetime.slice(0, 10)
+    : null;
+  if (isCalendarDate(midnightDate)) return { kind: "calendar_create_all_day", title, date: midnightDate };
   if (typeof candidate.local_datetime === "string") {
     let start: Date;
     try {

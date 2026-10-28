@@ -6,6 +6,8 @@ import {
   fetchTodayWeather,
   findPlace,
   mainPlace,
+  parseWeatherRequest,
+  replyToWeather,
   STRATESYS,
   VILLANUEVA_DE_LA_CANADA,
 } from "./weather.ts";
@@ -115,5 +117,51 @@ Deno.test("la previsión de la semana trae un día por fecha, con las coordenada
     const url = new URL(requests[0].url);
     assertEquals(url.searchParams.get("latitude"), "40.44689");
     assertEquals(url.searchParams.get("forecast_days"), "7");
+  });
+});
+
+Deno.test("la pregunta del tiempo vale para hoy y los 6 días siguientes; sin día, hoy", () => {
+  const today = "2026-10-28";
+  assertEquals(parseWeatherRequest({ date: "2026-10-29", city: " Sevilla " }, today), {
+    kind: "weather",
+    date: "2026-10-29",
+    city: "Sevilla",
+  });
+  assertEquals(parseWeatherRequest({ date: null, city: null }, today), { kind: "weather", date: today, city: null });
+  assertEquals(parseWeatherRequest({ date: "2026-11-04" }, today).kind, "invalid");
+  assertEquals(parseWeatherRequest({ date: "2026-10-27" }, today).kind, "invalid");
+});
+
+const TWO_DAYS = {
+  daily: {
+    time: ["2026-10-28", "2026-10-29"],
+    temperature_2m_min: [10, 8.4],
+    temperature_2m_max: [22, 15.6],
+    weather_code: [0, 61],
+    precipitation_probability_max: [0, 80],
+  },
+};
+
+Deno.test("responde el tiempo de mañana en el sitio principal", async () => {
+  await withFakeFetch({}, openMeteo({}, TWO_DAYS), async () => {
+    assertEquals(
+      await replyToWeather({ kind: "weather", date: "2026-10-29", city: null }, "2026-10-28", []),
+      "🌤️ Stratesys, mañana: lluvia, entre 8 y 16 °C, 80 % de probabilidad de lluvia.",
+    );
+  });
+});
+
+Deno.test("responde el tiempo de otra ciudad y avisa si no la encuentra", async () => {
+  await withFakeFetch({}, openMeteo(MADRID, TWO_DAYS), async () => {
+    assertEquals(
+      await replyToWeather({ kind: "weather", date: "2026-10-28", city: "Madrid" }, "2026-10-28", []),
+      "🌤️ Madrid, hoy: despejado, entre 10 y 22 °C, 0 % de probabilidad de lluvia.",
+    );
+  });
+  await withFakeFetch({}, openMeteo({}, TWO_DAYS), async () => {
+    assertEquals(
+      await replyToWeather({ kind: "weather", date: "2026-10-28", city: "Villaninguna" }, "2026-10-28", []),
+      "No encuentro «Villaninguna». Prueba con el nombre de la ciudad.",
+    );
   });
 });
