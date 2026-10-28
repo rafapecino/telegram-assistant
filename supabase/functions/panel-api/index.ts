@@ -1,6 +1,8 @@
 import { createAdminClient } from "../_shared/database.ts";
 import { addDaysToDate, madridClock, madridMonthStart } from "../_shared/madrid-time.ts";
-import { listEvents, createEvent, createCalendarLink, isCalendarConnected, parseCalendarRequest } from "../_shared/calendar.ts";
+import { listEvents, createEvent, createCalendarLink, disconnectCalendar, isCalendarConnected, parseCalendarRequest } from "../_shared/calendar.ts";
+import { describeGoogleAccount, listBankAccess } from "../_shared/connected-accounts.ts";
+import { deletePersonalData, exportPersonalData, parseCategories, summarizePersonalData } from "../_shared/personal-data.ts";
 import { loadBudgetStatuses, parseBudgetRequest, saveBudget, deleteBudget } from "../_shared/budgets.ts";
 import { parseReminderRequest, saveReminder } from "../_shared/reminders.ts";
 import { recordHabit } from "../_shared/habits.ts";
@@ -125,6 +127,12 @@ Deno.serve(async (request) => {
         return json((await fetchWeatherAlerts()).filter((alert) => alert.expires > now), 200, cors);
       }
       if (resource === "bank_connection") return json({ connected: await hasBankConnections(db) }, 200, cors);
+      // Ajustes: se piden al abrir la sección, no con el resto, porque consultan a Google.
+      if (resource === "connected_accounts") {
+        return json({ google: await describeGoogleAccount(db), bank: await listBankAccess(db) }, 200, cors);
+      }
+      if (resource === "data_summary") return json(await summarizePersonalData(db), 200, cors);
+      if (resource === "data_export") return json(await exportPersonalData(db, now), 200, cors);
       if (resource === "habit_checks") {
         const { data, error } = await db.from("habit_checks").select("habit_id,date,done").gte("date", addDaysToDate(today, -120));
         if (error) throw error; return json(data, 200, cors);
@@ -195,6 +203,13 @@ Deno.serve(async (request) => {
         await deleteBudget(db, category);
       } else if (resource === "bank_connection") {
         await disconnectBank(db, now);
+      } else if (resource === "google_connection") {
+        await disconnectCalendar(db);
+      } else if (resource === "personal_data") {
+        // Además de la confirmación del panel: una llamada a la API sin ella no borra nada.
+        if (url.searchParams.get("confirm") !== "BORRAR") throw new UserFacingError("Falta confirmar el borrado.");
+        const deleted = await deletePersonalData(db, parseCategories(url.searchParams.get("categories")));
+        return json({ ok: true, deleted }, 200, cors);
       } else if (resource === "chat_messages") {
         await clearChatMessages(db);
       } else if (editable.has(resource)) {

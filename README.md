@@ -164,6 +164,12 @@ insert into public.panel_users (user_id) select id from auth.users where email =
    para otro proyecto, copia `frontend/.env.example` a `frontend/.env` y rellénalo.
 3. Para producción, el proyecto de Vercel compila `frontend/` (Root Directory `frontend`) al fusionar en `main`.
 
+En Ajustes se ven las cuentas conectadas (Google y el banco), desde cuándo y con qué permisos, y se pueden conectar
+o desconectar. Los permisos de Google son los que Google dice que tiene el token, no los que se pidieron. También se
+puede descargar una copia de todos los datos en .json (sin las claves de conexión) y borrar categorías de datos: hay
+que escribir «BORRAR», y `panel-api` exige además `confirm=BORRAR` en la petición. Las conexiones no se borran desde
+ahí sino desconectándolas, para que también se retire el permiso en Google o en el banco.
+
 Seguridad del panel:
 
 - Las tablas tienen RLS sin políticas y sin permisos para `anon` ni `authenticated`: el navegador no puede leerlas
