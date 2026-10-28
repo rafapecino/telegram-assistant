@@ -11,6 +11,7 @@ import { HABIT_INTENT_FORMAT, type HabitRequest, parseHabitRequest } from "./hab
 import { type MadridClock, madridClock } from "./madrid-time.ts";
 import { MANUAL_EXPENSE_INTENT_FORMAT, type ManualExpenseRequest, parseManualExpense } from "./manual-expenses.ts";
 import { MARKETS_INTENT_FORMAT, type MarketsRequest, parseMarketsRequest } from "./markets.ts";
+import { parsePricesRequest, PRICES_INTENT_FORMAT, type PricesRequest } from "./prices.ts";
 import { NOTE_INTENT_FORMAT, type NoteRequest, parseNoteRequest } from "./notes.ts";
 import { parseReminderRequest, REMINDER_INTENT_FORMAT, type ReminderRequest } from "./reminders.ts";
 import { parseShoppingRequest, SHOPPING_INTENT_FORMAT, type ShoppingRequest } from "./shopping.ts";
@@ -33,6 +34,7 @@ export type MessageIntent =
   | BusRequest
   | ConnectionRequest
   | MarketsRequest
+  | PricesRequest
   | { kind: "unknown" };
 
 export function buildIntentPrompt(clock: MadridClock): string {
@@ -55,6 +57,7 @@ export function buildIntentPrompt(clock: MadridClock): string {
     `- ${BUS_INTENT_FORMAT}`,
     `- ${CONNECTION_INTENT_FORMAT}`,
     `- ${MARKETS_INTENT_FORMAT}`,
+    `- ${PRICES_INTENT_FORMAT}`,
     '- Cualquier otra cosa: {"intent": "unknown"}',
   ].join("\n");
 }
@@ -76,6 +79,7 @@ export function parseMessageIntent(raw: unknown, now: Date): MessageIntent {
   if (intent === "bus") return parseBusRequest(raw);
   if (intent === "connection") return parseConnectionRequest(raw);
   if (intent === "markets") return parseMarketsRequest(raw);
+  if (intent === "prices") return parsePricesRequest(raw);
   return { kind: "unknown" };
 }
 

@@ -38,16 +38,17 @@ Deno.test("a un origen ajeno no le da la cabecera que permite leer la respuesta"
   );
 });
 
-Deno.test("limita a 300 peticiones por minuto y a 10 las que usan Groq", async () => {
+Deno.test("limita a 300 peticiones por minuto y a 10 las que gastan cuota de Groq o SerpApi", async () => {
   assertEquals(await isOverRateLimit(dbCounting({ "user:": 300 }).db, "u1", "GET", "notes"), false);
   assertEquals(await isOverRateLimit(dbCounting({ "user:": 301 }).db, "u1", "GET", "notes"), true);
-  // Las que no usan Groq no cuentan en su límite.
-  const { db, queries } = dbCounting({ "groq:": 11 });
+  // Las que no gastan cuota externa no cuentan en su límite.
+  const { db, queries } = dbCounting({ "quota:": 11 });
   assertEquals(await isOverRateLimit(db, "u1", "GET", "notes"), false);
   assertEquals(queries.length, 1);
-  assertEquals(await isOverRateLimit(dbCounting({ "groq:": 11 }).db, "u1", "POST", "chat"), true);
-  assertEquals(await isOverRateLimit(dbCounting({ "groq:": 10 }).db, "u1", "POST", "transcribe"), false);
-  assertEquals(await isOverRateLimit(dbCounting({ "groq:": 11 }).db, "u1", "GET", "greeting"), true);
+  assertEquals(await isOverRateLimit(dbCounting({ "quota:": 11 }).db, "u1", "POST", "chat"), true);
+  assertEquals(await isOverRateLimit(dbCounting({ "quota:": 10 }).db, "u1", "POST", "transcribe"), false);
+  assertEquals(await isOverRateLimit(dbCounting({ "quota:": 11 }).db, "u1", "GET", "greeting"), true);
+  assertEquals(await isOverRateLimit(dbCounting({ "quota:": 11 }).db, "u1", "GET", "prices"), true);
 });
 
 Deno.test("cada usuario tiene su contador, por minuto", async () => {
@@ -55,7 +56,7 @@ Deno.test("cada usuario tiene su contador, por minuto", async () => {
   await isOverRateLimit(db, "u1", "POST", "chat");
   assertEquals(queries, [
     ['rpc("count_panel_request", {"bucket_name":"user:u1","window_seconds":60})'],
-    ['rpc("count_panel_request", {"bucket_name":"groq:u1","window_seconds":60})'],
+    ['rpc("count_panel_request", {"bucket_name":"quota:u1","window_seconds":60})'],
   ]);
 });
 
