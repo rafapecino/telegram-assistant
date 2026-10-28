@@ -62,3 +62,50 @@ a.nav-item{text-decoration:none}
 .today-grid h3 a{color:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:6px;min-height:44px}
 .today-grid h3 a:hover{color:#1259b0}
 .overview-metrics,.overview-upcoming{flex-shrink:0}
+
+/* Inicio: conversación, hoy y cuatro accesos; el resto queda plegado. */
+.overview-content .overview-subtitle{display:none}
+.overview-layout>.chat-card{padding:18px 20px}
+.overview-layout .chat-log{height:190px;max-height:190px;overscroll-behavior-y:contain;padding-bottom:8px}
+.overview-layout .chat-card .card-heading{margin-bottom:12px}
+.overview-layout .chat-message{padding:8px 11px;font-size:13px;line-height:1.45}
+.overview-layout .chat-welcome{padding:16px 8px}
+.overview-layout .chat-avatar.large{width:40px;height:40px}
+.overview-layout .chat-form{margin-bottom:0}
+.today-weather-wrap{margin-bottom:14px}
+.today-weather{display:flex;align-items:center;gap:12px;text-decoration:none;color:#243d5b;background:#edf5ff;padding:12px 14px;border-radius:12px;min-height:68px}
+.today-weather-icon{font-size:28px;flex-shrink:0}
+.today-weather>span:nth-child(2){flex:1;min-width:0}
+.today-weather strong{font-size:14px}
+.today-weather small{display:block;line-height:1.4;margin-top:3px;color:#4d5d73;font-size:12px}
+.today-weather-temperature{white-space:nowrap}
+.today-weather-alert{display:flex;align-items:center;gap:6px;color:#8a4b00;font-size:12px;min-height:36px;margin-top:5px}
+.overview-layout .today-grid{gap:14px}
+.overview-layout .today-empty{padding:0;margin:4px 0 0;text-align:left;background:none;font-size:13px}
+.overview-layout .today-grid h3{margin-bottom:5px}
+.overview-layout .today-grid h3 a{min-height:36px}
+.overview-metrics .metric strong{font-size:21px;letter-spacing:-.035em;line-height:1.25}
+.overview-metrics .metric{min-height:140px}
+.home-more{border-top:1px solid #dfe7f2;padding-top:4px}
+.home-more>summary{cursor:pointer;min-height:52px;padding:16px 0;color:#4d5d73;font-size:14px;font-weight:700}
+.home-more-content{padding-top:12px}
+.home-more-content .section-news{margin:0 0 16px}
+@media(max-width:850px){
+ .overview-layout>.chat-card{padding:16px;margin-bottom:16px}
+ .overview-layout .chat-log{height:160px;max-height:160px}
+ .overview-layout .chat-card h2{font-size:15px}
+ .overview-layout .chat-card .text-link{font-size:11px;min-height:32px}
+ .overview-layout>.today-card{padding:16px;margin-bottom:16px}
+ .overview-layout .today-grid{grid-template-columns:1fr}
+ .overview-layout .today-grid>div+div{border-top:1px solid #edf1f7;padding-top:8px}
+ .overview-layout .today-grid h3 a{min-height:32px}
+ .overview-metrics .metric{min-height:126px;padding:14px}
+ .overview-metrics .metric strong{font-size:19px}
+ .today-weather{gap:8px;padding:11px}
+ .today-weather>svg{display:none}
+ .today-weather strong{font-size:13px}
+ .today-weather small{font-size:12px}
+}
+
+.overview-content .overview-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media(min-width:1151px){.overview-content .overview-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}
