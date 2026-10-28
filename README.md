@@ -203,8 +203,7 @@ resumen de la mañana (si Wikipedia falla, el resumen sale sin ella).
 
 La sección Noticias enseña titulares por temas (destacadas, España, mundo, Madrid, economía, tecnología, ciencia,
 salud, clima, deportes, cultura y gastronomía) desde los RSS públicos de El País, elDiario.es, 20minutos, La
-Vanguardia, BBC Mundo, Telemadrid, Expansión y Xataka: sin clave ni coste. Cada sección del panel muestra arriba un
-titular de su tema (Finanzas, economía; Hábitos, salud; Agenda, Madrid…). `panel-api` los guarda 15 minutos en
+Vanguardia, BBC Mundo, Telemadrid, Expansión y Xataka: sin clave ni coste. El Inicio muestra arriba un titular destacado; las secciones de gestión no intercalan noticias. `panel-api` los guarda 15 minutos en
 memoria, descarta noticias de más de una semana y enlaces que no sean web, y si un medio falla enseña los demás.
 
 En Ajustes se ven las cuentas conectadas (Google y el banco), desde cuándo y con qué permisos, y se pueden conectar
@@ -245,3 +244,35 @@ se hicieron en el panel.
 
 La conexión con Google Calendar utiliza el mismo flujo OAuth del bot. El panel muestra los eventos del mes en curso.
 El periodo de finanzas se elige entre 7, 30 y 90 días; los presupuestos siempre corresponden al mes actual.
+
+## Navegación y comprobación del panel
+
+Cada sección se puede abrir con `?section=agenda`, `?section=recordatorios`, etc. Los enlaces mantienen
+Atrás/Adelante y admiten abrirse en una pestaña nueva. La sección se conserva al recargar y tras entrar;
+una sección desconocida abre Inicio. La URL no incluye datos del panel. El menú agrupa Mi día, Consultas y
+Mi asistente. El primer enlace permite saltar al contenido; al cambiar de sección se actualizan el título
+de la pestaña y el foco del contenido. Los temas de Noticias se distribuyen en varias filas.
+
+Los recordatorios proponen la próxima hora en punto de Madrid, incluida la fecha del día siguiente si
+corresponde. La ayuda invita a revisar ambos campos antes de guardar.
+
+Pruebas del frontend (Node 22.18 o posterior para ejecutar TypeScript nativo):
+
+```bash
+cd frontend
+npm ci
+npm test
+npm run build
+```
+
+### Uso en móvil y reapertura
+
+Inicio muestra primero Hoy, las tarjetas de resumen y los próximos recordatorios y eventos; el chat y la
+curiosidad quedan después. Las seis tarjetas de resumen y las dos tarjetas de próximos elementos abren
+su sección mediante enlaces nativos. En móvil se ocultan el subtítulo del saludo y el bloque de resumen
+redundante; se mantiene el contenido funcional de Hoy y las tarjetas.
+
+La última sección se guarda en el dispositivo (solo su identificador, sin datos personales). Al reabrir
+la app instalada en `/`, se recupera esa sección. Un enlace explícito siempre tiene prioridad, incluso
+`?section=inicio`. Si el almacenamiento está bloqueado, la navegación por URL sigue funcionando.
+Al cambiar de sección o pulsar Inicio se vuelve arriba; abrir el menú móvil también lo devuelve arriba.
