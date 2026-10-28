@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 26730)
+Total output lines: 878
+
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Scale, Cigarette, CupSoda, Mic, Square, Brain, CloudSun, AlertTriangle, Settings, Download, ChevronLeft, ChevronRight, Newspaper, Search, TrendingUp, Lightbulb, Tag } from 'lucide-react';
@@ -400,257 +403,7 @@ function SettingsSection({token,onChange}:{token:string;onChange:()=>Promise<voi
       <button className="secondary" disabled={!!busy} onClick={()=>void exportData()}><Download size={16}/> {busy==='export'?'Preparando…':'Descargar copia'}</button>
     </Card>
     <Card title="Borrar datos">
-      <p className="settings-text">Elige qué quieres borrar. Se borra para siempre y no se puede deshacer, así que descarga antes una copia si la quieres. Las conexiones con Google y el banco se quitan desde arriba.</p>
-      {!summary?<Empty>Cargando…</Empty>:<fieldset className="delete-choices"><legend className="sr-only">Datos que se borrarán</legend>
-        {summary.map(c=><label key={c.id} className="checkbox-row"><input type="checkbox" checked={selected.includes(c.id)} onChange={e=>setSelected(current=>e.target.checked?[...current,c.id]:current.filter(id=>id!==c.id))}/><span>{c.label}</span><small>{c.count} {c.count===1?'registro':'registros'}</small></label>)}
-        <button type="button" className="text-link" onClick={()=>setSelected(selected.length===summary.length?[]:summary.map(c=>c.id))}>{selected.length===summary.length?'Quitar todo':'Seleccionar todo'}</button>
-      </fieldset>}
-      {chosen.length>0&&<div className="delete-summary">
-        <p><strong>Se borrará para siempre:</strong></p>
-        <ul className="settings-list">{chosen.map(c=><li key={c.id}>{c.label} ({c.count} {c.count===1?'registro':'registros'})</li>)}</ul>
-        {selected.includes('finances')&&bank.length>0&&<p>El banco sigue conectado: los movimientos de los últimos días se volverán a importar en la próxima sincronización.</p>}
-        <form onSubmit={e=>{e.preventDefault();if(canDelete)void deleteData()}}>
-          <label className="settings-text" htmlFor="confirm-delete">Escribe <strong>BORRAR</strong> para confirmar</label>
-          <div className="form-row"><input id="confirm-delete" value={confirmText} onChange={e=>setConfirmText(e.target.value)} autoComplete="off"/><button className="primary danger-fill" disabled={!canDelete||!!busy}>{busy==='delete'?'Borrando…':'Borrar para siempre'}</button></div>
-        </form>
-      </div>}
-    </Card>
-  </>;
-}
-
-type AddType='reminder'|'expense'|'income'|'event'|'habit';
-const ADD_TYPES:{id:AddType;label:string}[]=[{id:'reminder',label:'Recordatorio'},{id:'expense',label:'Gasto'},{id:'income',label:'Ingreso'},{id:'event',label:'Evento'},{id:'habit',label:'Hábito'}];
-const ADD_DONE:Record<AddType,string>={reminder:'Recordatorio creado.',expense:'Gasto apuntado.',income:'Ingreso apuntado.',event:'Evento creado en tu calendario.',habit:'Hábito creado.'};
-const madridDateOf=(v:string)=>new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Madrid'}).format(new Date(v));
-// 1 = lunes … 7 = domingo, como scheduled_days en el servidor.
-const isoWeekday=(date:string)=>new Date(`${date}T12:00:00Z`).getUTCDay()||7;
-
-function MoneyForm({kind,categories,save}:{kind:'expense'|'income';categories:string[];save:(data:object)=>Promise<boolean>}) {
-  const [amount,setAmount]=useState(''),[description,setDescription]=useState(''),[category,setCategory]=useState(''),[date,setDate]=useState(todayInMadrid),[busy,setBusy]=useState(false);
-  async function submit(e:FormEvent){e.preventDefault();setBusy(true);try{await save({amount:amount.replace(',','.'),description,date,...(kind==='expense'?{category}:{})})}finally{setBusy(false)}}
-  return <form className="stack-form" onSubmit={submit}><div className="form-row">
-    <label>Importe (€)<input inputMode="decimal" value={amount} onChange={e=>setAmount(e.target.value)} required pattern="[0-9]+([.,][0-9]{1,2})?" placeholder="12,50" autoFocus/></label>
-    <label>Descripción<input value={description} onChange={e=>setDescription(e.target.value)} required maxLength={200} placeholder={kind==='expense'?'Cena con amigos':'Bizum de Ana'}/></label>
-    {kind==='expense'&&<label>Categoría<select value={category} onChange={e=>setCategory(e.target.value)} required><option value="">Elige…</option>{categories.map(c=><option key={c}>{c}</option>)}</select></label>}
-    <label>Fecha<input type="date" value={date} max={todayInMadrid()} onChange={e=>setDate(e.target.value)} required/></label>
-    <button className="primary" type="submit" disabled={busy}><Plus size={17}/> {busy?'Guardando…':kind==='expense'?'Apuntar gasto':'Apuntar ingreso'}</button>
-  </div></form>;
-}
-
-const ALL_DAYS=[1,2,3,4,5,6,7];
-const DAY_INITIALS=['L','M','X','J','V','S','D'];
-const pad2=(n:number)=>String(n).padStart(2,'0');
-const addDays=(date:string,days:number)=>new Date(Date.parse(`${date}T12:00:00Z`)+days*DAY_MS).toISOString().slice(0,10);
-const mondayOf=(date:string)=>addDays(date,1-isoWeekday(date));
-const shortDay=(date:string)=>new Intl.DateTimeFormat('es-ES',{weekday:'short',day:'numeric',timeZone:'UTC'}).format(new Date(`${date}T12:00:00Z`));
-const longDay=(date:string)=>new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'long',timeZone:'UTC'}).format(new Date(`${date}T12:00:00Z`));
-const timeOf=(v:string)=>new Intl.DateTimeFormat('es-ES',{timeStyle:'short',timeZone:'Europe/Madrid'}).format(new Date(v));
-
-/** Siguiente vez de un recordatorio que se repite, con las mismas reglas que el servidor (reminders.ts). */
-function nextRepeat(date:string,repeat:string,monthDay:number):string{
-  if(repeat==='daily')return addDays(date,1);
-  if(repeat==='weekly')return addDays(date,7);
-  if(repeat==='weekdays'){let next=addDays(date,1);while(isoWeekday(next)>5)next=addDays(next,1);return next}
-  const [year,month]=date.split('-').map(Number),nextYear=month===12?year+1:year,nextMonth=month%12+1;
-  return `${nextYear}-${pad2(nextMonth)}-${pad2(Math.min(monthDay,new Date(Date.UTC(nextYear,nextMonth,0)).getUTCDate()))}`;
-}
-/** Días entre `from` y `to` en los que salta un recordatorio, contando sus repeticiones. */
-function reminderDates(reminder:Row,from:string,to:string):string[]{
-  const first=madridDateOf(reminder.remind_at),dates:string[]=[];
-  if(!reminder.repeat)return first>=from&&first<=to?[first]:[];
-  for(let date=first,count=0;date<=to&&count<400;date=nextRepeat(date,reminder.repeat,Number(first.slice(8))),count++){if(date>=from)dates.push(date)}
-  return dates;
-}
-
-type HabitStatus='done'|'missed'|'unanswered'|'pending'|'upcoming'|'rest'|'before';
-const HABIT_STATUS:Record<HabitStatus,{label:string;mark:string}>={done:{label:'Hecho',mark:'✓'},missed:{label:'No hecho',mark:'✗'},unanswered:{label:'Sin apuntar',mark:'?'},pending:{label:'Pendiente hoy',mark:'·'},upcoming:{label:'Toca',mark:''},rest:{label:'Descanso',mark:''},before:{label:'Aún no existía',mark:''}};
-/** Los días de descanso no cuentan ni como fallo ni para la racha. */
-function habitStatus(habit:Row,checks:Row[],date:string,today:string):HabitStatus{
-  if(habit.created_at&&date<madridDateOf(habit.created_at))return 'before';
-  if(!(habit.scheduled_days??ALL_DAYS).includes(isoWeekday(date)))return 'rest';
-  if(date>today)return 'upcoming';
-  const check=checks.find(c=>c.habit_id===habit.id&&c.date===date);
-  if(check)return check.done?'done':'missed';
-  return date===today?'pending':'unanswered';
-}
-/** Racha actual (como en el servidor: hoy cuenta si ya está apuntado), mejor racha y % de las últimas 4 semanas. */
-function habitStats(habit:Row,checks:Row[],today:string){
-  const statusOf=(date:string)=>habitStatus(habit,checks,date,today);
-  let current=0;
-  for(let date=statusOf(today)==='done'||statusOf(today)==='missed'?today:addDays(today,-1),i=0;i<366;date=addDays(date,-1),i++){
-    const status=statusOf(date);if(status==='rest')continue;if(status!=='done')break;current++;
-  }
-  let best=0,run=0,done=0,counted=0;
-  for(let date=addDays(today,-119);date<=today;date=addDays(date,1)){
-    const status=statusOf(date);if(status==='rest'||status==='before'||status==='pending')continue;
-    run=status==='done'?run+1:0;best=Math.max(best,run);
-    if(date>addDays(today,-28)){counted++;if(status==='done')done++}
-  }
-  return {current,best,percent:counted?Math.round(done/counted*100):null};
-}
-
-function HabitsSection({habits,checks,action}:{habits:Row[];checks:Row[];action:(resource:string,method:string,payload?:object,params?:Record<string,string>,done?:string)=>Promise<boolean>}) {
-  const today=todayInMadrid(),thisMonday=mondayOf(today),oldest=addDays(today,-120);
-  const weeks=[0,1,2,3].map(n=>addDays(thisMonday,-7*n));
-  const weekName=(n:number)=>n===0?'Esta semana':n===1?'Semana pasada':`Hace ${n} semanas`;
-  function toggleDay(habit:Row,day:number){
-    const days:number[]=habit.scheduled_days??ALL_DAYS,next=days.includes(day)?days.filter(d=>d!==day):[...days,day].sort();
-    if(next.length)void action('habits','POST',{id:habit.id,scheduled_days:next},undefined,'Días guardados.');
-  }
-  return <Card title="Mis hábitos" aside={<span className="count">{habits.length} hábitos</span>}>
-    <InlineForm label="Crear hábito" placeholder="Por ejemplo: leer 20 minutos…" onSubmit={name=>action('habits','POST',{name},undefined,'Hábito creado.')}/>
-    <p className="habit-legend" aria-hidden="true">{(['done','missed','unanswered','rest'] as HabitStatus[]).map(status=><span key={status}><span className={`habit-cell ${status}`}>{HABIT_STATUS[status].mark}</span> {HABIT_STATUS[status].label}</span>)}</p>
-    {habits.map(habit=>{const stats=habitStats(habit,checks,today),days:number[]=habit.scheduled_days??ALL_DAYS;return <article className="habit-block" key={habit.id} aria-label={habit.name}>
-      <div className="habit-head"><span className="row-symbol warm"><Flame size={18}/></span><div className="row-main"><strong>{habit.name}</strong><small>Racha: {stats.current} {stats.current===1?'día':'días'} · Mejor: {stats.best} · Últimas 4 semanas: {stats.percent===null?'—':`${stats.percent} %`}</small></div><button className="delete icon-button" aria-label={`Eliminar hábito ${habit.name}`} onClick={()=>{if(window.confirm(`¿Eliminar «${habit.name}» y todo su historial?`))void action('habits','DELETE',undefined,{id:String(habit.id)},'Hábito eliminado.')}}><Trash2 size={17}/></button></div>
-      <div className="habit-days" role="group" aria-label={`Días en que toca ${habit.name}`}>{DAY_INITIALS.map((initial,i)=><button key={initial} className={days.includes(i+1)?'selected':''} aria-pressed={days.includes(i+1)} disabled={days.length===1&&days.includes(i+1)} title={days.length===1&&days.includes(i+1)?'Tiene que tocar al menos un día':undefined} onClick={()=>toggleDay(habit,i+1)}><span aria-hidden="true">{initial}</span><span className="sr-only">{['lunes','martes','miércoles','jueves','viernes','sábado','domingo'][i]}</span></button>)}</div>
-      {weeks.map((monday,n)=><div className="habit-week" key={monday}><span className="habit-week-name">{weekName(n)}</span><div className="habit-cells">{Array.from({length:7},(_,i)=>{const date=addDays(monday,i),status=habitStatus(habit,checks,date,today),canMark=date<=today&&date>=oldest&&status!=='rest'&&status!=='before';const label=`${longDay(date)}: ${HABIT_STATUS[status].label}`;
-        return canMark?<button key={date} className={`habit-cell ${status}`} aria-label={`${label}. Pulsa para marcar como ${status==='done'?'no hecho':'hecho'}`} title={label} onClick={()=>void action('habit_checks','POST',{habit_id:habit.id,date,done:status!=='done'},undefined,status==='done'?'Marcado como no hecho.':'Hábito apuntado. ¡Bien!')}>{HABIT_STATUS[status].mark}</button>:<span key={date} className={`habit-cell ${status}`} role="img" aria-label={label} title={label}>{HABIT_STATUS[status].mark}</span>})}</div></div>)}
-    </article>})}
-    {!habits.length&&<Empty>Empieza con un hábito pequeño que quieras mantener.</Empty>}
-  </Card>;
-}
-
-type AgendaItem={kind:'event'|'reminder'|'habit';title:string;time:string|null;status?:HabitStatus};
-const AGENDA_KINDS={event:{label:'Evento',Icon:CalendarDays},reminder:{label:'Recordatorio',Icon:Bell},habit:{label:'Hábito',Icon:Flame}};
-const monthTitle=(date:string)=>{const name=new Intl.DateTimeFormat('es-ES',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(`${date}T12:00:00Z`));return name.charAt(0).toUpperCase()+name.slice(1)};
-
-function AgendaDay({items}:{items:AgendaItem[]}){
-  if(!items.length)return <p className="today-empty">Nada este día.</p>;
-  return <ul className="agenda-items">{items.map((item,i)=>{const {label,Icon}=AGENDA_KINDS[item.kind];return <li key={i} className={`agenda-item ${item.kind} ${item.status??''}`}><Icon size={14} aria-hidden="true"/><span className="sr-only">{label}:</span>{item.time&&<strong>{item.time}</strong>}<span className="agenda-title">{item.title}</span>{item.status&&<small>{HABIT_STATUS[item.status].label}</small>}</li>})}</ul>;
-}
-
-/** Eventos de Google, recordatorios (con sus repeticiones) y hábitos de cada día, por semanas o por meses. */
-function AgendaSection({token,reminders,habits,checks,calendar,saveEvent,goToSettings}:{token:string;reminders:Row[];habits:Row[];checks:Row[];calendar?:Row;saveEvent:(data:object)=>Promise<boolean>;goToSettings:()=>void}) {
-  const today=todayInMadrid();
-  const [view,setView]=useState<'week'|'month'>('week'),[anchor,setAnchor]=useState(today),[selected,setSelected]=useState(today);
-  const [eventsByMonth,setEventsByMonth]=useState<Record<string,Row[]>>({}),[problem,setProblem]=useState('');
-  const from=view==='week'?mondayOf(anchor):mondayOf(anchor.slice(0,7)+'-01');
-  const firstOfMonth=(date:string,step=0)=>{const [year,month]=date.split('-').map(Number);return new Date(Date.UTC(year,month-1+step,1)).toISOString().slice(0,10)};
-  const lastOfMonth=addDays(firstOfMonth(anchor,1),-1);
-  const to=view==='week'?addDays(from,6):addDays(mondayOf(lastOfMonth),6);
-  const days=useMemo(()=>{const list:string[]=[];for(let d=from;d<=to;d=addDays(d,1))list.push(d);return list},[from,to]);
-  const months=[...new Set(days.map(d=>d.slice(0,7)))].join(',');
-  const isConnected=!!calendar?.connected;
-  // Al guardar un evento el panel recarga el calendario: entonces se vuelven a pedir los meses.
-  useEffect(()=>setEventsByMonth({}),[calendar]);
-  useEffect(()=>{
-    if(!isConnected)return;
-    for(const month of months.split(',').filter(m=>!(m in eventsByMonth))){
-      api('calendar',token,'GET',undefined,{month}).then(r=>setEventsByMonth(current=>({...current,[month]:r.events??[]}))).catch(e=>setProblem(e instanceof Error?e.message:'No se pudieron cargar los eventos.'));
-    }
-  },[months,isConnected,token,eventsByMonth]);
-  const itemsByDay=useMemo(()=>{
-    const byDay:Record<string,AgendaItem[]>=Object.fromEntries(days.map(d=>[d,[]]));
-    for(const e of Object.values(eventsByMonth).flat()){const date=e.date??madridDateOf(e.start);byDay[date]?.push({kind:'event',title:e.title,time:e.start?timeOf(e.start):null})}
-    for(const r of reminders)for(const date of reminderDates(r,from,to))byDay[date]?.push({kind:'reminder',title:r.text,time:timeOf(r.remind_at)});
-    for(const d of days){for(const h of habits){const status=habitStatus(h,checks,d,today);if(status!=='rest'&&status!=='before')byDay[d].push({kind:'habit',title:h.name,time:null,status})}
-      byDay[d].sort((a,b)=>(a.kind==='habit'?1:0)-(b.kind==='habit'?1:0)||(a.time??'').localeCompare(b.time??''))}
-    return byDay;
-  },[days,eventsByMonth,reminders,habits,checks,from,to,today]);
-  function move(step:number){
-    if(view==='week'){setAnchor(addDays(anchor,7*step));return}
-    const month=firstOfMonth(anchor,step);setAnchor(month);setSelected(month.slice(0,7)===today.slice(0,7)?today:month);
-  }
-  const title=view==='week'?`${shortDay(from)} – ${shortDay(to)} · ${monthTitle(to)}`:monthTitle(anchor);
-  return <>
-    {problem&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{problem}</span></div>}
-    <Card title="Agenda" aside={<div className="segmented" role="group" aria-label="Vista"><button className={view==='week'?'selected':''} aria-pressed={view==='week'} onClick={()=>setView('week')}>Semana</button><button className={view==='month'?'selected':''} aria-pressed={view==='month'} onClick={()=>setView('month')}>Mes</button></div>}>
-      <div className="agenda-toolbar"><button className="icon-button" aria-label={view==='week'?'Semana anterior':'Mes anterior'} onClick={()=>move(-1)}><ChevronLeft size={18}/></button><h3 aria-live="polite">{title}</h3><button className="icon-button" aria-label={view==='week'?'Semana siguiente':'Mes siguiente'} onClick={()=>move(1)}><ChevronRight size={18}/></button><button className="secondary" onClick={()=>{setAnchor(today);setSelected(today)}}>Hoy</button></div>
-      <p className="agenda-legend">{(Object.keys(AGENDA_KINDS) as AgendaItem['kind'][]).map(kind=>{const {label,Icon}=AGENDA_KINDS[kind];return <span key={kind} className={`agenda-key ${kind}`}><Icon size={13} aria-hidden="true"/> {label}</span>})}{!isConnected&&<span className="today-empty">Sin eventos: <button className="text-link" onClick={goToSettings}>conecta Google en Ajustes</button>.</span>}</p>
-      {view==='week'?<div className="agenda-week">{days.map(d=><section key={d} className={`agenda-day ${d===today?'is-today':''}`} aria-label={longDay(d)}><h4>{shortDay(d)}{d===today&&<span className="today-tag">Hoy</span>}</h4><AgendaDay items={itemsByDay[d]}/></section>)}</div>
-      :<><div className="agenda-month" role="grid" aria-label={monthTitle(anchor)}>{DAY_INITIALS.map(d=><span key={d} className="agenda-weekday" aria-hidden="true">{d}</span>)}{days.map(d=>{const items=itemsByDay[d],isOtherMonth=d.slice(0,7)!==anchor.slice(0,7);return <button key={d} role="gridcell" className={`agenda-cell ${isOtherMonth?'other-month':''} ${d===today?'is-today':''} ${d===selected?'is-selected':''}`} aria-label={`${longDay(d)}: ${items.length?`${items.length} cosas`:'nada'}`} aria-selected={d===selected} onClick={()=>setSelected(d)}><span className="agenda-number">{Number(d.slice(8))}</span><span className="agenda-dots" aria-hidden="true">{items.slice(0,4).map((item,i)=><i key={i} className={item.kind}/>)}</span><span className="agenda-chips" aria-hidden="true">{items.slice(0,3).map((item,i)=><span key={i} className={`agenda-chip ${item.kind}`}>{item.title}</span>)}{items.length>3&&<span className="agenda-more">+{items.length-3}</span>}</span></button>})}</div>
-        <div className="agenda-detail"><h4>{longDay(selected)}</h4><AgendaDay items={itemsByDay[selected]??[]}/></div></>}
-    </Card>
-    {isConnected&&<Card title="Nuevo evento en Google Calendar"><EventForm save={saveEvent}/></Card>}
-  </>;
-}
-
-// La noticia que acompaña a cada sección, de su tema.
-const SECTION_NEWS_TOPIC:Partial<Record<Section,string>>={overview:'destacadas',finances:'economia',reminders:'espana',shopping_items:'gastronomia',birthdays:'cultura',habits:'salud',weight:'salud',calendar:'madrid',weather:'clima',memory:'ciencia',settings:'tecnologia',markets:'economia'};
-function timeAgo(v:string|null):string{
-  if(!v)return '';const minutes=Math.max(1,Math.round((Date.now()-Date.parse(v))/60000));
-  if(minutes<60)return `hace ${minutes} min`;const hours=Math.round(minutes/60);if(hours<24)return `hace ${hours} h`;
-  const days=Math.round(hours/24);return days===1?'ayer':`hace ${days} días`;
-}
-
-/** Un titular del tema de la sección. Es un extra: si falla no se enseña nada (queda en la consola). */
-function SectionNews({token,topic,onMore}:{token:string;topic:string;onMore:()=>void}) {
-  const [item,setItem]=useState<Row|null>(null);
-  useEffect(()=>{setItem(null);api('news',token,'GET',undefined,{topic,limit:'1'}).then(items=>setItem(items[0]??null)).catch(e=>console.error('No se pudo cargar la noticia de la sección',e))},[token,topic]);
-  if(!item)return null;
-  return <aside className="section-news" aria-label="Noticia relacionada"><Newspaper size={16} aria-hidden="true"/><a href={item.url} target="_blank" rel="noopener noreferrer">{item.title}</a><small>{item.source} · {timeAgo(item.publishedAt)}</small><button className="text-link" onClick={onMore}>Más noticias →</button></aside>;
-}
-
-function NewsSection({token}:{token:string}) {
-  const [topics,setTopics]=useState<Row[]>([]),[topic,setTopic]=useState('destacadas'),[items,setItems]=useState<Row[]|null>(null),[problem,setProblem]=useState('');
-  useEffect(()=>{api('news_topics',token).then(setTopics).catch(e=>setProblem(e instanceof Error?e.message:'No se pudieron cargar los temas.'))},[token]);
-  const load=useCallback(()=>{setItems(null);setProblem('');api('news',token,'GET',undefined,{topic,limit:'20'}).then(setItems).catch(e=>{setItems([]);setProblem(e instanceof Error?e.message:'No se pudieron cargar las noticias.')})},[token,topic]);
-  useEffect(()=>{load()},[load]);
-  return <>
-    <div className="news-topics" role="group" aria-label="Temas">{topics.map(t=><button key={t.id} className={topic===t.id?'selected':''} aria-pressed={topic===t.id} onClick={()=>setTopic(t.id)}>{t.label}</button>)}</div>
-    {problem&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{problem}</span><button className="retry" onClick={load}>Reintentar</button></div>}
-    <Card title={topics.find(t=>t.id===topic)?.label??'Noticias'}>
-      {items===null?<Empty>Cargando titulares…</Empty>:items.length?<ul className="news-list">{items.map(n=><li key={n.url}><a href={n.url} target="_blank" rel="noopener noreferrer">{n.title}</a><small>{n.source}{n.publishedAt?` · ${timeAgo(n.publishedAt)}`:''}</small>{n.summary&&<p>{n.summary}</p>}</li>)}</ul>:!problem&&<Empty>No hay titulares recientes de este tema. Prueba con otro.</Empty>}
-    </Card>
-  </>;
-}
-
-/** Buscar gastos e ingresos por texto, categoría y fechas. Los filtros los aplica el servidor, sin límite de periodo. */
-function MovementSearch({token}:{token:string}) {
-  const today=todayInMadrid();
-  const [text,setText]=useState(''),[category,setCategory]=useState(''),[from,setFrom]=useState(()=>addDays(todayInMadrid(),-89)),[to,setTo]=useState(today);
-  const [categories,setCategories]=useState<string[]>([]),[results,setResults]=useState<Row[]|null>(null),[busy,setBusy]=useState(false),[problem,setProblem]=useState('');
-  useEffect(()=>{api('expense_categories',token).then(setCategories).catch(e=>setProblem(e instanceof Error?e.message:'No se pudieron cargar las categorías.'))},[token]);
-  const search=useCallback(async()=>{
-    setBusy(true);setProblem('');
-    try{setResults(await api('movements',token,'GET',undefined,{q:text,category,from,to}))}
-    catch(e){setProblem(e instanceof Error?e.message:'No se pudo buscar.')}
-    finally{setBusy(false)}
-  },[token,text,category,from,to]);
-  // La primera vez enseña los últimos 90 días; después, solo al pulsar Buscar (los filtros se quedan si falla).
-  useEffect(()=>{void search()},[token]);
-  const spent=(results??[]).filter(r=>r.kind==='expense').reduce((n,r)=>n+r.amount,0),earned=(results??[]).filter(r=>r.kind==='income').reduce((n,r)=>n+r.amount,0);
-  const hasFilters=text||category||from!==addDays(today,-89)||to!==today;
-  return <Card title="Buscar movimientos">
-    <form className="stack-form" onSubmit={e=>{e.preventDefault();void search()}} role="search" aria-label="Buscar movimientos">
-      <div className="form-row"><label>Texto<input value={text} onChange={e=>setText(e.target.value)} maxLength={100} placeholder="Mercadona, Bizum, Netflix…"/></label>
-        <label>Categoría<select value={category} onChange={e=>setCategory(e.target.value)}><option value="">Todas</option><option>Ingresos</option>{categories.map(c=><option key={c}>{c}</option>)}</select></label></div>
-      <div className="form-row"><label>Desde<input type="date" value={from} max={to} onChange={e=>setFrom(e.target.value)} required/></label><label>Hasta<input type="date" value={to} min={from} max={today} onChange={e=>setTo(e.target.value)} required/></label>
-        <button className="primary" type="submit" disabled={busy}><Search size={16}/> {busy?'Buscando…':'Buscar'}</button>
-        {hasFilters&&<button className="secondary" type="button" onClick={()=>{setText('');setCategory('');setFrom(addDays(today,-89));setTo(today)}}>Quitar filtros</button>}</div>
-    </form>
-    {problem&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{problem}</span><button className="retry" onClick={()=>void search()}>Reintentar</button></div>}
-    {results===null?<Empty>{busy?'Buscando…':'Elige los filtros y pulsa Buscar.'}</Empty>:<>
-      <p className="search-summary" role="status"><strong>{results.length===1?'1 movimiento':`${results.length} movimientos`}</strong> · Gastos {euro(spent)} · Ingresos <span className="positive">{euro(earned)}</span> · Balance <span className={earned-spent>=0?'positive':'negative'}>{euro(earned-spent)}</span>{results.length>=300&&' · Se muestran los 300 más recientes: acota las fechas para ver el resto.'}</p>
-      {results.length?<div className="table-wrap" tabIndex={0} role="region" aria-label="Resultados (desliza para ver todas las columnas)"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th>Importe</th></tr></thead><tbody>{results.map(r=><tr key={`${r.kind}-${r.id}`}><td>{r.booking_date}</td><td>{r.description}</td><td>{r.category}</td><td className={r.kind==='income'?'positive':''}>{r.kind==='income'?'+':'−'}{euro(r.amount)}</td></tr>)}</tbody></table></div>
-      :<Empty>No hay movimientos con esos filtros. Prueba a ampliar las fechas o a quitar la categoría.</Empty>}
-    </>}
-  </Card>;
-}
-
-/** Estado de un presupuesto en palabras, para no depender solo del color de la barra. */
-function budgetState(spent:number,limit:number):{level:'ok'|'near'|'over';text:string}{
-  const percent=Math.round(spent/limit*100);
-  if(spent>limit)return {level:'over',text:`Superado en ${euro(spent-limit)} (${percent} %)`};
-  if(percent>=80)return {level:'near',text:`Al ${percent} %: cerca del límite, te quedan ${euro(limit-spent)}`};
-  return {level:'ok',text:`Te quedan ${euro(limit-spent)} (${percent} %)`};
-}
-
-type SearchTarget={section:Section;label:string;detail:string;Icon:typeof Bell};
-/** Busca en recordatorios, eventos, hábitos, compra y movimientos. Al elegir un resultado lleva a su sección. */
-function SearchDialog({token,onClose,goTo}:{token:string;onClose:()=>void;goTo:(section:Section)=>void}) {
-  const dialog=useRef<HTMLDialogElement>(null),input=useRef<HTMLInputElement>(null),[text,setText]=useState(''),[results,setResults]=useState<Row|null>(null),[busy,setBusy]=useState(false),[problem,setProblem]=useState('');
-  // showModal lleva el foco al primer botón (Cerrar): se pasa al campo para poder escribir sin más.
-  useEffect(()=>{dialog.current?.showModal();input.current?.focus()},[]);
-  useEffect(()=>{
-    const query=text.trim();if(query.length<2){setResults(null);setProblem('');return}
-    // Espera a que se deje de escribir para no buscar con cada letra.
-    const timer=setTimeout(()=>{setBusy(true);setProblem('');api('search',token,'GET',undefined,{q:query}).then(setResults).catch(e=>setProblem(e instanceof Error?e.message:'No se pudo buscar.')).finally(()=>setBusy(false))},300);
-    return ()=>clearTimeout(timer);
-  },[text,token]);
-  const groups:{title:string;items:SearchTarget[]}[]=results?[
-    {title:'Recordatorios',items:results.reminders.map((r:Row)=>({section:'reminders',label:r.text,detail:dateTime(r.remind_at),Icon:Bell}))},
-    {title:'Eventos',items:results.events.map((e:Row)=>({section:'calendar',label:e.title,detail:e.start?dateTime(e.start):`${e.date} · Todo el día`,Icon:CalendarDays}))},
+      <p className="settings-text">Elige qué quieres borrar. Se borra para siempre y no se puede deshacer, así que descarga ant…6730 tokens truncated…n:'calendar',label:e.title,detail:e.start?dateTime(e.start):`${e.date} · Todo el día`,Icon:CalendarDays}))},
     {title:'Hábitos',items:results.habits.map((h:Row)=>({section:'habits',label:h.name,detail:'Hábito',Icon:Flame}))},
     {title:'Lista de la compra',items:results.shopping.map((i:Row)=>({section:'shopping_items',label:i.text,detail:'Por comprar',Icon:ShoppingBasket}))},
     {title:'Movimientos',items:results.movements.map((m:Row)=>({section:'finances',label:m.description,detail:`${m.booking_date} · ${m.kind==='income'?'+':'−'}${euro(m.amount)} · ${m.category}`,Icon:Wallet}))},
@@ -802,8 +555,8 @@ export function App(){
   const [data,setData]=useState<Record<string,any>>({}),[loading,setLoading]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
   const [period,setPeriod]=useState(30),[funnyLine,setFunnyLine]=useState('');
   const [addType,setAddType]=useState<AddType|null>(null),[retry,setRetry]=useState<(()=>void)|null>(null),[isSearching,setIsSearching]=useState(false);
-  // «/» abre la búsqueda, salvo si se está escribiendo en un campo.
-  useEffect(()=>{const open=(e:KeyboardEvent)=>{const target=e.target as HTMLElement;if(e.key==='/'&&!target.closest('input,textarea,select,[contenteditable]')){e.preventDefault();setIsSearching(true)}};window.addEventListener('keydown',open);return ()=>window.removeEventListener('keydown',open)},[]);
+  // «/» y Ctrl/Cmd+K abren la búsqueda. No interrumpen formularios ni otros diálogos.
+  useEffect(()=>{const open=(e:KeyboardEvent)=>{const target=e.target as HTMLElement;const shortcut=(e.key==='k'&&(e.ctrlKey||e.metaKey))||e.key==='/';if(!shortcut||target.closest('input,textarea,select,[contenteditable]')||document.querySelector('dialog[open]'))return;e.preventDefault();setIsSearching(true)};window.addEventListener('keydown',open);return ()=>window.removeEventListener('keydown',open)},[]);
   useEffect(()=>{if(!mobileOpen)return;const close=(e:KeyboardEvent)=>{if(e.key==='Escape')setMobileOpen(false)};window.addEventListener('keydown',close);return ()=>window.removeEventListener('keydown',close)},[mobileOpen]);
   // La confirmación se va sola; los errores se quedan hasta cerrarlos o reintentar.
   useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(''),5000);return ()=>clearTimeout(timer)},[notice]);
@@ -850,7 +603,7 @@ export function App(){
   if(!authReady)return <div className="login-screen"><div className="login-card">Cargando acceso…</div></div>;
   if(!token)return <LoginScreen error={error} setError={setError}/>;
   return <div className="shell"><aside className={`sidebar ${mobileOpen?'open':''}`}><div className="sidebar-top"><div className="identity"><img src={chatbotLogo} alt="Mi asistente"/><small>PANEL PERSONAL</small></div><button className="mobile-close icon-button" aria-label="Cerrar menú" onClick={()=>setMobileOpen(false)}><X/></button></div><nav aria-label="Navegación principal">{navigation.map(({id,label,icon:Icon})=><button key={id} className={section===id?'nav-item active':'nav-item'} aria-current={section===id?'page':undefined} onClick={()=>{setSection(id);setMobileOpen(false);setNotice('')}}><Icon size={19} strokeWidth={1.8}/>{label}</button>)}</nav><div className="sidebar-bottom"><div className="sidebar-note"><span className="status-dot"/>Conectado a tu asistente</div><button className="nav-item logout" onClick={logout}><LogOut size={18}/> Cerrar sesión</button></div></aside>{mobileOpen&&<div className="backdrop" onClick={()=>setMobileOpen(false)}/>}
-  <div className="workspace"><header className="topbar"><button className="mobile-menu icon-button" aria-label="Abrir menú" onClick={()=>setMobileOpen(true)}><Menu/></button><div className="breadcrumbs"><span className="crumb-root">Mi espacio <span>/</span> </span><strong>{current.label}</strong></div><button className="icon-button search-button" onClick={()=>setIsSearching(true)} aria-label="Buscar (atajo: /)"><Search size={19}/></button><button className="primary add-button" onClick={()=>setAddType('reminder')}><Plus size={17}/> Añadir</button><button className="refresh icon-button" onClick={()=>void refresh()} disabled={loading} aria-label="Actualizar datos"><RefreshCw size={18} className={loading?'spin':''}/></button></header>
+  <div className="workspace"><header className="topbar"><button className="mobile-menu icon-button" aria-label="Abrir menú" onClick={()=>setMobileOpen(true)}><Menu/></button><div className="breadcrumbs"><span className="crumb-root">Mi espacio <span>/</span> </span><strong>{current.label}</strong></div><button className="icon-button search-button" onClick={()=>setIsSearching(true)} aria-label="Buscar (atajos: / o Ctrl+K)" title="Buscar · / o Ctrl+K"><Search size={19}/></button><button className="primary add-button" onClick={()=>setAddType('reminder')}><Plus size={17}/> Añadir</button><button className="refresh icon-button" onClick={()=>void refresh()} disabled={loading} aria-label="Actualizar datos"><RefreshCw size={18} className={loading?'spin':''}/></button></header>
   <main className="content"><div className="page-heading"><div><div className="eyebrow">PANEL PERSONAL</div><h1>{section==='overview'?dailyGreeting():current.label}</h1><p>{section==='overview'?funnyLine||'Aquí tienes lo importante de un vistazo.':section==='memory'?'Lo que tu asistente sabe de ti. Lo usa para hablarte con gracia.':section==='finances'?'Tus ingresos, gastos y límites en un mismo lugar.':section==='weather'?'Previsión de los próximos 7 días y avisos de AEMET.':section==='settings'?'Cuentas conectadas, permisos y tus datos.':section==='news'?'Titulares de España y del mundo, por temas.':section==='markets'?'Nasdaq, criptomonedas y divisas. Tú eliges qué seguir.':section==='prices'?'Compara precios en tiendas españolas y vigila los que quieras.':'Organiza y consulta tus cosas sin salir del panel.'}</p></div><span className="today">{new Intl.DateTimeFormat('es-ES',{dateStyle:'full',timeZone:'Europe/Madrid'}).format(new Date())}</span></div>
   {SECTION_NEWS_TOPIC[section]&&<SectionNews token={token} topic={SECTION_NEWS_TOPIC[section]!} onMore={()=>setSection('news')}/>}
   {error&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{error}</span>{retry&&<button className="retry" onClick={retry}>Reintentar</button>}<button onClick={()=>{setError('');setRetry(null)}} aria-label="Cerrar error"><X size={16}/></button></div>}{notice&&<div className="notice" role="status"><Check size={17}/>{notice}</div>}
