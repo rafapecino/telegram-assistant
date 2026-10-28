@@ -22,13 +22,17 @@ function ownerChatId(): string {
   return requireEnv("TELEGRAM_USER_ID").trim();
 }
 
-/** El bot es personal: siempre escribe a su único usuario (en un chat privado, chat_id = id del usuario). */
-export async function sendTelegramMessage(text: string, buttons?: TelegramButton[][]): Promise<void> {
-  await callTelegram("sendMessage", {
+/**
+ * El bot es personal: siempre escribe a su único usuario (en un chat privado, chat_id = id del usuario). Devuelve el
+ * id del mensaje, para poder editarlo después.
+ */
+export async function sendTelegramMessage(text: string, buttons?: TelegramButton[][]): Promise<number> {
+  const message = await callTelegram<{ message_id: number }>("sendMessage", {
     chat_id: ownerChatId(),
     text,
     ...(buttons ? { reply_markup: { inline_keyboard: buttons } } : {}),
   });
+  return message.message_id;
 }
 
 // Pulsar dos veces un botón deja el mensaje igual y Telegram rechaza la edición, pero el mensaje ya está como debe.

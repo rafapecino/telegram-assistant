@@ -26,28 +26,68 @@ Deno.test("rechaza mensajes vacíos o enormes", () => {
 });
 
 Deno.test("los botones de las respuestas funcionan también en el panel", async () => {
-  const { db, queries } = fakeDb((query) => query[1].startsWith("select(") ? { data: [] } : {});
+  const { db, queries } = fakeDb(() => ({ data: [] }));
   assertEquals(await replyToChat(db, parseChatInput({ button: "shop:done:4" }), NOW), {
     text: "La lista de la compra está vacía.",
   });
   assertEquals(queries[0], ['from("shopping_items")', "delete()", 'eq("id", 4)']);
-  // Sin el texto original no hay mensaje guardado que actualizar.
-  assertEquals(queries.some((query) => query[0] === 'from("chat_messages")'), false);
   assertEquals(await replyToChat(db, parseChatInput({ button: "reminder:done:1" }), NOW), {
     text: "Este botón ya no funciona.",
   });
 });
 
-Deno.test("al pulsar un botón, el mensaje guardado cambia igual que en pantalla", async () => {
-  const { db, queries } = fakeDb((query) => query[1].startsWith("select(") ? { data: [] } : {});
-  const input = parseChatInput({ button: "shop:done:4", original: "☐ leche" });
-  assertEquals(await replyToChat(db, input, NOW), { text: "La lista de la compra está vacía." });
+Deno.test("al pulsar un botón, el mensaje guardado que lo tenía cambia igual que en pantalla", async () => {
+  const { db, queries } = fakeDb(() => ({ data: [] }));
+  assertEquals(await replyToChat(db, parseChatInput({ button: "shop:done:4" }), NOW), {
+    text: "La lista de la compra está vacía.",
+  });
   assertEquals(queries.at(-1), [
     'from("chat_messages")',
-    'update({"text":"La lista de la compra está vacía."})',
-    'eq("role", "assistant")',
-    'eq("text", "☐ leche")',
+    'update({"text":"La lista de la compra está vacía.","buttons":null})',
+    'filter("buttons", "cs", "[[{\\"callback_data\\":\\"shop:done:4\\"}]]")',
+    'select("telegram_message_id")',
   ]);
+});
+
+Deno.test("los botones se guardan con la respuesta y vuelven al cargar la conversación", async () => {
+  const buttons = [[{ text: "☐ leche", callback_data: "shop:done:1" }]];
+  const { db, queries } = fakeDb((query) =>
+    query[0] === 'from("shopping_items")' ? { data: [{ id: 1, text: "leche" }] } : { data: [] }
+  );
+  const listIntent = { choices: [{ message: { content: '{"intent": "shopping", "action": "list"}' } }] };
+  await withFakeFetch({ GROQ_API_KEY: "g" }, () => Response.json(listIntent), async () => {
+    await replyToChat(db, parseChatInput({ message: "¿qué hay en la compra?" }), NOW);
+  });
+  const saved = queries.at(-1)!;
+  assertEquals(saved[1].includes(JSON.stringify(buttons)), true);
+  const { db: stored } = fakeDb(() => ({
+    data: [{ role: "assistant", text: "Lista", buttons }, { role: "user", text: "compra", buttons: null }],
+  }));
+  assertEquals(await loadChatMessages(stored), [
+    { role: "user", text: "compra" },
+    { role: "assistant", text: "Lista", buttons },
+  ]);
+});
+
+Deno.test("un «sí» escrito contesta la pregunta de hábitos pendiente sin llamar a Groq", async () => {
+  const question = [[
+    { text: "✅ Sí", callback_data: "habit:yes:2:2026-10-22" },
+    { text: "❌ No", callback_data: "habit:no:2:2026-10-22" },
+  ]];
+  const { db, queries } = fakeDb((query) => {
+    const isChatSelect = query[0] === 'from("chat_messages")' && query[1].startsWith("select(");
+    if (isChatSelect) return { data: [{ buttons: question }] };
+    if (query[0] === 'from("habits")') return { data: [{ id: 2, name: "Correr", scheduled_days: null }] };
+    return { data: [] };
+  });
+  const groqDown = () => new Response("no debería llamarse", { status: 500 });
+  await withFakeFetch({ GROQ_API_KEY: "g" }, groqDown, async (requests) => {
+    const reply = await replyToChat(db, parseChatInput({ message: "Sí!" }), NOW);
+    assertEquals(reply.text.includes("Correr"), true);
+    assertEquals(requests.length, 0);
+  });
+  assertEquals(queries.some((query) => query[0] === 'from("habit_checks")' && query[1].startsWith("upsert(")), true);
+  assertEquals(queries.at(-1)?.[1].startsWith('insert([{"role":"user","text":"Sí!"}'), true);
 });
 
 Deno.test("la conversación guardada da contexto al modelo y se guarda con la respuesta", async () => {
@@ -71,7 +111,7 @@ Deno.test("la conversación guardada da contexto al modelo y se guarda con la re
   );
   assertEquals(queries[0], [
     'from("chat_messages")',
-    'select("role,text")',
+    'select("role,text,buttons")',
     'order("id", {"ascending":false})',
     `limit(${MAX_HISTORY_TURNS})`,
   ]);

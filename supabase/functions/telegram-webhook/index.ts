@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
 import { replyToText } from "../_shared/assistant.ts";
+import { answerPendingQuestion, updateMessagesWithButton } from "../_shared/chat-questions.ts";
 import { replyToCommand } from "../_shared/commands.ts";
 import { createAdminClient, getInternalSecret } from "../_shared/database.ts";
 import { errorMessage } from "../_shared/env.ts";
@@ -33,6 +34,9 @@ interface TelegramCallbackQuery {
 }
 
 async function buildReply(db: SupabaseClient, text: string, now: Date): Promise<string | BotReply> {
+  // Un «sí» o un «no» suelto contesta a la última pregunta de hábitos, como si se pulsara su botón.
+  const answer = await answerPendingQuestion(db, text, "telegram", now);
+  if (answer) return answer.message;
   return await replyToCommand(db, text, now) ?? replyToText(db, text, now);
 }
 
@@ -81,6 +85,7 @@ async function handleButton(db: SupabaseClient, callback: TelegramCallbackQuery)
     return;
   }
   await editTelegramMessage(callback.message.message_id, result.message.text, result.message.buttons);
+  await updateMessagesWithButton(db, data, result.message, callback.message.message_id);
   await answerTelegramButton(callback.id, result.toast);
 }
 

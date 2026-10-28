@@ -64,7 +64,7 @@ Deno.test("apuntar un hábito guarda el día y devuelve la racha", async () => {
 });
 
 Deno.test("a las 21:00 solo pregunta por los hábitos que no se han apuntado hoy", async () => {
-  const { db } = fakeDb((query) => {
+  const { db, queries } = fakeDb((query) => {
     if (query[0] === 'from("habits")') return { data: [{ id: 1, name: "Leer" }, { id: 2, name: "Correr" }] };
     return { data: checks({ [TODAY]: true }, 1) };
   });
@@ -75,6 +75,16 @@ Deno.test("a las 21:00 solo pregunta por los hábitos que no se han apuntado hoy
     assertEquals(body.text, "¿Has hecho «Correr» hoy?");
     assertEquals(body.reply_markup.inline_keyboard[0][0].callback_data, `habit:yes:2:${TODAY}`);
   });
+  // También queda en el chat del panel, con los botones y el mensaje de Telegram para actualizarlo al contestar.
+  assertEquals(queries.at(-1), [
+    'from("chat_messages")',
+    `insert(${JSON.stringify({
+      role: "assistant",
+      text: "¿Has hecho «Correr» hoy?",
+      buttons: habitButtons(2, TODAY),
+      telegram_message_id: null,
+    })})`,
+  ]);
 });
 
 Deno.test("sin hábitos no pregunta nada", async () => {
