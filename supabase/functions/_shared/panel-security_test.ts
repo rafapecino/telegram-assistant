@@ -62,7 +62,7 @@ Deno.test("cada usuario tiene su contador, por minuto", async () => {
 Deno.test("avisa por Telegram al quinto acceso denegado en 10 minutos, y solo entonces", async () => {
   for (const [denied, isAlerted] of [[4, false], [5, true], [6, false]] as const) {
     const { db, queries } = dbCounting({ access_denied: denied });
-    await withFakeFetch(TELEGRAM_ENV, () => Response.json({ ok: true }), async (requests) => {
+    await withFakeFetch(TELEGRAM_ENV, () => Response.json({ ok: true, result: { message_id: 1 } }), async (requests) => {
       await recordAccessDenied(db, "sesión no válida");
       assertEquals(requests.length, isAlerted ? 1 : 0);
       if (isAlerted) {
