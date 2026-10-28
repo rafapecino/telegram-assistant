@@ -191,8 +191,9 @@ la última buena (de menos de una hora) avisando. CoinGecko se satura a veces: c
 gratuita) tiene más margen. Finanzas muestra arriba las cuatro primeras.
 
 Precios compara un producto en tiendas españolas con Google Shopping a través de SerpApi (`SERPAPI_API_KEY`; el plan
-gratis da 250 búsquedas al mes), de más barato a más caro y una oferta por tienda, quitando lo que cuesta menos del
-40 % de la mediana (accesorios). También vigila hasta 5 productos: cada día a las 10:00 los busca y avisa por
+gratis da 250 búsquedas al mes), de más barato a más caro y una oferta por tienda. Groq precisa antes la búsqueda («PS5» → «consola PlayStation 5») y
+después elige las ofertas que son el producto en sí, nuevo (sin juegos, accesorios ni recambios); si Groq falla, se
+quita lo que cuesta menos del 40 % de la mediana. Los mercados de segunda mano (Wallapop, Vinted…) no se incluyen. También vigila hasta 5 productos: cada día a las 10:00 los busca y avisa por
 Telegram si bajan del precio indicado o, sin precio, si bajan un 5 % o más. Las búsquedas a mano se paran cuando
 quedan pocas, para no dejar sin ellas a la vigilancia. Desde el chat: «¿dónde está más barata la PS5?», «avísame si
 la PS5 baja de 400 €», «deja de vigilar la PS5». Las tiendas bloquean que se lean sus webs, por eso hace falta SerpApi.
@@ -216,6 +217,9 @@ Móvil y accesibilidad: en pantallas pequeñas hay una barra inferior con Inicio
 (el menú completo, que se cierra con Esc), los botones miden al menos 44 px y los campos usan letra de 16 px para que
 el iPhone no amplíe la página al escribir. Los colores cumplen el contraste AA y el foco del teclado siempre se ve. Se
 comprueba con axe-core sección a sección a 390 y 1280 px.
+
+Al abrirse, el panel pide todo lo que enseña en una sola petición (`resource=dashboard`): con una por recurso,
+Supabase cortaba la ráfaga con 429. Si aun así llega un 429 de Supabase, el panel espera y reintenta una vez.
 
 Seguridad del panel:
 

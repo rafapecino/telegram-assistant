@@ -84,6 +84,74 @@ async function body(request: Request, maxBody = MAX_BODY): Promise<Record<string
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new UserFacingError("Datos no válidos.");
   return parsed;
 }
+// Marca de «este recurso no existe» para lecturas: distinta de cualquier dato que pueda devolver un recurso.
+const NOT_FOUND = Symbol("recurso no encontrado");
+// Lo que el panel carga al abrirse, en una sola petición: con una por recurso, Supabase cortaba con 429.
+const DASHBOARD_RESOURCES = [
+  "expenses", "incomes", "budgets", "reminders", "shopping_items", "birthdays", "habits", "habit_checks",
+  "weight_entries", "calendar", "bank_connection", "memory", "weather", "weather_alerts",
+];
+async function readResource(db: ReturnType<typeof createAdminClient>, resource: string, params: URLSearchParams, now: Date, today: string): Promise<unknown> {
+  if (resources.has(resource)) {
+    let query = db.from(resource).select(fields[resource]).limit(150);
+    if (resource === "reminders") query = query.is("sent_at", null).order("remind_at");
+    else if (resource === "weight_entries") query = query.order("date", { ascending: false });
+    else if (resource === "expenses" || resource === "incomes") query = query.gte("booking_date", params.get("from") ?? madridMonthStart(now)).order("booking_date", { ascending: false });
+    else query = query.order("id", { ascending: false });
+    const { data, error } = await query; if (error) throw error; return data;
+  }
+  if (resource === "budgets") return await loadBudgetStatuses(db, now);
+  if (resource === "memory") return { content: await loadMemory(db) };
+  if (resource === "chat_messages") return await loadChatMessages(db);
+  if (resource === "greeting") return { text: await inventFunnyLine(db) };
+  if (resource === "weather") {
+    const places = [await mainPlace(), VILLANUEVA_DE_LA_CANADA];
+    return await Promise.all(places.map(weekForecast));
+  }
+  // Separado del tiempo: si AEMET falla, la previsión se sigue viendo.
+  if (resource === "weather_alerts") {
+    return (await fetchWeatherAlerts()).filter((alert) => alert.expires > now);
+  }
+  if (resource === "bank_connection") return { connected: await hasBankConnections(db) };
+  // Ajustes: se piden al abrir la sección, no con el resto, porque consultan a Google.
+  if (resource === "connected_accounts") {
+    return { google: await describeGoogleAccount(db), bank: await listBankAccess(db) };
+  }
+  if (resource === "movements") return await searchMovements(db, parseMovementFilters(params));
+  if (resource === "search") return await searchEverything(db, params.get("q"), today);
+  if (resource === "markets") {
+    const assets = await loadWatchlist(db);
+    return { assets, ...await fetchQuotes(assets, now) };
+  }
+  if (resource === "prices") return await comparePrices(params.get("q"));
+  if (resource === "price_watches") return await listWatches(db);
+  if (resource === "curiosity") return await fetchCuriosity(today);
+  if (resource === "news_topics") {
+    return Object.entries(NEWS_TOPICS).map(([id, topic]) => ({ id, label: topic.label }));
+  }
+  if (resource === "news") {
+    const topic = params.get("topic") ?? "";
+    if (!Object.hasOwn(NEWS_TOPICS, topic)) throw new UserFacingError("Tema de noticias no válido.");
+    const limit = Math.min(Math.max(Number(params.get("limit")) || 20, 1), 30);
+    return await loadNews(topic, limit, now);
+  }
+  if (resource === "expense_categories") return EXPENSE_CATEGORIES;
+  if (resource === "data_summary") return await summarizePersonalData(db);
+  if (resource === "data_export") return await exportPersonalData(db, now);
+  if (resource === "habit_checks") {
+    const { data, error } = await db.from("habit_checks").select("habit_id,date,done").gte("date", addDaysToDate(today, -120));
+    if (error) throw error; return data;
+  }
+  if (resource === "calendar") {
+    if (!await isCalendarConnected(db)) return { connected: false, events: [] };
+    const month = params.get("month") ?? today.slice(0, 7);
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new UserFacingError("Mes no válido.");
+    const [year, number] = month.split("-").map(Number);
+    const end = new Date(Date.UTC(year, number, 0)).toISOString().slice(0, 10);
+    return { connected: true, events: await listEvents(db, `${month}-01`, end) };
+  }
+  return NOT_FOUND;
+}
 Deno.serve(async (request) => {
   const cors = corsHeaders(request.headers.get("origin"));
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
@@ -113,64 +181,17 @@ Deno.serve(async (request) => {
   try {
     const now = new Date(), today = madridClock(now).localDate;
     if (request.method === "GET") {
-      if (resources.has(resource)) {
-        let query = db.from(resource).select(fields[resource]).limit(150);
-        if (resource === "reminders") query = query.is("sent_at", null).order("remind_at");
-        else if (resource === "weight_entries") query = query.order("date", { ascending: false });
-        else if (resource === "expenses" || resource === "incomes") query = query.gte("booking_date", url.searchParams.get("from") ?? madridMonthStart(now)).order("booking_date", { ascending: false });
-        else query = query.order("id", { ascending: false });
-        const { data, error } = await query; if (error) throw error; return json(data, 200, cors);
+      // Cada parte va por su lado: si una falla, llega su error y las demás se enseñan.
+      if (resource === "dashboard") {
+        const results = await Promise.allSettled(DASHBOARD_RESOURCES.map((name) => readResource(db, name, url.searchParams, now, today)));
+        return json(Object.fromEntries(results.map((result, index) => {
+          if (result.status === "fulfilled") return [DASHBOARD_RESOURCES[index], { data: result.value }];
+          console.error(`Error del panel en ${DASHBOARD_RESOURCES[index]}:`, result.reason);
+          return [DASHBOARD_RESOURCES[index], { error: describeErrorForClient(result.reason).message }];
+        })), 200, cors);
       }
-      if (resource === "budgets") return json(await loadBudgetStatuses(db, now), 200, cors);
-      if (resource === "memory") return json({ content: await loadMemory(db) }, 200, cors);
-      if (resource === "chat_messages") return json(await loadChatMessages(db), 200, cors);
-      if (resource === "greeting") return json({ text: await inventFunnyLine(db) }, 200, cors);
-      if (resource === "weather") {
-        const places = [await mainPlace(), VILLANUEVA_DE_LA_CANADA];
-        return json(await Promise.all(places.map(weekForecast)), 200, cors);
-      }
-      // Separado del tiempo: si AEMET falla, la previsión se sigue viendo.
-      if (resource === "weather_alerts") {
-        return json((await fetchWeatherAlerts()).filter((alert) => alert.expires > now), 200, cors);
-      }
-      if (resource === "bank_connection") return json({ connected: await hasBankConnections(db) }, 200, cors);
-      // Ajustes: se piden al abrir la sección, no con el resto, porque consultan a Google.
-      if (resource === "connected_accounts") {
-        return json({ google: await describeGoogleAccount(db), bank: await listBankAccess(db) }, 200, cors);
-      }
-      if (resource === "movements") return json(await searchMovements(db, parseMovementFilters(url.searchParams)), 200, cors);
-      if (resource === "search") return json(await searchEverything(db, url.searchParams.get("q"), today), 200, cors);
-      if (resource === "markets") {
-        const assets = await loadWatchlist(db);
-        return json({ assets, ...await fetchQuotes(assets, now) }, 200, cors);
-      }
-      if (resource === "prices") return json(await comparePrices(url.searchParams.get("q")), 200, cors);
-      if (resource === "price_watches") return json(await listWatches(db), 200, cors);
-      if (resource === "curiosity") return json(await fetchCuriosity(today), 200, cors);
-      if (resource === "news_topics") {
-        return json(Object.entries(NEWS_TOPICS).map(([id, topic]) => ({ id, label: topic.label })), 200, cors);
-      }
-      if (resource === "news") {
-        const topic = url.searchParams.get("topic") ?? "";
-        if (!Object.hasOwn(NEWS_TOPICS, topic)) throw new UserFacingError("Tema de noticias no válido.");
-        const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 20, 1), 30);
-        return json(await loadNews(topic, limit, now), 200, cors);
-      }
-      if (resource === "expense_categories") return json(EXPENSE_CATEGORIES, 200, cors);
-      if (resource === "data_summary") return json(await summarizePersonalData(db), 200, cors);
-      if (resource === "data_export") return json(await exportPersonalData(db, now), 200, cors);
-      if (resource === "habit_checks") {
-        const { data, error } = await db.from("habit_checks").select("habit_id,date,done").gte("date", addDaysToDate(today, -120));
-        if (error) throw error; return json(data, 200, cors);
-      }
-      if (resource === "calendar") {
-        if (!await isCalendarConnected(db)) return json({ connected: false, events: [] }, 200, cors);
-        const month = url.searchParams.get("month") ?? today.slice(0, 7);
-        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new UserFacingError("Mes no válido.");
-        const [year, number] = month.split("-").map(Number);
-        const end = new Date(Date.UTC(year, number, 0)).toISOString().slice(0, 10);
-        return json({ connected: true, events: await listEvents(db, `${month}-01`, end) }, 200, cors);
-      }
+      const data = await readResource(db, resource, url.searchParams, now, today);
+      if (data !== NOT_FOUND) return json(data, 200, cors);
     }
     if (request.method === "POST" && resource === "transcribe") return json({ text: await transcribeUpload(request) }, 200, cors);
     if (request.method === "POST") {

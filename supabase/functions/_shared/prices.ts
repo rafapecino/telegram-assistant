@@ -2,6 +2,7 @@
 // búsquedas al mes). Las tiendas bloquean que se lean sus webs directamente, así que no hay alternativa gratuita.
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
 import { requireEnv } from "./env.ts";
+import { askGroqForJson } from "./groq.ts";
 import { UserFacingError } from "./errors.ts";
 import { sendTelegramMessage } from "./telegram.ts";
 
@@ -52,34 +53,101 @@ function httpsUrl(raw: unknown): string | null {
   }
 }
 
-/**
- * Las ofertas con precio, de la más barata a la más cara, una por tienda. Se quitan las que cuestan menos del 40 % de
- * la mediana: al buscar «PS5» salen también juegos y mandos, que no son lo que se quiere comparar.
- */
-export function parseOffers(raw: unknown): Offer[] {
+// Mercados de segunda mano y productos usados o reacondicionados: se quiere comparar el producto nuevo.
+const SECOND_HAND =
+  /wallapop|vinted|milanuncios|segunda mano|reacondicionad|usad[oa]s?\b|seminuev|refurbish|back ?market/i;
+// Las que se mandan a Groq para elegir: más no mejoran el resultado y alargan la respuesta.
+const MAX_CANDIDATES = 40;
+
+/** Las ofertas con precio y enlace https, sin las de segunda mano. Aún sin filtrar por si son el producto. */
+export function extractOffers(raw: unknown): Offer[] {
   const results = (raw as { shopping_results?: Record<string, unknown>[] } | null)?.shopping_results ?? [];
-  const offers = results.flatMap((result): Offer[] => {
+  return results.flatMap((result): Offer[] => {
     const price = Number(result.extracted_price), url = httpsUrl(result.link ?? result.product_link);
     if (!Number.isFinite(price) || price <= 0 || !url || typeof result.title !== "string") return [];
+    const source = typeof result.source === "string" ? result.source.slice(0, 80) : "Tienda";
+    if (SECOND_HAND.test(source) || SECOND_HAND.test(result.title)) return [];
     return [{
       title: result.title.slice(0, 200),
       price,
       priceText: typeof result.price === "string" ? result.price : `${price} €`,
-      source: typeof result.source === "string" ? result.source.slice(0, 80) : "Tienda",
+      source,
       url,
       rating: Number.isFinite(Number(result.rating)) ? Number(result.rating) : null,
       delivery: typeof result.delivery === "string" ? result.delivery.slice(0, 80) : null,
     }];
-  });
+  }).slice(0, MAX_CANDIDATES);
+}
+
+/**
+ * Plan B si Groq falla: quita lo que cuesta menos del 40 % de la mediana. Sirve cuando casi todo es el producto, pero
+ * no cuando la mayoría son juegos o accesorios (al buscar «PS5»): por eso la primera opción es Groq.
+ */
+export function withoutCheapExtras(offers: Offer[]): Offer[] {
   const sorted = offers.map((offer) => offer.price).sort((a, b) => a - b);
   const median = sorted[Math.floor(sorted.length / 2)] ?? 0;
+  return offers.filter((offer) => offer.price >= median * 0.4);
+}
+
+/** De más barata a más cara, una por tienda. */
+export function rankOffers(offers: Offer[]): Offer[] {
   const seen = new Set<string>();
-  return offers.filter((offer) => offer.price >= median * 0.4).sort((a, b) => a.price - b.price).filter((offer) => {
+  return [...offers].sort((a, b) => a.price - b.price).filter((offer) => {
     const shop = offer.source.toLowerCase();
     if (seen.has(shop)) return false;
     seen.add(shop);
     return true;
   }).slice(0, MAX_OFFERS);
+}
+
+/** «PS5» → «consola PlayStation 5»: Google Shopping entiende mejor el producto y salen menos juegos y accesorios. */
+export async function refineQuery(query: string): Promise<string> {
+  try {
+    const raw = await askGroqForJson(
+      [
+        "Conviertes lo que alguien quiere comprar en una búsqueda precisa para Google Shopping España.",
+        "Nombra el producto en sí (no accesorios, juegos ni recambios) con su tipo, marca y modelo.",
+        "Ejemplos: «PS5» → «consola PlayStation 5»; «airpods pro» → «auriculares Apple AirPods Pro».",
+        "No inventes un modelo, versión o capacidad que no diga. Si ya es preciso, déjalo igual.",
+        'Responde solo con JSON {"search_query": "..."}.',
+      ].join("\n"),
+      query,
+    );
+    const refined = (raw as { search_query?: unknown } | null)?.search_query;
+    return typeof refined === "string" && refined.trim().length >= 2 && refined.length <= 100 ? refined.trim() : query;
+  } catch (error) {
+    console.error("Precios: Groq no pudo precisar la búsqueda, se usa tal cual:", error);
+    return query;
+  }
+}
+
+/**
+ * Las ofertas que son el producto que se quiere comprar, según Groq: fuera juegos, accesorios, recambios y modelos
+ * distintos. Si Groq falla, el plan B por precio.
+ */
+export async function selectMatching(query: string, offers: Offer[]): Promise<Offer[]> {
+  if (!offers.length) return [];
+  try {
+    const list = offers.map((offer, index) => `${index}. ${offer.title} — ${offer.price} € — ${offer.source}`);
+    const raw = await askGroqForJson(
+      [
+        "Decides qué ofertas de tiendas son el producto que alguien quiere comprar.",
+        "Quédate solo con el producto en sí, nuevo. Descarta accesorios, juegos, fundas, mandos sueltos, recambios,",
+        "piezas, productos de otra marca o de otro modelo, y cosas que solo lo mencionan («para PS5»).",
+        "Los packs del producto con algo de regalo sí valen. Si el nombre es genérico («PS5»), cualquier versión",
+        "del producto principal vale (Slim, Digital, Pro).",
+        'Responde solo con JSON {"matches": [números de las ofertas que valen]}; lista vacía si no vale ninguna.',
+      ].join(" "),
+      `Quiere comprar: ${query}\nOfertas:\n${list.join("\n")}`,
+    );
+    const matches = (raw as { matches?: unknown } | null)?.matches;
+    if (!Array.isArray(matches)) throw new Error("Groq no devolvió la lista de ofertas");
+    const chosen = new Set(matches.filter((index) => Number.isInteger(index) && index >= 0 && index < offers.length));
+    return offers.filter((_, index) => chosen.has(index));
+  } catch (error) {
+    console.error("Precios: Groq no pudo elegir las ofertas, se filtra por precio:", error);
+    return withoutCheapExtras(offers);
+  }
 }
 
 /** Búsquedas que quedan este mes. La consulta de la cuenta es gratis: no gasta ninguna. */
@@ -91,10 +159,12 @@ export async function searchesLeft(): Promise<number> {
   return Number(account.total_searches_left ?? account.plan_searches_left ?? 0);
 }
 
-async function fetchOffers(query: string): Promise<Offer[]> {
+/** Busca con la búsqueda precisada y se queda con las ofertas que son el producto, ordenadas. */
+async function fetchOffers(query: string): Promise<{ searchQuery: string; offers: Offer[] }> {
+  const searchQuery = await refineQuery(query);
   const params = new URLSearchParams({
     engine: "google_shopping",
-    q: query,
+    q: searchQuery,
     gl: "es",
     hl: "es",
     google_domain: "google.es",
@@ -107,11 +177,13 @@ async function fetchOffers(query: string): Promise<Offer[]> {
   if (data.error && !/hasn't returned any results/i.test(String(data.error))) {
     throw new Error(`SerpApi: ${String(data.error).slice(0, 200)}`);
   }
-  return parseOffers(data);
+  return { searchQuery, offers: rankOffers(await selectMatching(query, extractOffers(data))) };
 }
 
 /** Búsqueda a mano: se para antes de gastar las búsquedas que necesita la vigilancia diaria. */
-export async function comparePrices(rawQuery: unknown): Promise<{ query: string; offers: Offer[]; left: number }> {
+export async function comparePrices(
+  rawQuery: unknown,
+): Promise<{ query: string; searchQuery: string; offers: Offer[]; left: number }> {
   const query = validQuery(rawQuery);
   if (!Deno.env.get("SERPAPI_API_KEY")) {
     throw new UserFacingError("El comparador aún no está configurado: falta la clave de SerpApi en Supabase.");
@@ -122,7 +194,7 @@ export async function comparePrices(rawQuery: unknown): Promise<{ query: string;
       `Quedan ${left} búsquedas este mes y las guardo para los productos que vigilas. Se renuevan el mes que viene.`,
     );
   }
-  return { query, offers: await fetchOffers(query), left: left - 1 };
+  return { query, ...await fetchOffers(query), left: left - 1 };
 }
 
 export async function listWatches(db: SupabaseClient): Promise<PriceWatch[]> {
@@ -184,7 +256,7 @@ export function priceAlert(watch: PriceWatch, best: Offer): string | null {
 export async function checkPriceWatches(db: SupabaseClient, now: Date): Promise<number> {
   let alerts = 0;
   for (const watch of await listWatches(db)) {
-    const best = (await fetchOffers(watch.query))[0];
+    const best = (await fetchOffers(watch.query)).offers[0];
     if (!best) continue;
     const alert = priceAlert(watch, best);
     if (alert) {
