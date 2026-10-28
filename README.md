@@ -188,6 +188,11 @@ puede descargar una copia de todos los datos en .json (sin las claves de conexi�
 que escribir «BORRAR», y `panel-api` exige además `confirm=BORRAR` en la petición. Las conexiones no se borran desde
 ahí sino desconectándolas, para que también se retire el permiso en Google o en el banco.
 
+Móvil y accesibilidad: en pantallas pequeñas hay una barra inferior con Inicio, Agenda, Finanzas, Noticias y «Más»
+(el menú completo, que se cierra con Esc), los botones miden al menos 44 px y los campos usan letra de 16 px para que
+el iPhone no amplíe la página al escribir. Los colores cumplen el contraste AA y el foco del teclado siempre se ve. Se
+comprueba con axe-core sección a sección a 390 y 1280 px.
+
 Seguridad del panel:
 
 - Las tablas tienen RLS sin políticas y sin permisos para `anon` ni `authenticated`: el navegador no puede leerlas
