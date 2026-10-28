@@ -165,10 +165,17 @@ Deno.serve(async (request) => {
   if (!received) return deny("sin sesión", "Inicia sesión para acceder.", 401);
   const { data: { user }, error: authError } = await db.auth.getUser(received);
   if (authError || !user) return deny("sesión no válida", "Sesión caducada. Inicia sesión de nuevo.", 401);
-  const { data: access, error: accessError } = await db.from("panel_users")
-    .select("user_id").eq("user_id", user.id).maybeSingle();
+  const { data: panelUsers, error: accessError } = await db.from("panel_users")
+    .select("user_id").limit(2);
   if (accessError) { console.error("Error de acceso al panel:", accessError); return json({ error: "No se pudo comprobar el acceso." }, 503, cors); }
-  if (!access) return deny(`cuenta sin acceso (${user.id})`, "Esta cuenta no tiene acceso al panel.", 403);
+  if (!panelUsers?.some((panelUser) => panelUser.user_id === user.id)) {
+    return deny(`cuenta sin acceso (${user.id})`, "Esta cuenta no tiene acceso al panel.", 403);
+  }
+  // Los datos del panel aún son un único espacio personal. Si se autorizan varias cuentas,
+  // bloquear antes de leer o modificar nada evita que compartan finanzas y datos privados.
+  if (panelUsers.length !== 1) {
+    return json({ error: "Este panel está configurado para una sola cuenta. Antes de autorizar más usuarios hay que separar sus datos." }, 409, cors);
+  }
   const url = new URL(request.url), resource = url.searchParams.get("resource") ?? "";
   try {
     if (await isOverRateLimit(db, user.id, request.method, resource)) {
