@@ -2,6 +2,7 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
 import { fetchWeatherAlerts, morningAlertLines } from "./aemet.ts";
 import { type Birthday, birthdaysOn, listBirthdays, nameWithAge } from "./birthdays.ts";
 import { type CalendarEvent, isCalendarConnected, listEvents } from "./calendar.ts";
+import { fetchCuriosity, formatCuriosity } from "./curiosity.ts";
 import { errorMessage } from "./env.ts";
 import { MORNING_QUERY, morningEmailLines, searchEmails } from "./gmail.ts";
 import { addDaysToDate, madridClock, madridLocalToUtc } from "./madrid-time.ts";
@@ -142,6 +143,16 @@ async function todayReminders(db: SupabaseClient, today: string) {
   return data;
 }
 
+/** La curiosidad es un extra: si Wikipedia falla, el resumen sale sin ella y el fallo queda en los logs. */
+async function curiosityLines(today: string): Promise<string[]> {
+  try {
+    return [formatCuriosity(await fetchCuriosity(today))];
+  } catch (error) {
+    console.error("Resumen de la mañana: no se pudo leer la curiosidad del día", error);
+    return [];
+  }
+}
+
 export async function buildMorningSummary(db: SupabaseClient, now: Date): Promise<string> {
   const today = madridClock(now).localDate;
   return composeSummary([
@@ -161,6 +172,7 @@ export async function buildMorningSummary(db: SupabaseClient, now: Date): Promis
     }),
     await section("los cumpleaños", async () => birthdayLines(await listBirthdays(db), today)),
     await section("la lista de la compra", async () => shoppingLines((await listShoppingItems(db)).length)),
+    await curiosityLines(today),
   ]);
 }
 
