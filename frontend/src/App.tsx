@@ -26,14 +26,16 @@ const euro = (v:number) => new Intl.NumberFormat('es-ES',{style:'currency',curre
 const dateTime = (v:string) => new Intl.DateTimeFormat('es-ES',{dateStyle:'medium',timeStyle:'short',timeZone:'Europe/Madrid'}).format(new Date(v));
 const todayInMadrid = () => new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Madrid'}).format(new Date());
 
-async function api(resource:string, token:string, method='GET', data?:object, params?:Record<string,string>):Promise<any> {
+async function api(resource:string, token:string, method='GET', data?:object, params?:Record<string,string>, isRetry=false):Promise<any> {
   const url = new URL(apiUrl); url.searchParams.set('resource',resource);
   Object.entries(params??{}).forEach(([key,value])=>url.searchParams.set(key,value));
   let response:Response;
   try{response = await fetch(url,{method,headers:{Authorization:`Bearer ${token}`,...(data?{'Content-Type':'application/json'}:{})},body:data?JSON.stringify(data):undefined})}
   catch{throw Object.assign(new Error('No hay conexión con el asistente. Revisa tu conexión a internet y vuelve a intentarlo.'),{status:0})}
   const result = await response.json().catch(()=>({}));
-  if (!response.ok) throw Object.assign(new Error(result.error??'No se pudo conectar con el asistente.'),{status:response.status});
+  // Un 429 sin mensaje nuestro es el límite de Supabase para ráfagas: se espera un momento y se reintenta una vez.
+  if (response.status===429&&!result.error&&!isRetry){await new Promise(resolve=>setTimeout(resolve,1500));return api(resource,token,method,data,params,true)}
+  if (!response.ok) throw Object.assign(new Error(result.error??(response.status===429?'Demasiadas peticiones a la vez. Espera un momento y reintenta.':'No se pudo conectar con el asistente.')),{status:response.status});
   return result;
 }
 /** Sin conexión o con un fallo del servidor tiene sentido reintentar; con un dato no válido, no. */
@@ -742,8 +744,8 @@ function PricesSection({token}:{token:string}) {
     <Card title="Comparar precios">
       <form className="stack-form" role="search" aria-label="Comparar precios" onSubmit={search}><div className="form-row"><label>Producto<input value={query} onChange={e=>setQuery(e.target.value)} required minLength={2} maxLength={100} placeholder="PS5, AirPods Pro 2, Roomba…"/></label><button className="primary" type="submit" disabled={!!busy}><Search size={16}/> {busy==='search'?'Buscando…':'Comparar'}</button></div>
         <p className="form-hint">Busca en Google Shopping de España. Cada búsqueda gasta una de las 250 gratis del mes.</p></form>
-      {result&&<>{result.offers.length?<ul className="offer-list">{result.offers.map((o:Row,i:number)=><li key={o.url}><span className="offer-rank">{i+1}</span><span className="row-main"><strong>{o.title}</strong><small>{o.source}{o.delivery?` · ${o.delivery}`:''}{o.rating?` · ★ ${o.rating}`:''}</small></span><span className="offer-price"><strong>{euro(o.price)}</strong><a href={o.url} target="_blank" rel="noopener noreferrer">Ver tienda →</a></span></li>)}</ul>:<Empty>No he encontrado precios de «{result.query}». Prueba con otro nombre.</Empty>}
-        <p className="form-hint">Quedan {result.left} búsquedas este mes. Los resultados pueden incluir variantes del producto: revisa el título antes de comprar.</p></>}
+      {result&&<>{result.offers.length?<ul className="offer-list">{result.offers.map((o:Row,i:number)=><li key={o.url}><span className="offer-rank">{i+1}</span><span className="row-main"><strong>{o.title}</strong><small>{o.source}{o.delivery?` · ${o.delivery}`:''}{o.rating?` · ★ ${o.rating}`:''}</small></span><span className="offer-price"><strong>{euro(o.price)}</strong><a href={o.url} target="_blank" rel="noopener noreferrer">Ver tienda →</a></span></li>)}</ul>:<Empty>No he encontrado «{result.query}» en sí, solo accesorios u otros productos. Prueba con marca y modelo, por ejemplo «consola PS5 Slim».</Empty>}
+        <p className="form-hint">Busqué «{result.searchQuery}» y me quedé solo con el producto nuevo (sin juegos, accesorios ni segunda mano). Quedan {result.left} búsquedas este mes.</p></>}
     </Card>
     <Card title="Vigilar un producto" aside={watches&&<span className="count">{watches.length} de 5</span>}>
       <form className="stack-form" onSubmit={watch}><div className="form-row"><label>Producto<input value={watchQuery} onChange={e=>setWatchQuery(e.target.value)} required minLength={2} maxLength={100} placeholder="PS5"/></label><label>Avísame si baja de (€, opcional)<input inputMode="decimal" value={maxPrice} onChange={e=>setMaxPrice(e.target.value)} pattern="[0-9]+([.,][0-9]{1,2})?" placeholder="400"/></label><button className="primary" type="submit" disabled={!!busy}><Tag size={16}/> {busy==='watch'?'Guardando…':'Vigilar'}</button></div>
@@ -813,14 +815,16 @@ export function App(){
   const refresh=useCallback(async(t=token)=>{
     if(!t)return;setLoading(true);setError('');setRetry(null);
     const from=new Date(Date.now()-(period-1)*86400000).toISOString().slice(0,10);
-    const results=await Promise.allSettled(resources.map(resource=>api(resource,t,'GET',undefined,resource==='expenses'||resource==='incomes'?{from}:undefined)));
-    const next:Record<string,any>={};const failures:string[]=[];
-    results.forEach((result,index)=>{if(result.status==='fulfilled')next[resources[index]]=result.value;else failures.push(result.reason.message)});
+    // Todo en una petición: con una por recurso, Supabase cortaba la ráfaga con 429.
+    const next:Record<string,any>={};const failures:string[]=[];let isAuthProblem=false,isPending=false;
+    try{
+      const parts:Record<string,{data?:unknown;error?:string}>=await api('dashboard',t,'GET',undefined,{from});
+      resources.forEach(resource=>{const part=parts[resource];if(part&&'data' in part)next[resource]=part.data;else failures.push(part?.error??'Sin respuesta.')});
+    }catch(e){failures.push(e instanceof Error?e.message:'No se pudo conectar con el asistente.');const status=(e as {status?:number}).status;isAuthProblem=status===401||status===403;isPending=status===403}
     setData(next);setLoading(false);
     if(failures.length){
       setError(`No se ha podido cargar todo el panel: ${[...new Set(failures)].join(' · ')}`);setRetry(()=>()=>void refresh(t));
-      if(results.every(r=>r.status==='rejected'&&[401,403].includes((r.reason as any).status))){
-        const isPending=results.some(r=>r.status==='rejected'&&(r.reason as any).status===403);
+      if(isAuthProblem){
         void supabase.auth.signOut();setToken('');
         setError(isPending?'Cuenta creada, pendiente de autorización. Avísanos con tu correo para activar el acceso.':'Tu sesión ha caducado. Entra de nuevo.');
       }
