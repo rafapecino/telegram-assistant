@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Scale, Cigarette, CupSoda, Mic, Square, Brain, CloudSun, AlertTriangle, Settings, Download } from 'lucide-react';
+import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Scale, Cigarette, CupSoda, Mic, Square, Brain, CloudSun, AlertTriangle, Settings, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import chatbotLogo from './assets/chatbot-logo.png';
 
 type Row = Record<string, any>;
@@ -16,7 +16,7 @@ const chartColors = ['#1779db','#f08143','#32ad91','#8a66d7','#e6b33e','#ea7091'
 const navigation: {id:Section; label:string; icon:typeof LayoutDashboard}[] = [
   {id:'overview',label:'Inicio',icon:LayoutDashboard},{id:'finances',label:'Finanzas',icon:Wallet},{id:'reminders',label:'Recordatorios',icon:Bell},
   {id:'shopping_items',label:'Lista de la compra',icon:ShoppingBasket},
-  {id:'birthdays',label:'Cumpleaños',icon:Cake},{id:'habits',label:'Hábitos',icon:Flame},{id:'weight',label:'Peso',icon:Scale},{id:'calendar',label:'Calendario',icon:CalendarDays},{id:'weather',label:'Tiempo',icon:CloudSun},
+  {id:'birthdays',label:'Cumpleaños',icon:Cake},{id:'habits',label:'Hábitos',icon:Flame},{id:'weight',label:'Peso',icon:Scale},{id:'calendar',label:'Agenda',icon:CalendarDays},{id:'weather',label:'Tiempo',icon:CloudSun},
   {id:'memory',label:'Memoria',icon:Brain},{id:'settings',label:'Ajustes',icon:Settings}
 ];
 const resources = ['expenses','incomes','budgets','reminders','shopping_items','birthdays','habits','habit_checks','weight_entries','calendar','bank_connection','memory','weather','weather_alerts'] as const;
@@ -433,6 +433,134 @@ function MoneyForm({kind,categories,save}:{kind:'expense'|'income';categories:st
   </div></form>;
 }
 
+const ALL_DAYS=[1,2,3,4,5,6,7];
+const DAY_INITIALS=['L','M','X','J','V','S','D'];
+const pad2=(n:number)=>String(n).padStart(2,'0');
+const addDays=(date:string,days:number)=>new Date(Date.parse(`${date}T12:00:00Z`)+days*DAY_MS).toISOString().slice(0,10);
+const mondayOf=(date:string)=>addDays(date,1-isoWeekday(date));
+const shortDay=(date:string)=>new Intl.DateTimeFormat('es-ES',{weekday:'short',day:'numeric',timeZone:'UTC'}).format(new Date(`${date}T12:00:00Z`));
+const longDay=(date:string)=>new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'long',timeZone:'UTC'}).format(new Date(`${date}T12:00:00Z`));
+const timeOf=(v:string)=>new Intl.DateTimeFormat('es-ES',{timeStyle:'short',timeZone:'Europe/Madrid'}).format(new Date(v));
+
+/** Siguiente vez de un recordatorio que se repite, con las mismas reglas que el servidor (reminders.ts). */
+function nextRepeat(date:string,repeat:string,monthDay:number):string{
+  if(repeat==='daily')return addDays(date,1);
+  if(repeat==='weekly')return addDays(date,7);
+  if(repeat==='weekdays'){let next=addDays(date,1);while(isoWeekday(next)>5)next=addDays(next,1);return next}
+  const [year,month]=date.split('-').map(Number),nextYear=month===12?year+1:year,nextMonth=month%12+1;
+  return `${nextYear}-${pad2(nextMonth)}-${pad2(Math.min(monthDay,new Date(Date.UTC(nextYear,nextMonth,0)).getUTCDate()))}`;
+}
+/** Días entre `from` y `to` en los que salta un recordatorio, contando sus repeticiones. */
+function reminderDates(reminder:Row,from:string,to:string):string[]{
+  const first=madridDateOf(reminder.remind_at),dates:string[]=[];
+  if(!reminder.repeat)return first>=from&&first<=to?[first]:[];
+  for(let date=first,count=0;date<=to&&count<400;date=nextRepeat(date,reminder.repeat,Number(first.slice(8))),count++){if(date>=from)dates.push(date)}
+  return dates;
+}
+
+type HabitStatus='done'|'missed'|'unanswered'|'pending'|'upcoming'|'rest'|'before';
+const HABIT_STATUS:Record<HabitStatus,{label:string;mark:string}>={done:{label:'Hecho',mark:'✓'},missed:{label:'No hecho',mark:'✗'},unanswered:{label:'Sin apuntar',mark:'?'},pending:{label:'Pendiente hoy',mark:'·'},upcoming:{label:'Toca',mark:''},rest:{label:'Descanso',mark:''},before:{label:'Aún no existía',mark:''}};
+/** Los días de descanso no cuentan ni como fallo ni para la racha. */
+function habitStatus(habit:Row,checks:Row[],date:string,today:string):HabitStatus{
+  if(habit.created_at&&date<madridDateOf(habit.created_at))return 'before';
+  if(!(habit.scheduled_days??ALL_DAYS).includes(isoWeekday(date)))return 'rest';
+  if(date>today)return 'upcoming';
+  const check=checks.find(c=>c.habit_id===habit.id&&c.date===date);
+  if(check)return check.done?'done':'missed';
+  return date===today?'pending':'unanswered';
+}
+/** Racha actual (como en el servidor: hoy cuenta si ya está apuntado), mejor racha y % de las últimas 4 semanas. */
+function habitStats(habit:Row,checks:Row[],today:string){
+  const statusOf=(date:string)=>habitStatus(habit,checks,date,today);
+  let current=0;
+  for(let date=statusOf(today)==='done'||statusOf(today)==='missed'?today:addDays(today,-1),i=0;i<366;date=addDays(date,-1),i++){
+    const status=statusOf(date);if(status==='rest')continue;if(status!=='done')break;current++;
+  }
+  let best=0,run=0,done=0,counted=0;
+  for(let date=addDays(today,-119);date<=today;date=addDays(date,1)){
+    const status=statusOf(date);if(status==='rest'||status==='before'||status==='pending')continue;
+    run=status==='done'?run+1:0;best=Math.max(best,run);
+    if(date>addDays(today,-28)){counted++;if(status==='done')done++}
+  }
+  return {current,best,percent:counted?Math.round(done/counted*100):null};
+}
+
+function HabitsSection({habits,checks,action}:{habits:Row[];checks:Row[];action:(resource:string,method:string,payload?:object,params?:Record<string,string>,done?:string)=>Promise<boolean>}) {
+  const today=todayInMadrid(),thisMonday=mondayOf(today),oldest=addDays(today,-120);
+  const weeks=[0,1,2,3].map(n=>addDays(thisMonday,-7*n));
+  const weekName=(n:number)=>n===0?'Esta semana':n===1?'Semana pasada':`Hace ${n} semanas`;
+  function toggleDay(habit:Row,day:number){
+    const days:number[]=habit.scheduled_days??ALL_DAYS,next=days.includes(day)?days.filter(d=>d!==day):[...days,day].sort();
+    if(next.length)void action('habits','POST',{id:habit.id,scheduled_days:next},undefined,'Días guardados.');
+  }
+  return <Card title="Mis hábitos" aside={<span className="count">{habits.length} hábitos</span>}>
+    <InlineForm label="Crear hábito" placeholder="Por ejemplo: leer 20 minutos…" onSubmit={name=>action('habits','POST',{name},undefined,'Hábito creado.')}/>
+    <p className="habit-legend" aria-hidden="true">{(['done','missed','unanswered','rest'] as HabitStatus[]).map(status=><span key={status}><span className={`habit-cell ${status}`}>{HABIT_STATUS[status].mark}</span> {HABIT_STATUS[status].label}</span>)}</p>
+    {habits.map(habit=>{const stats=habitStats(habit,checks,today),days:number[]=habit.scheduled_days??ALL_DAYS;return <article className="habit-block" key={habit.id} aria-label={habit.name}>
+      <div className="habit-head"><span className="row-symbol warm"><Flame size={18}/></span><div className="row-main"><strong>{habit.name}</strong><small>Racha: {stats.current} {stats.current===1?'día':'días'} · Mejor: {stats.best} · Últimas 4 semanas: {stats.percent===null?'—':`${stats.percent} %`}</small></div><button className="delete icon-button" aria-label={`Eliminar hábito ${habit.name}`} onClick={()=>{if(window.confirm(`¿Eliminar «${habit.name}» y todo su historial?`))void action('habits','DELETE',undefined,{id:String(habit.id)},'Hábito eliminado.')}}><Trash2 size={17}/></button></div>
+      <div className="habit-days" role="group" aria-label={`Días en que toca ${habit.name}`}>{DAY_INITIALS.map((initial,i)=><button key={initial} className={days.includes(i+1)?'selected':''} aria-pressed={days.includes(i+1)} disabled={days.length===1&&days.includes(i+1)} title={days.length===1&&days.includes(i+1)?'Tiene que tocar al menos un día':undefined} onClick={()=>toggleDay(habit,i+1)}><span aria-hidden="true">{initial}</span><span className="sr-only">{['lunes','martes','miércoles','jueves','viernes','sábado','domingo'][i]}</span></button>)}</div>
+      {weeks.map((monday,n)=><div className="habit-week" key={monday}><span className="habit-week-name">{weekName(n)}</span><div className="habit-cells">{Array.from({length:7},(_,i)=>{const date=addDays(monday,i),status=habitStatus(habit,checks,date,today),canMark=date<=today&&date>=oldest&&status!=='rest'&&status!=='before';const label=`${longDay(date)}: ${HABIT_STATUS[status].label}`;
+        return canMark?<button key={date} className={`habit-cell ${status}`} aria-label={`${label}. Pulsa para marcar como ${status==='done'?'no hecho':'hecho'}`} title={label} onClick={()=>void action('habit_checks','POST',{habit_id:habit.id,date,done:status!=='done'},undefined,status==='done'?'Marcado como no hecho.':'Hábito apuntado. ¡Bien!')}>{HABIT_STATUS[status].mark}</button>:<span key={date} className={`habit-cell ${status}`} role="img" aria-label={label} title={label}>{HABIT_STATUS[status].mark}</span>})}</div></div>)}
+    </article>})}
+    {!habits.length&&<Empty>Empieza con un hábito pequeño que quieras mantener.</Empty>}
+  </Card>;
+}
+
+type AgendaItem={kind:'event'|'reminder'|'habit';title:string;time:string|null;status?:HabitStatus};
+const AGENDA_KINDS={event:{label:'Evento',Icon:CalendarDays},reminder:{label:'Recordatorio',Icon:Bell},habit:{label:'Hábito',Icon:Flame}};
+const monthTitle=(date:string)=>{const name=new Intl.DateTimeFormat('es-ES',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(`${date}T12:00:00Z`));return name.charAt(0).toUpperCase()+name.slice(1)};
+
+function AgendaDay({items}:{items:AgendaItem[]}){
+  if(!items.length)return <p className="today-empty">Nada este día.</p>;
+  return <ul className="agenda-items">{items.map((item,i)=>{const {label,Icon}=AGENDA_KINDS[item.kind];return <li key={i} className={`agenda-item ${item.kind} ${item.status??''}`}><Icon size={14} aria-hidden="true"/><span className="sr-only">{label}:</span>{item.time&&<strong>{item.time}</strong>}<span className="agenda-title">{item.title}</span>{item.status&&<small>{HABIT_STATUS[item.status].label}</small>}</li>})}</ul>;
+}
+
+/** Eventos de Google, recordatorios (con sus repeticiones) y hábitos de cada día, por semanas o por meses. */
+function AgendaSection({token,reminders,habits,checks,calendar,saveEvent,goToSettings}:{token:string;reminders:Row[];habits:Row[];checks:Row[];calendar?:Row;saveEvent:(data:object)=>Promise<boolean>;goToSettings:()=>void}) {
+  const today=todayInMadrid();
+  const [view,setView]=useState<'week'|'month'>('week'),[anchor,setAnchor]=useState(today),[selected,setSelected]=useState(today);
+  const [eventsByMonth,setEventsByMonth]=useState<Record<string,Row[]>>({}),[problem,setProblem]=useState('');
+  const from=view==='week'?mondayOf(anchor):mondayOf(anchor.slice(0,7)+'-01');
+  const firstOfMonth=(date:string,step=0)=>{const [year,month]=date.split('-').map(Number);return new Date(Date.UTC(year,month-1+step,1)).toISOString().slice(0,10)};
+  const lastOfMonth=addDays(firstOfMonth(anchor,1),-1);
+  const to=view==='week'?addDays(from,6):addDays(mondayOf(lastOfMonth),6);
+  const days=useMemo(()=>{const list:string[]=[];for(let d=from;d<=to;d=addDays(d,1))list.push(d);return list},[from,to]);
+  const months=[...new Set(days.map(d=>d.slice(0,7)))].join(',');
+  const isConnected=!!calendar?.connected;
+  // Al guardar un evento el panel recarga el calendario: entonces se vuelven a pedir los meses.
+  useEffect(()=>setEventsByMonth({}),[calendar]);
+  useEffect(()=>{
+    if(!isConnected)return;
+    for(const month of months.split(',').filter(m=>!(m in eventsByMonth))){
+      api('calendar',token,'GET',undefined,{month}).then(r=>setEventsByMonth(current=>({...current,[month]:r.events??[]}))).catch(e=>setProblem(e instanceof Error?e.message:'No se pudieron cargar los eventos.'));
+    }
+  },[months,isConnected,token,eventsByMonth]);
+  const itemsByDay=useMemo(()=>{
+    const byDay:Record<string,AgendaItem[]>=Object.fromEntries(days.map(d=>[d,[]]));
+    for(const e of Object.values(eventsByMonth).flat()){const date=e.date??madridDateOf(e.start);byDay[date]?.push({kind:'event',title:e.title,time:e.start?timeOf(e.start):null})}
+    for(const r of reminders)for(const date of reminderDates(r,from,to))byDay[date]?.push({kind:'reminder',title:r.text,time:timeOf(r.remind_at)});
+    for(const d of days){for(const h of habits){const status=habitStatus(h,checks,d,today);if(status!=='rest'&&status!=='before')byDay[d].push({kind:'habit',title:h.name,time:null,status})}
+      byDay[d].sort((a,b)=>(a.kind==='habit'?1:0)-(b.kind==='habit'?1:0)||(a.time??'').localeCompare(b.time??''))}
+    return byDay;
+  },[days,eventsByMonth,reminders,habits,checks,from,to,today]);
+  function move(step:number){
+    if(view==='week'){setAnchor(addDays(anchor,7*step));return}
+    const month=firstOfMonth(anchor,step);setAnchor(month);setSelected(month.slice(0,7)===today.slice(0,7)?today:month);
+  }
+  const title=view==='week'?`${shortDay(from)} – ${shortDay(to)} · ${monthTitle(to)}`:monthTitle(anchor);
+  return <>
+    {problem&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{problem}</span></div>}
+    <Card title="Agenda" aside={<div className="segmented" role="group" aria-label="Vista"><button className={view==='week'?'selected':''} aria-pressed={view==='week'} onClick={()=>setView('week')}>Semana</button><button className={view==='month'?'selected':''} aria-pressed={view==='month'} onClick={()=>setView('month')}>Mes</button></div>}>
+      <div className="agenda-toolbar"><button className="icon-button" aria-label={view==='week'?'Semana anterior':'Mes anterior'} onClick={()=>move(-1)}><ChevronLeft size={18}/></button><h3 aria-live="polite">{title}</h3><button className="icon-button" aria-label={view==='week'?'Semana siguiente':'Mes siguiente'} onClick={()=>move(1)}><ChevronRight size={18}/></button><button className="secondary" onClick={()=>{setAnchor(today);setSelected(today)}}>Hoy</button></div>
+      <p className="agenda-legend">{(Object.keys(AGENDA_KINDS) as AgendaItem['kind'][]).map(kind=>{const {label,Icon}=AGENDA_KINDS[kind];return <span key={kind} className={`agenda-key ${kind}`}><Icon size={13} aria-hidden="true"/> {label}</span>})}{!isConnected&&<span className="today-empty">Sin eventos: <button className="text-link" onClick={goToSettings}>conecta Google en Ajustes</button>.</span>}</p>
+      {view==='week'?<div className="agenda-week">{days.map(d=><section key={d} className={`agenda-day ${d===today?'is-today':''}`} aria-label={longDay(d)}><h4>{shortDay(d)}{d===today&&<span className="today-tag">Hoy</span>}</h4><AgendaDay items={itemsByDay[d]}/></section>)}</div>
+      :<><div className="agenda-month" role="grid" aria-label={monthTitle(anchor)}>{DAY_INITIALS.map(d=><span key={d} className="agenda-weekday" aria-hidden="true">{d}</span>)}{days.map(d=>{const items=itemsByDay[d],isOtherMonth=d.slice(0,7)!==anchor.slice(0,7);return <button key={d} role="gridcell" className={`agenda-cell ${isOtherMonth?'other-month':''} ${d===today?'is-today':''} ${d===selected?'is-selected':''}`} aria-label={`${longDay(d)}: ${items.length?`${items.length} cosas`:'nada'}`} aria-selected={d===selected} onClick={()=>setSelected(d)}><span className="agenda-number">{Number(d.slice(8))}</span><span className="agenda-dots" aria-hidden="true">{items.slice(0,4).map((item,i)=><i key={i} className={item.kind}/>)}</span><span className="agenda-chips" aria-hidden="true">{items.slice(0,3).map((item,i)=><span key={i} className={`agenda-chip ${item.kind}`}>{item.title}</span>)}{items.length>3&&<span className="agenda-more">+{items.length-3}</span>}</span></button>})}</div>
+        <div className="agenda-detail"><h4>{longDay(selected)}</h4><AgendaDay items={itemsByDay[selected]??[]}/></div></>}
+    </Card>
+    {isConnected&&<Card title="Nuevo evento en Google Calendar"><EventForm save={saveEvent}/></Card>}
+  </>;
+}
+
 /** Ventana para crear cualquier cosa. Si falla, lo escrito se queda y se puede volver a enviar. */
 function AddDialog({type,setType,token,isCalendarConnected,onClose,onSaved,goToSettings}:{type:AddType;setType:(type:AddType)=>void;token:string;isCalendarConnected:boolean;onClose:()=>void;onSaved:(message:string)=>Promise<void>;goToSettings:()=>void}) {
   const dialog=useRef<HTMLDialogElement>(null),[problem,setProblem]=useState(''),[categories,setCategories]=useState<string[]>([]);
@@ -528,14 +656,14 @@ export function App(){
   {section==='overview'&&<><TodaySummary data={data} isLoading={loading} onAdd={setAddType} answerHabit={(habitId,done)=>void action('habit_checks','POST',{habit_id:habitId,done},undefined,done?'Hábito apuntado. ¡Bien!':'Apuntado como no hecho hoy.')}/><AssistantChat token={token} onChange={()=>refresh()}/>
     <section className="dashboard-hero"><div><span className="hero-kicker">TU DÍA EN ORDEN</span><h2>Tu asistente, de un vistazo.</h2><p>Los números, recordatorios y próximos planes reunidos aquí.</p><HeroWeather forecasts={Array.isArray(data.weather)?data.weather:undefined} alerts={Array.isArray(data.weather_alerts)?data.weather_alerts:undefined}/><div className="hero-actions"><button onClick={()=>setSection('finances')}>Ver finanzas <ArrowUpRight size={16}/></button><button onClick={()=>setSection('reminders')}>Mis recordatorios <Bell size={16}/></button></div></div><div className="hero-balance"><small>Balance · últimos {period} días</small><strong>{euro(totals.earned-totals.spent)}</strong><span>{expenses.length} movimientos · {rows('reminders').length} recordatorios</span></div></section>
     <div className="summary-grid overview-metrics"><div className="metric"><div className="metric-icon warm"><Wallet size={21}/></div><span>Balance del periodo</span><strong className={totals.earned-totals.spent>=0?'positive':'negative'}>{euro(totals.earned-totals.spent)}</strong><small>Ingresos menos gastos</small></div><div className="metric"><div className="metric-icon lilac"><Bell size={21}/></div><span>Recordatorios</span><strong>{rows('reminders').length}</strong><small>Pendientes</small></div><div className="metric"><div className="metric-icon peach"><ShoppingBasket size={21}/></div><span>Lista de la compra</span><strong>{rows('shopping_items').length}</strong><small>Productos por comprar</small></div><div className="metric"><div className="metric-icon mint"><Flame size={21}/></div><span>Hábitos</span><strong>{rows('habits').length}</strong><small>{rows('habit_checks').filter(r=>r.date===todayInMadrid()&&r.done).length} completados hoy</small></div><div className="metric"><div className="metric-icon peach"><Cigarette size={21}/></div><span>Tabaco</span><strong>{euro(tobaccoTotal(expenses))}</strong><small>Últimos {period} días</small></div><div className="metric"><div className="metric-icon mint"><CupSoda size={21}/></div><span>Energéticas</span><strong>{expenses.reduce((n,r)=>n+energyDrinkCans(r),0)}</strong><small>Latas · últimos {period} días</small></div></div>
-    <div className="two-cols"><Card title="Próximos recordatorios" aside={<button className="text-link" onClick={()=>setSection('reminders')}>Ver todos →</button>}>{rows('reminders').length?rows('reminders').slice(0,4).map(r=><div className="list-row" key={r.id}><span className="row-symbol lilac"><Bell size={17}/></span><span className="row-main"><strong>{r.text}</strong><small>{dateTime(r.remind_at)}</small></span></div>):<Empty>No tienes recordatorios pendientes.</Empty>}</Card><Card title="En tu calendario" aside={<button className="text-link" onClick={()=>setSection('calendar')}>Ver calendario →</button>}>{data.calendar?.connected?data.calendar.events.length?data.calendar.events.slice(0,4).map((e:Row,i:number)=><div className="list-row" key={i}><span className="row-symbol mint"><CalendarDays size={17}/></span><span className="row-main"><strong>{e.title}</strong><small>{e.start?dateTime(e.start):e.date}</small></span></div>):<Empty>No hay eventos en los próximos días.</Empty>:<Empty>Conecta Google Calendar para ver tus eventos.</Empty>}</Card></div></>}
+    <div className="two-cols"><Card title="Próximos recordatorios" aside={<button className="text-link" onClick={()=>setSection('reminders')}>Ver todos →</button>}>{rows('reminders').length?rows('reminders').slice(0,4).map(r=><div className="list-row" key={r.id}><span className="row-symbol lilac"><Bell size={17}/></span><span className="row-main"><strong>{r.text}</strong><small>{dateTime(r.remind_at)}</small></span></div>):<Empty>No tienes recordatorios pendientes.</Empty>}</Card><Card title="En tu calendario" aside={<button className="text-link" onClick={()=>setSection('calendar')}>Ver agenda →</button>}>{data.calendar?.connected?data.calendar.events.length?data.calendar.events.slice(0,4).map((e:Row,i:number)=><div className="list-row" key={i}><span className="row-symbol mint"><CalendarDays size={17}/></span><span className="row-main"><strong>{e.title}</strong><small>{e.start?dateTime(e.start):e.date}</small></span></div>):<Empty>No hay eventos en los próximos días.</Empty>:<Empty>Conecta Google Calendar para ver tus eventos.</Empty>}</Card></div></>}
   {section==='finances'&&<><div className="section-toolbar"><div className="segmented" role="group" aria-label="Periodo de finanzas">{[7,30,90].map(p=><button key={p} className={period===p?'selected':''} aria-pressed={period===p} onClick={()=>setPeriod(p)}>{p} días</button>)}</div></div><div className="summary-grid finance-metrics"><div className="metric income-tile"><span>Ingresos</span><strong className="positive">{euro(totals.earned)}</strong><small><ArrowUpRight size={14}/> En el periodo</small></div><div className="metric expense-tile"><span>Gastos</span><strong>{euro(totals.spent)}</strong><small><ArrowDownRight size={14}/> En el periodo</small></div><div className="metric balance-tile"><span>Balance</span><strong className={totals.earned-totals.spent>=0?'positive':'negative'}>{euro(totals.earned-totals.spent)}</strong><small>Ingresos − gastos</small></div></div><div className="bank-strip"><div><strong>{data.bank_connection?.connected?'Banco conectado':'Conecta tu banco'}</strong><p>{data.bank_connection?.connected?'Los movimientos se importan automáticamente cada día.':'Conecta tu cuenta para ver tus gastos e ingresos aquí.'}</p></div>{data.bank_connection?.connected?<button className="secondary" onClick={()=>{if(window.confirm('¿Desconectar el banco? Los movimientos importados se conservarán.'))void action('bank_connection','DELETE')}}>Desconectar</button>:<button className="primary" onClick={async()=>{try{const result=await api('bank_link',token,'POST',{});window.location.assign(result.url)}catch(e){setError(e instanceof Error?e.message:'No se pudo conectar')}}}>Conectar banco <ArrowUpRight size={17}/></button>}</div><div className="two-cols"><Card title="Análisis de gastos"><SpendingChart expenses={expenses} period={period}/></Card><TobaccoCard expenses={expenses} period={period}/></div><div className="two-cols"><EnergyDrinkCard expenses={expenses} period={period}/><BizumCard expenses={expenses} incomes={incomes} period={period}/></div><Card title="Presupuestos mensuales"><form className="budget-form" onSubmit={e=>{e.preventDefault();const form=new FormData(e.currentTarget);void action('budgets','POST',{category:form.get('category'),monthly_limit:Number(form.get('limit'))});e.currentTarget.reset()}}><label>Categoría<select name="category" required>{['Total','Supermercado','Restaurantes','Transporte','Hogar','Suscripciones','Ocio','Salud','Compras','Otros'].map(c=><option key={c}>{c}</option>)}</select></label><label>Límite mensual (€)<input name="limit" type="number" min="0.01" step="0.01" required placeholder="200"/></label><button className="primary" type="submit">Guardar</button></form>{budgets.length?budgets.map((r:Row)=><div className="budget-item" key={r.budget.id}><div className="between"><strong>{r.budget.category}</strong><button className="delete icon-button" aria-label={`Quitar presupuesto de ${r.budget.category}`} onClick={()=>void action('budgets','DELETE',undefined,{category:r.budget.category})}><Trash2 size={16}/></button></div><p>{euro(r.spent)} de {euro(Number(r.budget.monthly_limit))}</p><div className="track"><span className={r.spent>=Number(r.budget.monthly_limit)?'over':''} style={{width:`${Math.min(100,r.spent/Number(r.budget.monthly_limit)*100)}%`}}/></div></div>):<Empty>Aún no has creado presupuestos.</Empty>}</Card><Card title="Movimientos recientes"><div className="table-wrap"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th>Importe</th></tr></thead><tbody>{([...(expenses.map(r=>({...r,kind:'expense'}))),...(incomes.map(r=>({...r,kind:'income'})))] as Row[]).sort((a,b)=>b.booking_date.localeCompare(a.booking_date)).slice(0,25).map((r,i)=><tr key={`${r.kind}-${r.id}-${i}`}><td>{r.booking_date}</td><td>{r.description}</td><td>{r.kind==='income'?'Ingreso':r.category}</td><td className={r.kind==='income'?'positive':''}>{r.kind==='income'?'+':'−'}{euro(Number(r.amount))}</td></tr>)}</tbody></table>{!expenses.length&&!incomes.length&&<Empty>No hay movimientos en este periodo.</Empty>}</div></Card></>}
   {section==='reminders'&&<Card title="Tus recordatorios" aside={<span className="count">{rows('reminders').length} pendientes</span>}><ReminderForm save={payload=>action('reminders','POST',payload)}/>{rows('reminders').map(r=><div className="list-row" key={r.id}><span className="row-symbol lilac"><Bell size={17}/></span><span className="row-main"><strong>{r.text}</strong><small>{dateTime(r.remind_at)} {r.repeat?`· ${r.repeat}`:''} · Aviso {r.advance_minutes===1440?'un día':'30 min'} antes</small></span><button className="delete icon-button" aria-label={`Eliminar ${r.text}`} onClick={()=>void action('reminders','DELETE',undefined,{id:String(r.id)})}><Trash2 size={17}/></button></div>)}{!rows('reminders').length&&<Empty>Añade tu primer recordatorio arriba.</Empty>}</Card>}
   {section==='shopping_items'&&<Card title="Por comprar" aside={<span className="count">{rows('shopping_items').length} productos</span>}><InlineForm label="Añadir producto" placeholder="Añadir a la lista…" onSubmit={text=>action('shopping_items','POST',{text})}/>{rows('shopping_items').map(r=><div className="list-row" key={r.id}><button className="check-button" aria-label={`Marcar ${r.text} como comprado`} onClick={()=>void action('shopping_items','DELETE',undefined,{id:String(r.id)},'Tachado de la lista.')}><Check size={16}/></button><span className="row-main"><strong>{r.text}</strong></span><button className="delete icon-button" aria-label={`Eliminar ${r.text}`} onClick={()=>void action('shopping_items','DELETE',undefined,{id:String(r.id)})}><Trash2 size={17}/></button></div>)}{!rows('shopping_items').length&&<Empty>Tu lista está vacía. Añade algo que necesites.</Empty>}</Card>}
   {section==='birthdays'&&<Card title="Cumpleaños" aside={<span className="count">{rows('birthdays').length} personas</span>}><form className="stack-form" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);void action('birthdays','POST',{name:f.get('name'),day:Number(f.get('day')),month:Number(f.get('month')),year:f.get('year')});e.currentTarget.reset()}}><div className="form-row"><label>Nombre<input name="name" required placeholder="Nombre"/></label><label>Día<input name="day" type="number" min="1" max="31" required placeholder="Día"/></label><label>Mes<select name="month">{Array.from({length:12},(_,i)=><option key={i} value={i+1}>{new Intl.DateTimeFormat('es-ES',{month:'long'}).format(new Date(2024,i,1))}</option>)}</select></label><label>Año opcional<input name="year" type="number" min="1900" max="2100" placeholder="Año"/></label><button className="primary" type="submit"><Plus size={17}/> Añadir</button></div></form>{rows('birthdays').sort((a,b)=>a.month-b.month||a.day-b.day).map(r=><div className="list-row" key={r.id}><span className="row-symbol peach"><Cake size={18}/></span><span className="row-main"><strong>{r.name}</strong><small>{r.day} de {new Intl.DateTimeFormat('es-ES',{month:'long'}).format(new Date(2024,r.month-1,1))}{r.year?` · ${r.year}`:''}</small></span><button className="delete icon-button" aria-label={`Eliminar cumpleaños de ${r.name}`} onClick={()=>void action('birthdays','DELETE',undefined,{id:String(r.id)})}><Trash2 size={17}/></button></div>)}{!rows('birthdays').length&&<Empty>Añade un cumpleaños para que no se te pase.</Empty>}</Card>}
-  {section==='habits'&&<Card title="Mis hábitos" aside={<span className="count">{rows('habits').length} hábitos</span>}><InlineForm label="Crear hábito" placeholder="Por ejemplo: leer 20 minutos…" onSubmit={name=>action('habits','POST',{name})}/>{rows('habits').map(r=>{const check=rows('habit_checks').find(c=>c.habit_id===r.id&&c.date===todayInMadrid());return <div className="list-row" key={r.id}><span className="row-symbol warm"><Flame size={18}/></span><span className="row-main"><strong>{r.name}</strong><small>{check?check.done?'Hecho hoy':'Pendiente hoy':'¿Lo has hecho hoy?'}</small></span><button className={`habit-answer ${check?.done?'done':''}`} aria-pressed={check?.done===true} onClick={()=>void action('habit_checks','POST',{habit_id:r.id,done:!check?.done},undefined,check?.done?'Desmarcado.':'Hábito apuntado. ¡Bien!')}>{check?.done?'Hecho':'Marcar hecho'}</button><button className="delete icon-button" aria-label={`Eliminar hábito ${r.name}`} onClick={()=>void action('habits','DELETE',undefined,{id:String(r.id)})}><Trash2 size={17}/></button></div>})}{!rows('habits').length&&<Empty>Empieza con un hábito pequeño que quieras mantener.</Empty>}</Card>}
+  {section==='habits'&&<HabitsSection habits={rows('habits')} checks={rows('habit_checks')} action={action}/>}
   {section==='weight'&&<WeightSection entries={rows('weight_entries')} save={payload=>action('weight_entries','POST',payload)} remove={id=>void action('weight_entries','DELETE',undefined,{id:String(id)})}/>}
-  {section==='calendar'&&<Card title="Próximos eventos" aside={data.calendar?.connected?<span className="connected"><span className="status-dot"/> Google conectado</span>:undefined}>{data.calendar?.connected?<><EventForm save={payload=>action('calendar','POST',payload)}/>{data.calendar.events.map((e:Row,i:number)=><div className="list-row" key={i}><span className="row-symbol mint"><CalendarDays size={18}/></span><span className="row-main"><strong>{e.title}</strong><small>{e.start?dateTime(e.start):`${e.date} · Todo el día`}</small></span></div>)}{!data.calendar.events.length&&<Empty>No hay eventos en los próximos 14 días.</Empty>}</>:<div className="connect-calendar"><CalendarDays size={34}/><h3>Tu agenda, aquí mismo</h3><p>Conecta Google Calendar para consultar tus próximos eventos y crear otros nuevos.</p><button className="primary" onClick={async()=>{try{const result=await api('calendar_link',token,'POST',{});window.location.assign(result.url)}catch(e){setError(e instanceof Error?e.message:'No se pudo conectar')}}}>Conectar Google Calendar <ArrowUpRight size={18}/></button></div>}</Card>}
+  {section==='calendar'&&<AgendaSection token={token} reminders={rows('reminders')} habits={rows('habits')} checks={rows('habit_checks')} calendar={data.calendar} saveEvent={payload=>action('calendar','POST',payload,undefined,'Evento creado en tu calendario.')} goToSettings={()=>setSection('settings')}/>}
   {section==='weather'&&<WeatherSection forecasts={Array.isArray(data.weather)?data.weather:undefined} alerts={Array.isArray(data.weather_alerts)?data.weather_alerts:undefined}/>}
   {section==='settings'&&<SettingsSection token={token} onChange={()=>refresh()}/>}
   {section==='memory'&&<MemorySection content={String(data.memory?.content??'')} save={content=>action('memory','POST',{content},undefined,'Memoria guardada.')}/>}
