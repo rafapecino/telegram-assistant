@@ -164,7 +164,7 @@ insert into public.panel_users (user_id) select id from auth.users where email =
    para otro proyecto, copia `frontend/.env.example` a `frontend/.env` y rellénalo.
 3. Para producción, el proyecto de Vercel compila `frontend/` (Root Directory `frontend`) al fusionar en `main`.
 
-El Inicio empieza por «Hoy»: recordatorios y eventos del día, hábitos que tocan hoy y aún no se han contestado (con
+El Inicio muestra primero el chat y después «Hoy»: recordatorios y eventos del día, hábitos que tocan hoy y aún no se han contestado (con
 «Hecho» y «Hoy no») y atajos para añadir. El botón «Añadir» de la barra superior crea un recordatorio, un gasto, un
 ingreso, un evento o un hábito; propone la fecha de hoy (y, en los recordatorios, la próxima hora en punto) y, si
 falla, lo escrito se queda en la ventana para corregirlo o reenviarlo. Los gastos e ingresos apuntados así se guardan
@@ -267,12 +267,21 @@ npm run build
 
 ### Uso en móvil y reapertura
 
-Inicio muestra primero Hoy, las tarjetas de resumen y los próximos recordatorios y eventos; el chat y la
-curiosidad quedan después. Las seis tarjetas de resumen y las dos tarjetas de próximos elementos abren
-su sección mediante enlaces nativos. En móvil se ocultan el subtítulo del saludo y el bloque de resumen
-redundante; se mantiene el contenido funcional de Hoy y las tarjetas.
+Inicio muestra primero el chat y después Hoy y cuatro accesos. Los próximos elementos y la actualidad
+quedan plegados al final. Las tarjetas abren sus secciones mediante enlaces nativos. Se ocultan el
+subtítulo del saludo y el bloque de resumen redundante.
 
 La última sección se guarda en el dispositivo (solo su identificador, sin datos personales). Al reabrir
 la app instalada en `/`, se recupera esa sección. Un enlace explícito siempre tiene prioridad, incluso
 `?section=inicio`. Si el almacenamiento está bloqueado, la navegación por URL sigue funcionando.
 Al cambiar de sección o pulsar Inicio se vuelve arriba; abrir el menú móvil también lo devuelve arriba.
+
+### Inicio centrado en la conversación y el día
+
+Inicio ordena el saludo, el chat compacto, el resumen de hoy y cuatro accesos (Finanzas, Hábitos,
+Mercados y Precios). La compra sigue en el menú, sin tarjeta en Inicio. Los próximos planes y la
+actualidad están plegados al final. El chat desplaza exclusivamente su historial interno.
+
+El tiempo del resumen usa la fecha de Madrid: Stratesys de lunes a jueves y Villanueva de la Cañada
+viernes, sábado y domingo. Se busca la previsión de hoy, sin sustituirla por otra ubicación o fecha.
+El resumen incluye recordatorios, calendario, hábitos pendientes y los cumpleaños del día.
