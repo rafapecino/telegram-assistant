@@ -164,6 +164,13 @@ insert into public.panel_users (user_id) select id from auth.users where email =
    para otro proyecto, copia `frontend/.env.example` a `frontend/.env` y rellénalo.
 3. Para producción, el proyecto de Vercel compila `frontend/` (Root Directory `frontend`) al fusionar en `main`.
 
+El Inicio empieza por «Hoy»: recordatorios y eventos del día, hábitos que tocan hoy y aún no se han contestado (con
+«Hecho» y «Hoy no») y atajos para añadir. El botón «Añadir» de la barra superior crea un recordatorio, un gasto, un
+ingreso, un evento o un hábito; propone la fecha de hoy (y, en los recordatorios, la próxima hora en punto) y, si
+falla, lo escrito se queda en la ventana para corregirlo o reenviarlo. Los gastos e ingresos apuntados así se guardan
+como `manual`, igual que las energéticas y el tabaco del chat. Los errores de conexión o del servidor se pueden
+reintentar desde el propio aviso.
+
 En Ajustes se ven las cuentas conectadas (Google y el banco), desde cuándo y con qué permisos, y se pueden conectar
 o desconectar. Los permisos de Google son los que Google dice que tiene el token, no los que se pidieron. También se
 puede descargar una copia de todos los datos en .json (sin las claves de conexión) y borrar categorías de datos: hay

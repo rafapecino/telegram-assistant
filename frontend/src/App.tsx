@@ -27,18 +27,22 @@ const todayInMadrid = () => new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Ma
 async function api(resource:string, token:string, method='GET', data?:object, params?:Record<string,string>):Promise<any> {
   const url = new URL(apiUrl); url.searchParams.set('resource',resource);
   Object.entries(params??{}).forEach(([key,value])=>url.searchParams.set(key,value));
-  const response = await fetch(url,{method,headers:{Authorization:`Bearer ${token}`,...(data?{'Content-Type':'application/json'}:{})},body:data?JSON.stringify(data):undefined});
+  let response:Response;
+  try{response = await fetch(url,{method,headers:{Authorization:`Bearer ${token}`,...(data?{'Content-Type':'application/json'}:{})},body:data?JSON.stringify(data):undefined})}
+  catch{throw Object.assign(new Error('No hay conexión con el asistente. Revisa tu conexión a internet y vuelve a intentarlo.'),{status:0})}
   const result = await response.json().catch(()=>({}));
   if (!response.ok) throw Object.assign(new Error(result.error??'No se pudo conectar con el asistente.'),{status:response.status});
   return result;
 }
+/** Sin conexión o con un fallo del servidor tiene sentido reintentar; con un dato no válido, no. */
+const isRetryable=(error:unknown)=>{const status=(error as {status?:number}).status;return status===0||(status??0)>=500};
 
 /** Fecha y hora actuales en Madrid, para proponer valores en los formularios. */
 function madridNow(date = new Date()) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Madrid',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(date).map(p=>[p.type,p.value]));
   return {date:`${parts.year}-${parts.month}-${parts.day}`,time:`${parts.hour}:${parts.minute}`};
 }
-const tomorrowInMadrid = () => madridNow(new Date(Date.now()+86_400_000)).date;
+const nextHourInMadrid = () => madridNow(new Date(Math.ceil((Date.now()+60_000)/3_600_000)*3_600_000));
 
 function Card({title,aside,children,className=''}:{title:string;aside?:ReactNode;children:ReactNode;className?:string}) {return <section className={`card ${className}`}><div className="card-heading"><h2>{title}</h2>{aside}</div>{children}</section>}
 function Empty({children}:{children:ReactNode}) {return <p className="empty">{children}</p>}
@@ -77,10 +81,10 @@ function SpendingChart({expenses,period}:{expenses:Row[];period:number}) {
 }
 
 function ReminderForm({save}:{save:(data:object)=>Promise<boolean>}) {
-  const [date,setDate]=useState(tomorrowInMadrid),[time,setTime]=useState(()=>madridNow().time),[busy,setBusy]=useState(false);
+  const [date,setDate]=useState(()=>nextHourInMadrid().date),[time,setTime]=useState(()=>nextHourInMadrid().time),[busy,setBusy]=useState(false);
   async function submit(e:FormEvent<HTMLFormElement>){
     e.preventDefault();const form=e.currentTarget,data=new FormData(form);setBusy(true);
-    try{if(await save({text:data.get('text'),local_datetime:`${date}T${time}`,repeat:data.get('repeat')||null,advance_minutes:data.get('advance')?Number(data.get('advance')):null})){form.reset();setDate(tomorrowInMadrid());setTime(madridNow().time)}}
+    try{if(await save({text:data.get('text'),local_datetime:`${date}T${time}`,repeat:data.get('repeat')||null,advance_minutes:data.get('advance')?Number(data.get('advance')):null})){form.reset();setDate(nextHourInMadrid().date);setTime(nextHourInMadrid().time)}}
     finally{setBusy(false)}
   }
   return <form className="stack-form" onSubmit={submit}><input name="text" required maxLength={500} placeholder="¿Qué quieres recordar?" aria-label="Texto del recordatorio"/>
@@ -410,25 +414,87 @@ function SettingsSection({token,onChange}:{token:string;onChange:()=>Promise<voi
   </>;
 }
 
+type AddType='reminder'|'expense'|'income'|'event'|'habit';
+const ADD_TYPES:{id:AddType;label:string}[]=[{id:'reminder',label:'Recordatorio'},{id:'expense',label:'Gasto'},{id:'income',label:'Ingreso'},{id:'event',label:'Evento'},{id:'habit',label:'Hábito'}];
+const ADD_DONE:Record<AddType,string>={reminder:'Recordatorio creado.',expense:'Gasto apuntado.',income:'Ingreso apuntado.',event:'Evento creado en tu calendario.',habit:'Hábito creado.'};
+const madridDateOf=(v:string)=>new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Madrid'}).format(new Date(v));
+// 1 = lunes … 7 = domingo, como scheduled_days en el servidor.
+const isoWeekday=(date:string)=>new Date(`${date}T12:00:00Z`).getUTCDay()||7;
+
+function MoneyForm({kind,categories,save}:{kind:'expense'|'income';categories:string[];save:(data:object)=>Promise<boolean>}) {
+  const [amount,setAmount]=useState(''),[description,setDescription]=useState(''),[category,setCategory]=useState(''),[date,setDate]=useState(todayInMadrid),[busy,setBusy]=useState(false);
+  async function submit(e:FormEvent){e.preventDefault();setBusy(true);try{await save({amount:amount.replace(',','.'),description,date,...(kind==='expense'?{category}:{})})}finally{setBusy(false)}}
+  return <form className="stack-form" onSubmit={submit}><div className="form-row">
+    <label>Importe (€)<input inputMode="decimal" value={amount} onChange={e=>setAmount(e.target.value)} required pattern="[0-9]+([.,][0-9]{1,2})?" placeholder="12,50" autoFocus/></label>
+    <label>Descripción<input value={description} onChange={e=>setDescription(e.target.value)} required maxLength={200} placeholder={kind==='expense'?'Cena con amigos':'Bizum de Ana'}/></label>
+    {kind==='expense'&&<label>Categoría<select value={category} onChange={e=>setCategory(e.target.value)} required><option value="">Elige…</option>{categories.map(c=><option key={c}>{c}</option>)}</select></label>}
+    <label>Fecha<input type="date" value={date} max={todayInMadrid()} onChange={e=>setDate(e.target.value)} required/></label>
+    <button className="primary" type="submit" disabled={busy}><Plus size={17}/> {busy?'Guardando…':kind==='expense'?'Apuntar gasto':'Apuntar ingreso'}</button>
+  </div></form>;
+}
+
+/** Ventana para crear cualquier cosa. Si falla, lo escrito se queda y se puede volver a enviar. */
+function AddDialog({type,setType,token,isCalendarConnected,onClose,onSaved,goToSettings}:{type:AddType;setType:(type:AddType)=>void;token:string;isCalendarConnected:boolean;onClose:()=>void;onSaved:(message:string)=>Promise<void>;goToSettings:()=>void}) {
+  const dialog=useRef<HTMLDialogElement>(null),[problem,setProblem]=useState(''),[categories,setCategories]=useState<string[]>([]);
+  useEffect(()=>{dialog.current?.showModal()},[]);
+  useEffect(()=>{if(type==='expense'&&!categories.length)api('expense_categories',token).then(setCategories).catch(e=>setProblem(e instanceof Error?e.message:'No se pudieron cargar las categorías.'))},[type,token,categories.length]);
+  async function save(resource:string,payload:object):Promise<boolean>{
+    setProblem('');
+    try{await api(resource,token,'POST',payload);await onSaved(ADD_DONE[type]);return true}
+    catch(e){setProblem(`${e instanceof Error?e.message:'No se ha podido guardar.'} Lo que has escrito sigue aquí: corrígelo o vuelve a enviarlo.`);return false}
+  }
+  return <dialog ref={dialog} className="add-dialog" aria-labelledby="add-title" onClose={onClose}>
+    <div className="card-heading"><h2 id="add-title">Añadir</h2><button className="icon-button" onClick={onClose} aria-label="Cerrar"><X size={18}/></button></div>
+    <div className="segmented add-types" role="group" aria-label="Qué quieres añadir">{ADD_TYPES.map(t=><button key={t.id} className={type===t.id?'selected':''} aria-pressed={type===t.id} onClick={()=>{setProblem('');setType(t.id)}}>{t.label}</button>)}</div>
+    {problem&&<p className="error" role="alert">{problem}</p>}
+    {type==='reminder'&&<ReminderForm save={payload=>save('reminders',payload)}/>}
+    {(type==='expense'||type==='income')&&<MoneyForm key={type} kind={type} categories={categories} save={payload=>save(type==='expense'?'expenses':'incomes',payload)}/>}
+    {type==='event'&&(isCalendarConnected?<EventForm save={payload=>save('calendar',payload)}/>:<div className="empty">Para crear eventos conecta Google en Ajustes.<br/><button className="text-link" onClick={goToSettings}>Ir a Ajustes →</button></div>)}
+    {type==='habit'&&<InlineForm label="Crear hábito" placeholder="Por ejemplo: leer 20 minutos…" onSubmit={name=>save('habits',{name})}/>}
+  </dialog>;
+}
+
+/** Lo de hoy, primero: recordatorios y eventos del día, hábitos sin contestar y atajos para añadir. */
+function TodaySummary({data,isLoading,onAdd,answerHabit}:{data:Record<string,any>;isLoading:boolean;onAdd:(type:AddType)=>void;answerHabit:(habitId:number,done:boolean)=>void}) {
+  const today=todayInMadrid(), list=(key:string):Row[]=>Array.isArray(data[key])?data[key]:[];
+  const reminders=list('reminders').filter(r=>madridDateOf(r.remind_at)===today);
+  const events:Row[]=data.calendar?.connected?data.calendar.events.filter((e:Row)=>e.date===today||(e.start&&madridDateOf(e.start)===today)):[];
+  const answered=new Set(list('habit_checks').filter(c=>c.date===today).map(c=>c.habit_id));
+  const habits=list('habits').filter(h=>(h.scheduled_days??[1,2,3,4,5,6,7]).includes(isoWeekday(today))&&!answered.has(h.id));
+  const hasData='reminders' in data;
+  return <section className="card today-card" aria-labelledby="today-title">
+    <div className="card-heading"><h2 id="today-title">Hoy</h2></div>
+    {!hasData&&isLoading?<Empty>Cargando lo de hoy…</Empty>:<div className="today-grid">
+      <div><h3><Bell size={15}/> Recordatorios</h3>{reminders.length?reminders.map(r=><p key={r.id} className="today-item"><strong>{dateTime(r.remind_at).split(', ').at(-1)}</strong> {r.text}</p>):<p className="today-empty">Nada para hoy.</p>}</div>
+      <div><h3><CalendarDays size={15}/> Calendario</h3>{!data.calendar?.connected?<p className="today-empty">Conecta Google en Ajustes para ver tus eventos.</p>:events.length?events.map((e,i)=><p key={i} className="today-item"><strong>{e.start?dateTime(e.start).split(', ').at(-1):'Todo el día'}</strong> {e.title}</p>):<p className="today-empty">Sin eventos hoy.</p>}</div>
+      <div><h3><Flame size={15}/> Hábitos pendientes</h3>{habits.length?habits.map(h=><div key={h.id} className="today-habit"><span>{h.name}</span><button className="habit-answer done" onClick={()=>answerHabit(h.id,true)} aria-label={`Hecho: ${h.name}`}>Hecho</button><button className="habit-answer" onClick={()=>answerHabit(h.id,false)} aria-label={`Hoy no: ${h.name}`}>Hoy no</button></div>):<p className="today-empty">{list('habits').length?'Todo contestado por hoy.':'Aún no sigues ningún hábito.'}</p>}</div>
+    </div>}
+    <div className="quick-add" role="group" aria-label="Añadir rápido">{ADD_TYPES.map(t=><button key={t.id} className="secondary" onClick={()=>onAdd(t.id)}><Plus size={14}/> {t.label}</button>)}</div>
+  </section>;
+}
+
 export function App(){
   const [token,setToken]=useState(''),[authReady,setAuthReady]=useState(false);
   const [section,setSection]=useState<Section>('overview'),[mobileOpen,setMobileOpen]=useState(false);
   const [data,setData]=useState<Record<string,any>>({}),[loading,setLoading]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
   const [period,setPeriod]=useState(30),[funnyLine,setFunnyLine]=useState('');
+  const [addType,setAddType]=useState<AddType|null>(null),[retry,setRetry]=useState<(()=>void)|null>(null);
+  // La confirmación se va sola; los errores se quedan hasta cerrarlos o reintentar.
+  useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(''),5000);return ()=>clearTimeout(timer)},[notice]);
   useEffect(()=>{
     const {data:{subscription}}=supabase.auth.onAuthStateChange((_event,session)=>{setToken(session?.access_token??'');setAuthReady(true)});
     void supabase.auth.getSession().then(({data:{session}})=>{setToken(session?.access_token??'');setAuthReady(true)});
     return ()=>subscription.unsubscribe();
   },[]);
   const refresh=useCallback(async(t=token)=>{
-    if(!t)return;setLoading(true);setError('');
+    if(!t)return;setLoading(true);setError('');setRetry(null);
     const from=new Date(Date.now()-(period-1)*86400000).toISOString().slice(0,10);
     const results=await Promise.allSettled(resources.map(resource=>api(resource,t,'GET',undefined,resource==='expenses'||resource==='incomes'?{from}:undefined)));
     const next:Record<string,any>={};const failures:string[]=[];
-    results.forEach((result,index)=>{if(result.status==='fulfilled')next[resources[index]]=result.value;else failures.push(`${resources[index]}: ${result.reason.message}`)});
+    results.forEach((result,index)=>{if(result.status==='fulfilled')next[resources[index]]=result.value;else failures.push(result.reason.message)});
     setData(next);setLoading(false);
     if(failures.length){
-      setError(failures.join(' · '));
+      setError(`No se ha podido cargar todo el panel: ${[...new Set(failures)].join(' · ')}`);setRetry(()=>()=>void refresh(t));
       if(results.every(r=>r.status==='rejected'&&[401,403].includes((r.reason as any).status))){
         const isPending=results.some(r=>r.status==='rejected'&&(r.reason as any).status===403);
         void supabase.auth.signOut();setToken('');
@@ -439,10 +505,14 @@ export function App(){
   useEffect(()=>{void refresh()},[refresh]);
   // La frase sorpresa es un extra: si Groq falla se queda el subtítulo de siempre, sin molestar con un aviso.
   useEffect(()=>{if(token)api('greeting',token).then(r=>setFunnyLine(String(r.text??''))).catch(e=>console.error('No se pudo inventar la frase',e))},[token]);
-  async function action(resource:string,method:string,payload?:object,params?:Record<string,string>):Promise<boolean>{
-    setNotice('');setError('');
-    try{await api(resource,token,method,payload,params);setNotice('Cambios guardados.');await refresh();return true}
-    catch(e){setError(e instanceof Error?e.message:'Error desconocido');return false}
+  async function action(resource:string,method:string,payload?:object,params?:Record<string,string>,done?:string):Promise<boolean>{
+    setNotice('');setError('');setRetry(null);
+    try{await api(resource,token,method,payload,params);setNotice(done??(method==='DELETE'?'Eliminado.':'Guardado.'));await refresh();return true}
+    catch(e){
+      setError(e instanceof Error?e.message:'No se ha podido completar.');
+      if(isRetryable(e))setRetry(()=>()=>void action(resource,method,payload,params,done));
+      return false;
+    }
   }
   function logout(){void supabase.auth.signOut();setToken('');setData({});setError('')}
   const rows=(key:string):Row[]=>Array.isArray(data[key])?data[key]:[];
@@ -452,22 +522,23 @@ export function App(){
   if(!authReady)return <div className="login-screen"><div className="login-card">Cargando acceso…</div></div>;
   if(!token)return <LoginScreen error={error} setError={setError}/>;
   return <div className="shell"><aside className={`sidebar ${mobileOpen?'open':''}`}><div className="sidebar-top"><div className="identity"><img src={chatbotLogo} alt="Mi asistente"/><small>PANEL PERSONAL</small></div><button className="mobile-close icon-button" aria-label="Cerrar menú" onClick={()=>setMobileOpen(false)}><X/></button></div><nav aria-label="Navegación principal">{navigation.map(({id,label,icon:Icon})=><button key={id} className={section===id?'nav-item active':'nav-item'} aria-current={section===id?'page':undefined} onClick={()=>{setSection(id);setMobileOpen(false);setNotice('')}}><Icon size={19} strokeWidth={1.8}/>{label}</button>)}</nav><div className="sidebar-bottom"><div className="sidebar-note"><span className="status-dot"/>Conectado a tu asistente</div><button className="nav-item logout" onClick={logout}><LogOut size={18}/> Cerrar sesión</button></div></aside>{mobileOpen&&<div className="backdrop" onClick={()=>setMobileOpen(false)}/>}
-  <div className="workspace"><header className="topbar"><button className="mobile-menu icon-button" aria-label="Abrir menú" onClick={()=>setMobileOpen(true)}><Menu/></button><div className="breadcrumbs">Mi espacio <span>/</span> <strong>{current.label}</strong></div><button className="refresh icon-button" onClick={()=>void refresh()} disabled={loading} aria-label="Actualizar datos"><RefreshCw size={18} className={loading?'spin':''}/></button></header>
+  <div className="workspace"><header className="topbar"><button className="mobile-menu icon-button" aria-label="Abrir menú" onClick={()=>setMobileOpen(true)}><Menu/></button><div className="breadcrumbs">Mi espacio <span>/</span> <strong>{current.label}</strong></div><button className="primary add-button" onClick={()=>setAddType('reminder')}><Plus size={17}/> Añadir</button><button className="refresh icon-button" onClick={()=>void refresh()} disabled={loading} aria-label="Actualizar datos"><RefreshCw size={18} className={loading?'spin':''}/></button></header>
   <main className="content"><div className="page-heading"><div><div className="eyebrow">PANEL PERSONAL</div><h1>{section==='overview'?dailyGreeting():current.label}</h1><p>{section==='overview'?funnyLine||'Aquí tienes lo importante de un vistazo.':section==='memory'?'Lo que tu asistente sabe de ti. Lo usa para hablarte con gracia.':section==='finances'?'Tus ingresos, gastos y límites en un mismo lugar.':section==='weather'?'Previsión de los próximos 7 días y avisos de AEMET.':section==='settings'?'Cuentas conectadas, permisos y tus datos.':'Organiza y consulta tus cosas sin salir del panel.'}</p></div><span className="today">{new Intl.DateTimeFormat('es-ES',{dateStyle:'full',timeZone:'Europe/Madrid'}).format(new Date())}</span></div>
-  {error&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{error}</span><button onClick={()=>setError('')} aria-label="Cerrar error"><X size={16}/></button></div>}{notice&&<div className="notice" role="status"><Check size={17}/>{notice}</div>}
-  {section==='overview'&&<><AssistantChat token={token} onChange={()=>refresh()}/>
+  {error&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{error}</span>{retry&&<button className="retry" onClick={retry}>Reintentar</button>}<button onClick={()=>{setError('');setRetry(null)}} aria-label="Cerrar error"><X size={16}/></button></div>}{notice&&<div className="notice" role="status"><Check size={17}/>{notice}</div>}
+  {section==='overview'&&<><TodaySummary data={data} isLoading={loading} onAdd={setAddType} answerHabit={(habitId,done)=>void action('habit_checks','POST',{habit_id:habitId,done},undefined,done?'Hábito apuntado. ¡Bien!':'Apuntado como no hecho hoy.')}/><AssistantChat token={token} onChange={()=>refresh()}/>
     <section className="dashboard-hero"><div><span className="hero-kicker">TU DÍA EN ORDEN</span><h2>Tu asistente, de un vistazo.</h2><p>Los números, recordatorios y próximos planes reunidos aquí.</p><HeroWeather forecasts={Array.isArray(data.weather)?data.weather:undefined} alerts={Array.isArray(data.weather_alerts)?data.weather_alerts:undefined}/><div className="hero-actions"><button onClick={()=>setSection('finances')}>Ver finanzas <ArrowUpRight size={16}/></button><button onClick={()=>setSection('reminders')}>Mis recordatorios <Bell size={16}/></button></div></div><div className="hero-balance"><small>Balance · últimos {period} días</small><strong>{euro(totals.earned-totals.spent)}</strong><span>{expenses.length} movimientos · {rows('reminders').length} recordatorios</span></div></section>
     <div className="summary-grid overview-metrics"><div className="metric"><div className="metric-icon warm"><Wallet size={21}/></div><span>Balance del periodo</span><strong className={totals.earned-totals.spent>=0?'positive':'negative'}>{euro(totals.earned-totals.spent)}</strong><small>Ingresos menos gastos</small></div><div className="metric"><div className="metric-icon lilac"><Bell size={21}/></div><span>Recordatorios</span><strong>{rows('reminders').length}</strong><small>Pendientes</small></div><div className="metric"><div className="metric-icon peach"><ShoppingBasket size={21}/></div><span>Lista de la compra</span><strong>{rows('shopping_items').length}</strong><small>Productos por comprar</small></div><div className="metric"><div className="metric-icon mint"><Flame size={21}/></div><span>Hábitos</span><strong>{rows('habits').length}</strong><small>{rows('habit_checks').filter(r=>r.date===todayInMadrid()&&r.done).length} completados hoy</small></div><div className="metric"><div className="metric-icon peach"><Cigarette size={21}/></div><span>Tabaco</span><strong>{euro(tobaccoTotal(expenses))}</strong><small>Últimos {period} días</small></div><div className="metric"><div className="metric-icon mint"><CupSoda size={21}/></div><span>Energéticas</span><strong>{expenses.reduce((n,r)=>n+energyDrinkCans(r),0)}</strong><small>Latas · últimos {period} días</small></div></div>
     <div className="two-cols"><Card title="Próximos recordatorios" aside={<button className="text-link" onClick={()=>setSection('reminders')}>Ver todos →</button>}>{rows('reminders').length?rows('reminders').slice(0,4).map(r=><div className="list-row" key={r.id}><span className="row-symbol lilac"><Bell size={17}/></span><span className="row-main"><strong>{r.text}</strong><small>{dateTime(r.remind_at)}</small></span></div>):<Empty>No tienes recordatorios pendientes.</Empty>}</Card><Card title="En tu calendario" aside={<button className="text-link" onClick={()=>setSection('calendar')}>Ver calendario →</button>}>{data.calendar?.connected?data.calendar.events.length?data.calendar.events.slice(0,4).map((e:Row,i:number)=><div className="list-row" key={i}><span className="row-symbol mint"><CalendarDays size={17}/></span><span className="row-main"><strong>{e.title}</strong><small>{e.start?dateTime(e.start):e.date}</small></span></div>):<Empty>No hay eventos en los próximos días.</Empty>:<Empty>Conecta Google Calendar para ver tus eventos.</Empty>}</Card></div></>}
   {section==='finances'&&<><div className="section-toolbar"><div className="segmented" role="group" aria-label="Periodo de finanzas">{[7,30,90].map(p=><button key={p} className={period===p?'selected':''} aria-pressed={period===p} onClick={()=>setPeriod(p)}>{p} días</button>)}</div></div><div className="summary-grid finance-metrics"><div className="metric income-tile"><span>Ingresos</span><strong className="positive">{euro(totals.earned)}</strong><small><ArrowUpRight size={14}/> En el periodo</small></div><div className="metric expense-tile"><span>Gastos</span><strong>{euro(totals.spent)}</strong><small><ArrowDownRight size={14}/> En el periodo</small></div><div className="metric balance-tile"><span>Balance</span><strong className={totals.earned-totals.spent>=0?'positive':'negative'}>{euro(totals.earned-totals.spent)}</strong><small>Ingresos − gastos</small></div></div><div className="bank-strip"><div><strong>{data.bank_connection?.connected?'Banco conectado':'Conecta tu banco'}</strong><p>{data.bank_connection?.connected?'Los movimientos se importan automáticamente cada día.':'Conecta tu cuenta para ver tus gastos e ingresos aquí.'}</p></div>{data.bank_connection?.connected?<button className="secondary" onClick={()=>{if(window.confirm('¿Desconectar el banco? Los movimientos importados se conservarán.'))void action('bank_connection','DELETE')}}>Desconectar</button>:<button className="primary" onClick={async()=>{try{const result=await api('bank_link',token,'POST',{});window.location.assign(result.url)}catch(e){setError(e instanceof Error?e.message:'No se pudo conectar')}}}>Conectar banco <ArrowUpRight size={17}/></button>}</div><div className="two-cols"><Card title="Análisis de gastos"><SpendingChart expenses={expenses} period={period}/></Card><TobaccoCard expenses={expenses} period={period}/></div><div className="two-cols"><EnergyDrinkCard expenses={expenses} period={period}/><BizumCard expenses={expenses} incomes={incomes} period={period}/></div><Card title="Presupuestos mensuales"><form className="budget-form" onSubmit={e=>{e.preventDefault();const form=new FormData(e.currentTarget);void action('budgets','POST',{category:form.get('category'),monthly_limit:Number(form.get('limit'))});e.currentTarget.reset()}}><label>Categoría<select name="category" required>{['Total','Supermercado','Restaurantes','Transporte','Hogar','Suscripciones','Ocio','Salud','Compras','Otros'].map(c=><option key={c}>{c}</option>)}</select></label><label>Límite mensual (€)<input name="limit" type="number" min="0.01" step="0.01" required placeholder="200"/></label><button className="primary" type="submit">Guardar</button></form>{budgets.length?budgets.map((r:Row)=><div className="budget-item" key={r.budget.id}><div className="between"><strong>{r.budget.category}</strong><button className="delete icon-button" aria-label={`Quitar presupuesto de ${r.budget.category}`} onClick={()=>void action('budgets','DELETE',undefined,{category:r.budget.category})}><Trash2 size={16}/></button></div><p>{euro(r.spent)} de {euro(Number(r.budget.monthly_limit))}</p><div className="track"><span className={r.spent>=Number(r.budget.monthly_limit)?'over':''} style={{width:`${Math.min(100,r.spent/Number(r.budget.monthly_limit)*100)}%`}}/></div></div>):<Empty>Aún no has creado presupuestos.</Empty>}</Card><Card title="Movimientos recientes"><div className="table-wrap"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th>Importe</th></tr></thead><tbody>{([...(expenses.map(r=>({...r,kind:'expense'}))),...(incomes.map(r=>({...r,kind:'income'})))] as Row[]).sort((a,b)=>b.booking_date.localeCompare(a.booking_date)).slice(0,25).map((r,i)=><tr key={`${r.kind}-${r.id}-${i}`}><td>{r.booking_date}</td><td>{r.description}</td><td>{r.kind==='income'?'Ingreso':r.category}</td><td className={r.kind==='income'?'positive':''}>{r.kind==='income'?'+':'−'}{euro(Number(r.amount))}</td></tr>)}</tbody></table>{!expenses.length&&!incomes.length&&<Empty>No hay movimientos en este periodo.</Empty>}</div></Card></>}
   {section==='reminders'&&<Card title="Tus recordatorios" aside={<span className="count">{rows('reminders').length} pendientes</span>}><ReminderForm save={payload=>action('reminders','POST',payload)}/>{rows('reminders').map(r=><div className="list-row" key={r.id}><span className="row-symbol lilac"><Bell size={17}/></span><span className="row-main"><strong>{r.text}</strong><small>{dateTime(r.remind_at)} {r.repeat?`· ${r.repeat}`:''} · Aviso {r.advance_minutes===1440?'un día':'30 min'} antes</small></span><button className="delete icon-button" aria-label={`Eliminar ${r.text}`} onClick={()=>void action('reminders','DELETE',undefined,{id:String(r.id)})}><Trash2 size={17}/></button></div>)}{!rows('reminders').length&&<Empty>Añade tu primer recordatorio arriba.</Empty>}</Card>}
-  {section==='shopping_items'&&<Card title="Por comprar" aside={<span className="count">{rows('shopping_items').length} productos</span>}><InlineForm label="Añadir producto" placeholder="Añadir a la lista…" onSubmit={text=>action('shopping_items','POST',{text})}/>{rows('shopping_items').map(r=><div className="list-row" key={r.id}><button className="check-button" aria-label={`Marcar ${r.text} como comprado`} onClick={()=>void action('shopping_items','DELETE',undefined,{id:String(r.id)})}><Check size={16}/></button><span className="row-main"><strong>{r.text}</strong></span><button className="delete icon-button" aria-label={`Eliminar ${r.text}`} onClick={()=>void action('shopping_items','DELETE',undefined,{id:String(r.id)})}><Trash2 size={17}/></button></div>)}{!rows('shopping_items').length&&<Empty>Tu lista está vacía. Añade algo que necesites.</Empty>}</Card>}
+  {section==='shopping_items'&&<Card title="Por comprar" aside={<span className="count">{rows('shopping_items').length} productos</span>}><InlineForm label="Añadir producto" placeholder="Añadir a la lista…" onSubmit={text=>action('shopping_items','POST',{text})}/>{rows('shopping_items').map(r=><div className="list-row" key={r.id}><button className="check-button" aria-label={`Marcar ${r.text} como comprado`} onClick={()=>void action('shopping_items','DELETE',undefined,{id:String(r.id)},'Tachado de la lista.')}><Check size={16}/></button><span className="row-main"><strong>{r.text}</strong></span><button className="delete icon-button" aria-label={`Eliminar ${r.text}`} onClick={()=>void action('shopping_items','DELETE',undefined,{id:String(r.id)})}><Trash2 size={17}/></button></div>)}{!rows('shopping_items').length&&<Empty>Tu lista está vacía. Añade algo que necesites.</Empty>}</Card>}
   {section==='birthdays'&&<Card title="Cumpleaños" aside={<span className="count">{rows('birthdays').length} personas</span>}><form className="stack-form" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);void action('birthdays','POST',{name:f.get('name'),day:Number(f.get('day')),month:Number(f.get('month')),year:f.get('year')});e.currentTarget.reset()}}><div className="form-row"><label>Nombre<input name="name" required placeholder="Nombre"/></label><label>Día<input name="day" type="number" min="1" max="31" required placeholder="Día"/></label><label>Mes<select name="month">{Array.from({length:12},(_,i)=><option key={i} value={i+1}>{new Intl.DateTimeFormat('es-ES',{month:'long'}).format(new Date(2024,i,1))}</option>)}</select></label><label>Año opcional<input name="year" type="number" min="1900" max="2100" placeholder="Año"/></label><button className="primary" type="submit"><Plus size={17}/> Añadir</button></div></form>{rows('birthdays').sort((a,b)=>a.month-b.month||a.day-b.day).map(r=><div className="list-row" key={r.id}><span className="row-symbol peach"><Cake size={18}/></span><span className="row-main"><strong>{r.name}</strong><small>{r.day} de {new Intl.DateTimeFormat('es-ES',{month:'long'}).format(new Date(2024,r.month-1,1))}{r.year?` · ${r.year}`:''}</small></span><button className="delete icon-button" aria-label={`Eliminar cumpleaños de ${r.name}`} onClick={()=>void action('birthdays','DELETE',undefined,{id:String(r.id)})}><Trash2 size={17}/></button></div>)}{!rows('birthdays').length&&<Empty>Añade un cumpleaños para que no se te pase.</Empty>}</Card>}
-  {section==='habits'&&<Card title="Mis hábitos" aside={<span className="count">{rows('habits').length} hábitos</span>}><InlineForm label="Crear hábito" placeholder="Por ejemplo: leer 20 minutos…" onSubmit={name=>action('habits','POST',{name})}/>{rows('habits').map(r=>{const check=rows('habit_checks').find(c=>c.habit_id===r.id&&c.date===todayInMadrid());return <div className="list-row" key={r.id}><span className="row-symbol warm"><Flame size={18}/></span><span className="row-main"><strong>{r.name}</strong><small>{check?check.done?'Hecho hoy':'Pendiente hoy':'¿Lo has hecho hoy?'}</small></span><button className={`habit-answer ${check?.done?'done':''}`} aria-pressed={check?.done===true} onClick={()=>void action('habit_checks','POST',{habit_id:r.id,done:!check?.done})}>{check?.done?'Hecho':'Marcar hecho'}</button><button className="delete icon-button" aria-label={`Eliminar hábito ${r.name}`} onClick={()=>void action('habits','DELETE',undefined,{id:String(r.id)})}><Trash2 size={17}/></button></div>})}{!rows('habits').length&&<Empty>Empieza con un hábito pequeño que quieras mantener.</Empty>}</Card>}
+  {section==='habits'&&<Card title="Mis hábitos" aside={<span className="count">{rows('habits').length} hábitos</span>}><InlineForm label="Crear hábito" placeholder="Por ejemplo: leer 20 minutos…" onSubmit={name=>action('habits','POST',{name})}/>{rows('habits').map(r=>{const check=rows('habit_checks').find(c=>c.habit_id===r.id&&c.date===todayInMadrid());return <div className="list-row" key={r.id}><span className="row-symbol warm"><Flame size={18}/></span><span className="row-main"><strong>{r.name}</strong><small>{check?check.done?'Hecho hoy':'Pendiente hoy':'¿Lo has hecho hoy?'}</small></span><button className={`habit-answer ${check?.done?'done':''}`} aria-pressed={check?.done===true} onClick={()=>void action('habit_checks','POST',{habit_id:r.id,done:!check?.done},undefined,check?.done?'Desmarcado.':'Hábito apuntado. ¡Bien!')}>{check?.done?'Hecho':'Marcar hecho'}</button><button className="delete icon-button" aria-label={`Eliminar hábito ${r.name}`} onClick={()=>void action('habits','DELETE',undefined,{id:String(r.id)})}><Trash2 size={17}/></button></div>})}{!rows('habits').length&&<Empty>Empieza con un hábito pequeño que quieras mantener.</Empty>}</Card>}
   {section==='weight'&&<WeightSection entries={rows('weight_entries')} save={payload=>action('weight_entries','POST',payload)} remove={id=>void action('weight_entries','DELETE',undefined,{id:String(id)})}/>}
   {section==='calendar'&&<Card title="Próximos eventos" aside={data.calendar?.connected?<span className="connected"><span className="status-dot"/> Google conectado</span>:undefined}>{data.calendar?.connected?<><EventForm save={payload=>action('calendar','POST',payload)}/>{data.calendar.events.map((e:Row,i:number)=><div className="list-row" key={i}><span className="row-symbol mint"><CalendarDays size={18}/></span><span className="row-main"><strong>{e.title}</strong><small>{e.start?dateTime(e.start):`${e.date} · Todo el día`}</small></span></div>)}{!data.calendar.events.length&&<Empty>No hay eventos en los próximos 14 días.</Empty>}</>:<div className="connect-calendar"><CalendarDays size={34}/><h3>Tu agenda, aquí mismo</h3><p>Conecta Google Calendar para consultar tus próximos eventos y crear otros nuevos.</p><button className="primary" onClick={async()=>{try{const result=await api('calendar_link',token,'POST',{});window.location.assign(result.url)}catch(e){setError(e instanceof Error?e.message:'No se pudo conectar')}}}>Conectar Google Calendar <ArrowUpRight size={18}/></button></div>}</Card>}
   {section==='weather'&&<WeatherSection forecasts={Array.isArray(data.weather)?data.weather:undefined} alerts={Array.isArray(data.weather_alerts)?data.weather_alerts:undefined}/>}
   {section==='settings'&&<SettingsSection token={token} onChange={()=>refresh()}/>}
-  {section==='memory'&&<MemorySection content={String(data.memory?.content??'')} save={content=>action('memory','POST',{content})}/>}
-  <footer>Tu asistente personal · Datos actualizados desde Supabase</footer></main></div></div>
+  {section==='memory'&&<MemorySection content={String(data.memory?.content??'')} save={content=>action('memory','POST',{content},undefined,'Memoria guardada.')}/>}
+  <footer>Tu asistente personal · Datos actualizados desde Supabase</footer></main></div>
+  {addType&&<AddDialog type={addType} setType={setAddType} token={token} isCalendarConnected={!!data.calendar?.connected} onClose={()=>setAddType(null)} onSaved={async message=>{setAddType(null);setError('');setRetry(null);setNotice(message);await refresh()}} goToSettings={()=>{setAddType(null);setSection('settings')}}/>}</div>
 }
