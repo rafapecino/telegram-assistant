@@ -193,7 +193,7 @@ gratuita) tiene más margen. Finanzas muestra arriba las cuatro primeras.
 Precios compara un producto en tiendas españolas con Google Shopping a través de SerpApi (`SERPAPI_API_KEY`; el plan
 gratis da 250 búsquedas al mes), de más barato a más caro y una oferta por tienda. Groq precisa antes la búsqueda («PS5» → «consola PlayStation 5») y
 después elige las ofertas que son el producto en sí, nuevo (sin juegos, accesorios ni recambios); si Groq falla, se
-quita lo que cuesta menos del 40 % de la mediana. Los mercados de segunda mano (Wallapop, Vinted…) no se incluyen. También vigila hasta 5 productos: cada día a las 10:00 los busca y avisa por
+quita lo que cuesta menos del 40 % de la mediana. Lo de segunda mano (Wallapop, Vinted, usado o reacondicionado) entra marcado como «2ª mano». También vigila hasta 5 productos: cada día a las 10:00 los busca y avisa por
 Telegram si bajan del precio indicado o, sin precio, si bajan un 5 % o más. Las búsquedas a mano se paran cuando
 quedan pocas, para no dejar sin ellas a la vigilancia. Desde el chat: «¿dónde está más barata la PS5?», «avísame si
 la PS5 baja de 400 €», «deja de vigilar la PS5». Las tiendas bloquean que se lean sus webs, por eso hace falta SerpApi.
