@@ -3,17 +3,33 @@ import {
   addWatch,
   checkPriceWatches,
   comparePrices,
+  extractOffers,
   formatOffers,
   MAX_WATCHES,
-  parseOffers,
+  type Offer,
   parsePricesRequest,
   priceAlert,
   type PriceWatch,
+  rankOffers,
+  refineQuery,
+  selectMatching,
+  withoutCheapExtras,
 } from "./prices.ts";
 import { fakeDb, TELEGRAM_ENV, withFakeFetch } from "./testing.ts";
 
 const NOW = new Date("2026-10-28T09:00:00Z");
-const ENV = { SERPAPI_API_KEY: "clave-serp", ...TELEGRAM_ENV };
+const ENV = { SERPAPI_API_KEY: "clave-serp", GROQ_API_KEY: "g", ...TELEGRAM_ENV };
+const CONSOLE: Offer = {
+  title: "PlayStation 5 Slim Digital",
+  price: 399,
+  priceText: "399 €",
+  source: "PcComponentes",
+  url: "https://tienda.es/PcComponentes",
+  rating: null,
+  delivery: null,
+};
+/** Groq de prueba: la primera llamada precisa la búsqueda y la segunda elige las ofertas. */
+const groq = (content: unknown) => Response.json({ choices: [{ message: { content: JSON.stringify(content) } }] });
 const result = (title: string, price: number, source: string, link = `https://tienda.es/${source}`) => ({
   title,
   price: `${price} €`,
@@ -29,6 +45,7 @@ const PS5_RESULTS = {
     result("PlayStation 5 Slim", 459, "MediaMarkt"),
     result("PlayStation 5 Pro", 799, "El Corte Inglés"),
     result("Trampa", 420, "Rara", "javascript:alert(1)"),
+    result("PS5 como nueva", 300, "Wallapop"),
   ],
 };
 const watch = (values: Partial<PriceWatch>): PriceWatch => ({
@@ -44,46 +61,82 @@ const watch = (values: Partial<PriceWatch>): PriceWatch => ({
   ...values,
 });
 
-Deno.test("ordena de más barato a más caro, una oferta por tienda, sin accesorios ni enlaces raros", () => {
-  assertEquals(parseOffers(PS5_RESULTS).map((offer) => [offer.source, offer.price]), [
+Deno.test("se queda con ofertas con precio y enlace https, sin segunda mano", () => {
+  assertEquals(extractOffers(PS5_RESULTS).map((offer) => offer.title), [
+    "PlayStation 5 Slim",
+    "Mando DualSense",
+    "PlayStation 5 Slim Digital",
+    "PlayStation 5 Slim",
+    "PlayStation 5 Pro",
+  ]);
+  assertEquals(extractOffers({}), []);
+});
+
+Deno.test("ordena de más barato a más caro, una oferta por tienda", () => {
+  assertEquals(rankOffers(extractOffers(PS5_RESULTS)).map((offer) => [offer.source, offer.price]), [
+    ["Amazon", 59],
     ["PcComponentes", 399],
     ["MediaMarkt", 449],
     ["El Corte Inglés", 799],
   ]);
-  assertEquals(parseOffers({}), []);
 });
 
-Deno.test("busca en Google Shopping de España y antes mira cuántas búsquedas quedan", async () => {
-  const serp = (request: Request) =>
-    request.url.includes("/account.json") ? Response.json({ total_searches_left: 120 }) : Response.json(PS5_RESULTS);
-  await withFakeFetch(ENV, serp, async (requests) => {
-    const { offers, left } = await comparePrices(" PS5 ");
-    assertEquals([offers[0].source, left], ["PcComponentes", 119]);
-    const search = new URL(requests[1].url);
+Deno.test("Groq precisa la búsqueda; si falla, se busca tal cual", async () => {
+  await withFakeFetch(ENV, () => groq({ search_query: "consola PlayStation 5" }), async (requests) => {
+    assertEquals(await refineQuery("PS5"), "consola PlayStation 5");
+    assertEquals((await requests[0].json()).messages[1].content, "PS5");
+  });
+  await withFakeFetch(ENV, () => new Response("caído", { status: 503 }), async () => {
+    assertEquals(await refineQuery("PS5"), "PS5");
+  });
+});
+
+Deno.test("Groq elige las ofertas que son el producto; si falla, se quitan las muy baratas", async () => {
+  const offers = extractOffers(PS5_RESULTS);
+  await withFakeFetch(ENV, () => groq({ matches: [0, 2, 99, "x"] }), async (requests) => {
+    assertEquals((await selectMatching("PS5", offers)).map((offer) => offer.price), [449, 399]);
+    const sent = (await requests[0].json()).messages[1].content as string;
+    assertEquals(sent.includes("1. Mando DualSense — 59 € — Amazon"), true);
+  });
+  await withFakeFetch(ENV, () => new Response("caído", { status: 503 }), async () => {
     assertEquals(
-      ["engine", "q", "gl", "hl", "google_domain"].map((name) => search.searchParams.get(name)),
-      ["google_shopping", "PS5", "es", "es", "google.es"],
+      (await selectMatching("PS5", offers)).map((offer) => offer.price),
+      withoutCheapExtras(offers).map((offer) => offer.price),
     );
   });
 });
 
-Deno.test("guarda búsquedas para la vigilancia diaria y explica si falta la clave", async () => {
-  await withFakeFetch(ENV, () => Response.json({ total_searches_left: 10 }), async (requests) => {
-    await assertRejects(() => comparePrices("PS5"), Error, "Quedan 10 búsquedas");
-    assertEquals(requests.length, 1);
+Deno.test("busca en Google Shopping de España con la búsqueda precisada y mira antes cuántas quedan", async () => {
+  const groqAnswers = [{ search_query: "consola PlayStation 5" }, { matches: [0, 2, 3, 4] }];
+  const respond = (request: Request) => {
+    if (request.url.includes("/account.json")) return Response.json({ total_searches_left: 120 });
+    if (request.url.includes("groq")) return groq(groqAnswers.shift());
+    return Response.json(PS5_RESULTS);
+  };
+  await withFakeFetch(ENV, respond, async (requests) => {
+    const { offers, left, searchQuery } = await comparePrices(" PS5 ");
+    assertEquals([offers.map((offer) => offer.source), left, searchQuery], [
+      ["PcComponentes", "MediaMarkt", "El Corte Inglés"],
+      119,
+      "consola PlayStation 5",
+    ]);
+    const search = new URL(requests.find((request) => request.url.includes("search.json"))!.url);
+    assertEquals(
+      ["engine", "q", "gl", "hl", "google_domain"].map((name) => search.searchParams.get(name)),
+      ["google_shopping", "consola PlayStation 5", "es", "es", "google.es"],
+    );
   });
-  await assertRejects(() => comparePrices("PS5"), Error, "falta la clave de SerpApi");
 });
 
 Deno.test("avisa al bajar del precio objetivo, y no repite hasta que baje más", () => {
-  const best = parseOffers(PS5_RESULTS)[0];
+  const best = CONSOLE;
   assertEquals(priceAlert(watch({ max_price: 400 }), best)?.startsWith("🏷️ «PS5» está a 399,00\u00a0€"), true);
   assertEquals(priceAlert(watch({ max_price: 400, notified_price: 399 }), best), null);
   assertEquals(priceAlert(watch({ max_price: 350 }), best), null);
 });
 
 Deno.test("sin precio objetivo, avisa si baja un 5 % o más", () => {
-  const best = parseOffers(PS5_RESULTS)[0];
+  const best = CONSOLE;
   const alert = priceAlert(watch({ best_price: 449 }), best);
   assertEquals(alert?.includes("ha bajado de 449,00\u00a0€ a 399,00\u00a0€"), true);
   assertEquals(priceAlert(watch({ best_price: 410 }), best), null);
@@ -94,10 +147,12 @@ Deno.test("la revisión diaria avisa por Telegram y guarda el mejor precio", asy
   const { db, queries } = fakeDb((query) =>
     query[1].startsWith("select(") ? { data: [watch({ max_price: 400 })] } : {}
   );
-  const respond = (request: Request) =>
-    request.url.includes("api.telegram.org")
-      ? Response.json({ ok: true, result: { message_id: 1 } })
-      : Response.json(PS5_RESULTS);
+  const groqAnswers = [{ search_query: "consola PlayStation 5" }, { matches: [2, 4] }];
+  const respond = (request: Request) => {
+    if (request.url.includes("api.telegram.org")) return Response.json({ ok: true, result: { message_id: 1 } });
+    if (request.url.includes("groq")) return groq(groqAnswers.shift());
+    return Response.json(PS5_RESULTS);
+  };
   await withFakeFetch(ENV, respond, async (requests) => {
     assertEquals(await checkPriceWatches(db, NOW), 1);
     assertEquals(requests.filter((request) => request.url.includes("api.telegram.org")).length, 1);
