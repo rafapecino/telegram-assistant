@@ -161,8 +161,9 @@ async function transcribe(audio:Blob, token:string):Promise<string>{
 
 function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>}) {
   const [messages,setMessages]=useState<ChatMessage[]>([]),[draft,setDraft]=useState(''),[busy,setBusy]=useState(false),[chatError,setChatError]=useState('');
-  const end=useRef<HTMLDivElement>(null),recorder=useRef<MediaRecorder|null>(null),[recording,setRecording]=useState(false);
-  useEffect(()=>{end.current?.scrollIntoView({block:'nearest'})},[messages,busy]);
+  const chatLog=useRef<HTMLDivElement>(null),recorder=useRef<MediaRecorder|null>(null),[recording,setRecording]=useState(false);
+  // Desplaza solo el historial: scrollIntoView también arrastraba la página de Inicio.
+  useEffect(()=>{const log=chatLog.current;if(log)log.scrollTop=log.scrollHeight},[messages,busy]);
   // La conversación se guarda en el servidor: al volver al panel sigue donde se dejó.
   useEffect(()=>{api('chat_messages',token).then(setMessages).catch(e=>setChatError(e instanceof Error?e.message:'No se pudo cargar la conversación.'))},[token]);
   // Tras cada respuesta se relee la conversación: un «sí» escrito o un botón también cambian la pregunta que contestan.
@@ -199,11 +200,10 @@ function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>
     catch(e){setChatError(e instanceof Error?e.message:'No se pudo borrar la conversación.')}
   }
   return <Card title="Pregúntale a tu asistente" aside={messages.length?<button className="text-link" onClick={()=>void clear()} disabled={busy}>Nueva conversación</button>:undefined} className="chat-card">
-    <div className="chat-log" aria-live="polite">
+    <div ref={chatLog} className="chat-log" aria-live="polite">
       {!messages.length&&<div className="chat-welcome"><img className="chat-avatar large" src={chatbotLogo} alt=""/><p>Dime, que para eso estoy.</p></div>}
       {messages.map((m,i)=><div key={i} className={`chat-row ${m.role}`}>{m.role==='assistant'&&<img className="chat-avatar" src={chatbotLogo} alt=""/>}<div className={`chat-message ${m.role}`}><p>{linkify(m.text)}</p>{m.buttons&&<div className="chat-buttons">{m.buttons.flat().map(b=><button key={b.callback_data} className="secondary" onClick={()=>void press(b.callback_data)} disabled={busy}>{b.text}</button>)}</div>}</div></div>)}
       {busy&&<div className="chat-row assistant"><img className="chat-avatar" src={chatbotLogo} alt=""/><div className="chat-message assistant typing"><p>Pensando…</p></div></div>}
-      <div ref={end}/>
     </div>
     {chatError&&<p className="error" role="alert">{chatError}</p>}
     <form className="inline-form chat-form" onSubmit={e=>{e.preventDefault();void send(draft)}}><label className="sr-only" htmlFor="chat-input">Mensaje para el asistente</label><input id="chat-input" value={draft} maxLength={1000} placeholder={recording?'Grabando… pulsa ■ para enviar':'Escribe un mensaje…'} disabled={recording} onChange={e=>setDraft(e.target.value)} autoComplete="off"/><button className={`icon-button ${recording?'primary recording':'secondary'}`} type="button" onClick={()=>void toggleRecording()} disabled={busy} aria-label={recording?'Parar y enviar la nota de voz':'Grabar una nota de voz'}>{recording?<Square size={16}/>:<Mic size={18}/>}</button><button className="primary icon-button" type="submit" disabled={busy||recording||!draft.trim()} aria-label="Enviar mensaje"><Send size={18}/></button></form>
