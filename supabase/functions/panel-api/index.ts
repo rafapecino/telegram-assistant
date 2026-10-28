@@ -14,6 +14,7 @@ import { parseWeightRequest, saveWeight } from "../_shared/weight.ts";
 import { transcribeAudio } from "../_shared/groq.ts";
 import { inventFunnyLine, loadMemory, saveMemory } from "../_shared/memory.ts";
 import { fetchWeatherAlerts } from "../_shared/aemet.ts";
+import { loadNews, NEWS_TOPICS } from "../_shared/news.ts";
 import { UserFacingError } from "../_shared/errors.ts";
 import { corsHeaders, describeErrorForClient, isOverRateLimit, recordAccessDenied } from "../_shared/panel-security.ts";
 import {
@@ -132,6 +133,15 @@ Deno.serve(async (request) => {
       // Ajustes: se piden al abrir la sección, no con el resto, porque consultan a Google.
       if (resource === "connected_accounts") {
         return json({ google: await describeGoogleAccount(db), bank: await listBankAccess(db) }, 200, cors);
+      }
+      if (resource === "news_topics") {
+        return json(Object.entries(NEWS_TOPICS).map(([id, topic]) => ({ id, label: topic.label })), 200, cors);
+      }
+      if (resource === "news") {
+        const topic = url.searchParams.get("topic") ?? "";
+        if (!Object.hasOwn(NEWS_TOPICS, topic)) throw new UserFacingError("Tema de noticias no válido.");
+        const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 20, 1), 30);
+        return json(await loadNews(topic, limit, now), 200, cors);
       }
       if (resource === "expense_categories") return json(EXPENSE_CATEGORIES, 200, cors);
       if (resource === "data_summary") return json(await summarizePersonalData(db), 200, cors);
