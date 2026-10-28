@@ -190,6 +190,13 @@ criptomonedas y tres divisas (tabla `market_watchlist`), y se puede cambiar desd
 la última buena (de menos de una hora) avisando. CoinGecko se satura a veces: con `COINGECKO_API_KEY` (la clave «Demo»
 gratuita) tiene más margen. Finanzas muestra arriba las cuatro primeras.
 
+Precios compara un producto en tiendas españolas con Google Shopping a través de SerpApi (`SERPAPI_API_KEY`; el plan
+gratis da 250 búsquedas al mes), de más barato a más caro y una oferta por tienda, quitando lo que cuesta menos del
+40 % de la mediana (accesorios). También vigila hasta 5 productos: cada día a las 10:00 los busca y avisa por
+Telegram si bajan del precio indicado o, sin precio, si bajan un 5 % o más. Las búsquedas a mano se paran cuando
+quedan pocas, para no dejar sin ellas a la vigilancia. Desde el chat: «¿dónde está más barata la PS5?», «avísame si
+la PS5 baja de 400 €», «deja de vigilar la PS5». Las tiendas bloquean que se lean sus webs, por eso hace falta SerpApi.
+
 La curiosidad del día es un suceso de un día como hoy, de la Wikipedia en español; sale en el Inicio y al final del
 resumen de la mañana (si Wikipedia falla, el resumen sale sin ella).
 

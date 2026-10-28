@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Scale, Cigarette, CupSoda, Mic, Square, Brain, CloudSun, AlertTriangle, Settings, Download, ChevronLeft, ChevronRight, Newspaper, Search, TrendingUp, Lightbulb } from 'lucide-react';
+import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Scale, Cigarette, CupSoda, Mic, Square, Brain, CloudSun, AlertTriangle, Settings, Download, ChevronLeft, ChevronRight, Newspaper, Search, TrendingUp, Lightbulb, Tag } from 'lucide-react';
 import chatbotLogo from './assets/chatbot-logo.png';
 
 type Row = Record<string, any>;
-type Section = 'overview'|'finances'|'reminders'|'shopping_items'|'birthdays'|'habits'|'weight'|'calendar'|'weather'|'memory'|'settings'|'news'|'markets';
+type Section = 'overview'|'finances'|'reminders'|'shopping_items'|'birthdays'|'habits'|'weight'|'calendar'|'weather'|'memory'|'settings'|'news'|'markets'|'prices';
 
 // La clave publicable de Supabase está pensada para ir en el navegador; los permisos los decide panel-api.
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? 'https://znzyzstvfqsrilhzyqub.supabase.co';
@@ -18,7 +18,7 @@ const chartColors = ['#1779db','#f08143','#32ad91','#8a66d7','#e6b33e','#ea7091'
 const navigation: {id:Section; label:string; icon:typeof LayoutDashboard}[] = [
   {id:'overview',label:'Inicio',icon:LayoutDashboard},{id:'finances',label:'Finanzas',icon:Wallet},{id:'reminders',label:'Recordatorios',icon:Bell},
   {id:'shopping_items',label:'Lista de la compra',icon:ShoppingBasket},
-  {id:'birthdays',label:'Cumpleaños',icon:Cake},{id:'habits',label:'Hábitos',icon:Flame},{id:'weight',label:'Peso',icon:Scale},{id:'calendar',label:'Agenda',icon:CalendarDays},{id:'weather',label:'Tiempo',icon:CloudSun},{id:'news',label:'Noticias',icon:Newspaper},{id:'markets',label:'Mercados',icon:TrendingUp},
+  {id:'birthdays',label:'Cumpleaños',icon:Cake},{id:'habits',label:'Hábitos',icon:Flame},{id:'weight',label:'Peso',icon:Scale},{id:'calendar',label:'Agenda',icon:CalendarDays},{id:'weather',label:'Tiempo',icon:CloudSun},{id:'news',label:'Noticias',icon:Newspaper},{id:'markets',label:'Mercados',icon:TrendingUp},{id:'prices',label:'Precios',icon:Tag},
   {id:'memory',label:'Memoria',icon:Brain},{id:'settings',label:'Ajustes',icon:Settings}
 ];
 const resources = ['expenses','incomes','budgets','reminders','shopping_items','birthdays','habits','habit_checks','weight_entries','calendar','bank_connection','memory','weather','weather_alerts'] as const;
@@ -727,6 +727,32 @@ function CuriosityCard({token}:{token:string}) {
   return <section className="card curiosity-card" aria-labelledby="curiosity-title"><div className="card-heading"><h2 id="curiosity-title"><Lightbulb size={17} aria-hidden="true"/> Un día como hoy, en {curiosity.year}</h2></div><p>{curiosity.text}</p>{curiosity.url&&<a href={curiosity.url} target="_blank" rel="noopener noreferrer">Leer más en Wikipedia →</a>}</section>;
 }
 
+/** Comparar precios en tiendas (Google Shopping vía SerpApi) y vigilar productos para que avise cuando bajen. */
+function PricesSection({token}:{token:string}) {
+  const [query,setQuery]=useState(''),[result,setResult]=useState<Row|null>(null),[watches,setWatches]=useState<Row[]|null>(null);
+  const [watchQuery,setWatchQuery]=useState(''),[maxPrice,setMaxPrice]=useState(''),[busy,setBusy]=useState(''),[problem,setProblem]=useState(''),[notice,setNotice]=useState('');
+  const loadWatches=useCallback(async()=>{try{setWatches(await api('price_watches',token))}catch(e){setProblem(e instanceof Error?e.message:'No se pudieron cargar los productos vigilados.')}},[token]);
+  useEffect(()=>{void loadWatches()},[loadWatches]);
+  async function run(task:string,work:()=>Promise<void>){setBusy(task);setProblem('');setNotice('');try{await work()}catch(e){setProblem(e instanceof Error?e.message:'No se pudo completar.')}finally{setBusy('')}}
+  const search=(e:FormEvent)=>{e.preventDefault();void run('search',async()=>{const found=await api('prices',token,'GET',undefined,{q:query});setResult(found);setWatchQuery(found.query)})};
+  const watch=(e:FormEvent)=>{e.preventDefault();void run('watch',async()=>{const {watch:saved}=await api('price_watches',token,'POST',{query:watchQuery,max_price:maxPrice.replace(',','.')||null});setNotice(`Vigilo «${saved.query}» cada día a las 10:00.`);setMaxPrice('');await loadWatches()})};
+  return <>
+    {problem&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{problem}</span></div>}
+    {notice&&<div className="notice" role="status"><Check size={17}/>{notice}</div>}
+    <Card title="Comparar precios">
+      <form className="stack-form" role="search" aria-label="Comparar precios" onSubmit={search}><div className="form-row"><label>Producto<input value={query} onChange={e=>setQuery(e.target.value)} required minLength={2} maxLength={100} placeholder="PS5, AirPods Pro 2, Roomba…"/></label><button className="primary" type="submit" disabled={!!busy}><Search size={16}/> {busy==='search'?'Buscando…':'Comparar'}</button></div>
+        <p className="form-hint">Busca en Google Shopping de España. Cada búsqueda gasta una de las 250 gratis del mes.</p></form>
+      {result&&<>{result.offers.length?<ul className="offer-list">{result.offers.map((o:Row,i:number)=><li key={o.url}><span className="offer-rank">{i+1}</span><span className="row-main"><strong>{o.title}</strong><small>{o.source}{o.delivery?` · ${o.delivery}`:''}{o.rating?` · ★ ${o.rating}`:''}</small></span><span className="offer-price"><strong>{euro(o.price)}</strong><a href={o.url} target="_blank" rel="noopener noreferrer">Ver tienda →</a></span></li>)}</ul>:<Empty>No he encontrado precios de «{result.query}». Prueba con otro nombre.</Empty>}
+        <p className="form-hint">Quedan {result.left} búsquedas este mes. Los resultados pueden incluir variantes del producto: revisa el título antes de comprar.</p></>}
+    </Card>
+    <Card title="Vigilar un producto" aside={watches&&<span className="count">{watches.length} de 5</span>}>
+      <form className="stack-form" onSubmit={watch}><div className="form-row"><label>Producto<input value={watchQuery} onChange={e=>setWatchQuery(e.target.value)} required minLength={2} maxLength={100} placeholder="PS5"/></label><label>Avísame si baja de (€, opcional)<input inputMode="decimal" value={maxPrice} onChange={e=>setMaxPrice(e.target.value)} pattern="[0-9]+([.,][0-9]{1,2})?" placeholder="400"/></label><button className="primary" type="submit" disabled={!!busy}><Tag size={16}/> {busy==='watch'?'Guardando…':'Vigilar'}</button></div>
+        <p className="form-hint">Lo miro cada día a las 10:00 y te aviso por Telegram. Sin precio, te aviso si baja un 5 % o más.</p></form>
+      {watches===null?<Empty>Cargando…</Empty>:watches.length?watches.map(w=><div className="list-row" key={w.id}><span className="row-symbol warm"><Tag size={17}/></span><span className="row-main"><strong>{w.query}</strong><small>{w.best_price!=null?<>Mejor: {euro(Number(w.best_price))} en {w.best_link?<a href={w.best_link} target="_blank" rel="noopener noreferrer">{w.best_source}</a>:w.best_source}</>:'Aún sin revisar'} · {w.max_price!=null?`Aviso por debajo de ${euro(Number(w.max_price))}`:'Aviso si baja un 5 %'}{w.checked_at?` · Revisado ${dateTime(w.checked_at)}`:''}</small></span><button className="delete icon-button" aria-label={`Dejar de vigilar ${w.query}`} disabled={!!busy} onClick={()=>void run('remove',async()=>{await api('price_watches',token,'DELETE',undefined,{id:String(w.id)});setNotice(`Ya no vigilo «${w.query}».`);await loadWatches()})}><Trash2 size={16}/></button></div>):<Empty>No vigilas ningún producto. Compara uno arriba y pulsa Vigilar, o dile al chat «avísame si la PS5 baja de 400 €».</Empty>}
+    </Card>
+  </>;
+}
+
 /** Ventana para crear cualquier cosa. Si falla, lo escrito se queda y se puede volver a enviar. */
 function AddDialog({type,setType,token,isCalendarConnected,onClose,onSaved,goToSettings}:{type:AddType;setType:(type:AddType)=>void;token:string;isCalendarConnected:boolean;onClose:()=>void;onSaved:(message:string)=>Promise<void>;goToSettings:()=>void}) {
   const dialog=useRef<HTMLDialogElement>(null),[problem,setProblem]=useState(''),[categories,setCategories]=useState<string[]>([]);
@@ -821,7 +847,7 @@ export function App(){
   if(!token)return <LoginScreen error={error} setError={setError}/>;
   return <div className="shell"><aside className={`sidebar ${mobileOpen?'open':''}`}><div className="sidebar-top"><div className="identity"><img src={chatbotLogo} alt="Mi asistente"/><small>PANEL PERSONAL</small></div><button className="mobile-close icon-button" aria-label="Cerrar menú" onClick={()=>setMobileOpen(false)}><X/></button></div><nav aria-label="Navegación principal">{navigation.map(({id,label,icon:Icon})=><button key={id} className={section===id?'nav-item active':'nav-item'} aria-current={section===id?'page':undefined} onClick={()=>{setSection(id);setMobileOpen(false);setNotice('')}}><Icon size={19} strokeWidth={1.8}/>{label}</button>)}</nav><div className="sidebar-bottom"><div className="sidebar-note"><span className="status-dot"/>Conectado a tu asistente</div><button className="nav-item logout" onClick={logout}><LogOut size={18}/> Cerrar sesión</button></div></aside>{mobileOpen&&<div className="backdrop" onClick={()=>setMobileOpen(false)}/>}
   <div className="workspace"><header className="topbar"><button className="mobile-menu icon-button" aria-label="Abrir menú" onClick={()=>setMobileOpen(true)}><Menu/></button><div className="breadcrumbs"><span className="crumb-root">Mi espacio <span>/</span> </span><strong>{current.label}</strong></div><button className="icon-button search-button" onClick={()=>setIsSearching(true)} aria-label="Buscar (atajo: /)"><Search size={19}/></button><button className="primary add-button" onClick={()=>setAddType('reminder')}><Plus size={17}/> Añadir</button><button className="refresh icon-button" onClick={()=>void refresh()} disabled={loading} aria-label="Actualizar datos"><RefreshCw size={18} className={loading?'spin':''}/></button></header>
-  <main className="content"><div className="page-heading"><div><div className="eyebrow">PANEL PERSONAL</div><h1>{section==='overview'?dailyGreeting():current.label}</h1><p>{section==='overview'?funnyLine||'Aquí tienes lo importante de un vistazo.':section==='memory'?'Lo que tu asistente sabe de ti. Lo usa para hablarte con gracia.':section==='finances'?'Tus ingresos, gastos y límites en un mismo lugar.':section==='weather'?'Previsión de los próximos 7 días y avisos de AEMET.':section==='settings'?'Cuentas conectadas, permisos y tus datos.':section==='news'?'Titulares de España y del mundo, por temas.':section==='markets'?'Nasdaq, criptomonedas y divisas. Tú eliges qué seguir.':'Organiza y consulta tus cosas sin salir del panel.'}</p></div><span className="today">{new Intl.DateTimeFormat('es-ES',{dateStyle:'full',timeZone:'Europe/Madrid'}).format(new Date())}</span></div>
+  <main className="content"><div className="page-heading"><div><div className="eyebrow">PANEL PERSONAL</div><h1>{section==='overview'?dailyGreeting():current.label}</h1><p>{section==='overview'?funnyLine||'Aquí tienes lo importante de un vistazo.':section==='memory'?'Lo que tu asistente sabe de ti. Lo usa para hablarte con gracia.':section==='finances'?'Tus ingresos, gastos y límites en un mismo lugar.':section==='weather'?'Previsión de los próximos 7 días y avisos de AEMET.':section==='settings'?'Cuentas conectadas, permisos y tus datos.':section==='news'?'Titulares de España y del mundo, por temas.':section==='markets'?'Nasdaq, criptomonedas y divisas. Tú eliges qué seguir.':section==='prices'?'Compara precios en tiendas españolas y vigila los que quieras.':'Organiza y consulta tus cosas sin salir del panel.'}</p></div><span className="today">{new Intl.DateTimeFormat('es-ES',{dateStyle:'full',timeZone:'Europe/Madrid'}).format(new Date())}</span></div>
   {SECTION_NEWS_TOPIC[section]&&<SectionNews token={token} topic={SECTION_NEWS_TOPIC[section]!} onMore={()=>setSection('news')}/>}
   {error&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{error}</span>{retry&&<button className="retry" onClick={retry}>Reintentar</button>}<button onClick={()=>{setError('');setRetry(null)}} aria-label="Cerrar error"><X size={16}/></button></div>}{notice&&<div className="notice" role="status"><Check size={17}/>{notice}</div>}
   {section==='overview'&&<><TodaySummary data={data} isLoading={loading} onAdd={setAddType} answerHabit={(habitId,done)=>void action('habit_checks','POST',{habit_id:habitId,done},undefined,done?'Hábito apuntado. ¡Bien!':'Apuntado como no hecho hoy.')}/><CuriosityCard token={token}/><AssistantChat token={token} onChange={()=>refresh()}/>
@@ -838,6 +864,7 @@ export function App(){
   {section==='weather'&&<WeatherSection forecasts={Array.isArray(data.weather)?data.weather:undefined} alerts={Array.isArray(data.weather_alerts)?data.weather_alerts:undefined}/>}
   {section==='news'&&<NewsSection token={token}/>}
   {section==='markets'&&<MarketsSection token={token}/>}
+  {section==='prices'&&<PricesSection token={token}/>}
   {section==='settings'&&<SettingsSection token={token} onChange={()=>refresh()}/>}
   {section==='memory'&&<MemorySection content={String(data.memory?.content??'')} save={content=>action('memory','POST',{content},undefined,'Memoria guardada.')}/>}
   <footer>Tu asistente personal · Datos actualizados desde Supabase</footer></main></div>

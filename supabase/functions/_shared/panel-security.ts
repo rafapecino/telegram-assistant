@@ -32,12 +32,12 @@ export function corsHeaders(origin: string | null): Record<string, string> {
 
 // Abrir el panel o guardar algo recarga todo: unas 16 peticiones de golpe. 300 deja margen para usarlo con prisa.
 const GENERAL_LIMIT_PER_MINUTE = 300;
-// Chat, notas de voz y la frase del saludo gastan cuota de Groq.
-const GROQ_LIMIT_PER_MINUTE = 10;
+// Chat, notas de voz y la frase del saludo gastan cuota de Groq; comparar precios, búsquedas de SerpApi.
+const QUOTA_LIMIT_PER_MINUTE = 10;
 
-export function usesGroq(method: string, resource: string): boolean {
+export function usesExternalQuota(method: string, resource: string): boolean {
   return (method === "POST" && (resource === "chat" || resource === "transcribe")) ||
-    (method === "GET" && resource === "greeting");
+    (method === "GET" && (resource === "greeting" || resource === "prices"));
 }
 
 /** Suma una petición a `bucket` en la ventana actual y devuelve cuántas lleva. */
@@ -54,8 +54,8 @@ export async function isOverRateLimit(
   resource: string,
 ): Promise<boolean> {
   if (await countRequest(db, `user:${userId}`, 60) > GENERAL_LIMIT_PER_MINUTE) return true;
-  if (!usesGroq(method, resource)) return false;
-  return await countRequest(db, `groq:${userId}`, 60) > GROQ_LIMIT_PER_MINUTE;
+  if (!usesExternalQuota(method, resource)) return false;
+  return await countRequest(db, `quota:${userId}`, 60) > QUOTA_LIMIT_PER_MINUTE;
 }
 
 const DENIED_ALERT_THRESHOLD = 5;
