@@ -109,3 +109,11 @@ a.nav-item{text-decoration:none}
 
 .overview-content .overview-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
 @media(min-width:1151px){.overview-content .overview-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
+.today-editorial:not(:empty){border-top:1px solid #e5ebf4;margin-top:16px;padding-top:16px}
+.today-editorial .section-news{margin:0 0 12px;padding:0;background:none;border:0;gap:8px}
+.today-editorial .curiosity-card{padding:12px 0 0;margin:0;box-shadow:none;border:0;border-top:1px solid #edf1f7;border-radius:0}
+.today-editorial .curiosity-card .card-heading{margin-bottom:8px}
+.today-editorial .curiosity-card h2{font-size:14px}
+.today-editorial .curiosity-card p{font-size:13px;margin-bottom:6px}
+.today-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
