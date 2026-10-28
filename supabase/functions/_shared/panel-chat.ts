@@ -1,11 +1,12 @@
 // Chat del panel web: mismas respuestas que el bot de Telegram, con la conversación guardada en la base de datos.
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
 import { replyToText } from "./assistant.ts";
+import { answerPendingQuestion, updateMessagesWithButton } from "./chat-questions.ts";
 import { replyToCommand } from "./commands.ts";
 import { UserFacingError } from "./errors.ts";
 import type { ConversationTurn } from "./message-intent.ts";
 import { applyPersonalButton } from "./personal-replies.ts";
-import type { BotReply } from "./telegram.ts";
+import type { BotReply, TelegramButton } from "./telegram.ts";
 
 const MAX_MESSAGE_LENGTH = 1000;
 const MAX_TURN_LENGTH = 2000;
@@ -14,17 +15,16 @@ export const MAX_HISTORY_TURNS = 10;
 // Lo que se enseña al abrir el panel: más que el contexto del modelo, para poder releer la conversación.
 export const MAX_SHOWN_MESSAGES = 50;
 
-export type ChatInput =
-  | { kind: "message"; message: string }
-  // `original` es el texto del mensaje que tenía el botón, para actualizarlo también en la conversación guardada.
-  | { kind: "button"; data: string; original: string | null };
+export type ChatInput = { kind: "message"; message: string } | { kind: "button"; data: string };
+
+/** Un mensaje guardado, con sus botones si aún se pueden pulsar. */
+export interface ChatMessage extends ConversationTurn {
+  buttons?: TelegramButton[][];
+}
 
 /** Un mensaje escrito o la pulsación de un botón de una respuesta anterior (por ejemplo, tachar de la compra). */
 export function parseChatInput(raw: Record<string, unknown>): ChatInput {
-  if (typeof raw.button === "string") {
-    const original = typeof raw.original === "string" ? raw.original : null;
-    return { kind: "button", data: raw.button.slice(0, 100), original };
-  }
+  if (typeof raw.button === "string") return { kind: "button", data: raw.button.slice(0, 100) };
   const message = typeof raw.message === "string" ? raw.message.trim() : "";
   if (!message || message.length > MAX_MESSAGE_LENGTH) {
     throw new UserFacingError(`Escribe un mensaje de hasta ${MAX_MESSAGE_LENGTH} caracteres.`);
@@ -33,11 +33,12 @@ export function parseChatInput(raw: Record<string, unknown>): ChatInput {
 }
 
 /** Los últimos mensajes guardados, del más antiguo al más reciente. */
-export async function loadChatMessages(db: SupabaseClient, limit = MAX_SHOWN_MESSAGES): Promise<ConversationTurn[]> {
-  const { data, error } = await db.from("chat_messages").select("role,text").order("id", { ascending: false })
+export async function loadChatMessages(db: SupabaseClient, limit = MAX_SHOWN_MESSAGES): Promise<ChatMessage[]> {
+  const { data, error } = await db.from("chat_messages").select("role,text,buttons").order("id", { ascending: false })
     .limit(limit);
   if (error) throw new Error(`No se pudo leer la conversación: ${error.message}`);
-  return (data as ConversationTurn[]).reverse();
+  return (data as (ConversationTurn & { buttons: TelegramButton[][] | null })[]).reverse()
+    .map(({ role, text, buttons }) => buttons ? { role, text, buttons } : { role, text });
 }
 
 export async function clearChatMessages(db: SupabaseClient): Promise<void> {
@@ -46,31 +47,33 @@ export async function clearChatMessages(db: SupabaseClient): Promise<void> {
   if (error) throw new Error(`No se pudo borrar la conversación: ${error.message}`);
 }
 
-async function saveTurns(db: SupabaseClient, turns: ConversationTurn[]): Promise<void> {
+async function saveTurns(db: SupabaseClient, turns: ChatMessage[]): Promise<void> {
   const { error } = await db.from("chat_messages").insert(turns);
   if (error) throw new Error(`No se pudo guardar la conversación: ${error.message}`);
-}
-
-/** Como Telegram al editar el mensaje: así, al recargar, no vuelve una pregunta ya contestada. */
-async function replaceSavedReply(db: SupabaseClient, original: string, text: string): Promise<void> {
-  const { error } = await db.from("chat_messages").update({ text }).eq("role", "assistant").eq("text", original);
-  if (error) throw new Error(`No se pudo actualizar la conversación: ${error.message}`);
 }
 
 async function replyToButton(db: SupabaseClient, input: Extract<ChatInput, { kind: "button" }>): Promise<BotReply> {
   const result = await applyPersonalButton(db, input.data);
   if (!result) return { text: "Este botón ya no funciona." };
-  if (input.original) await replaceSavedReply(db, input.original, result.message.text);
+  // Como Telegram al editar el mensaje: así, al recargar, no vuelve una pregunta ya contestada.
+  await updateMessagesWithButton(db, input.data, result.message);
   return result.message;
+}
+
+async function replyToMessage(db: SupabaseClient, message: string, now: Date): Promise<BotReply> {
+  const history = (await loadChatMessages(db, MAX_HISTORY_TURNS))
+    .map(({ role, text }) => ({ role, text: text.slice(0, MAX_TURN_LENGTH) }));
+  const reply = await replyToCommand(db, message, now) ?? await replyToText(db, message, now, history);
+  return typeof reply === "string" ? { text: reply } : reply;
 }
 
 export async function replyToChat(db: SupabaseClient, input: ChatInput, now: Date): Promise<BotReply> {
   if (input.kind === "button") return replyToButton(db, input);
-  const history = (await loadChatMessages(db, MAX_HISTORY_TURNS))
-    .map((turn) => ({ ...turn, text: turn.text.slice(0, MAX_TURN_LENGTH) }));
-  const reply = await replyToCommand(db, input.message, now) ?? await replyToText(db, input.message, now, history);
-  const botReply = typeof reply === "string" ? { text: reply } : reply;
+  const botReply = (await answerPendingQuestion(db, input.message, "panel", now))?.message ??
+    await replyToMessage(db, input.message, now);
   // Se guardan juntos al final: si la respuesta falla, no queda una pregunta sin contestar en el historial.
-  await saveTurns(db, [{ role: "user", text: input.message }, { role: "assistant", text: botReply.text }]);
+  const assistantTurn: ChatMessage = { role: "assistant", text: botReply.text };
+  if (botReply.buttons) assistantTurn.buttons = botReply.buttons;
+  await saveTurns(db, [{ role: "user", text: input.message }, assistantTurn]);
   return botReply;
 }

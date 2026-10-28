@@ -166,7 +166,10 @@ export async function recordHabit(db: SupabaseClient, habit: Habit, date: string
   return currentStreak(checks, date, habit.scheduled_days ?? ALL_DAYS);
 }
 
-/** A las 21:00 pregunta por cada hábito que aún no se haya apuntado hoy. Devuelve cuántas preguntas ha hecho. */
+/**
+ * A las 21:00 pregunta por cada hábito que aún no se haya apuntado hoy, por Telegram y en el chat del panel. Devuelve
+ * cuántas preguntas ha hecho.
+ */
 export async function askHabits(db: SupabaseClient, now: Date): Promise<number> {
   const today = madridClock(now).localDate;
   const habits = await listHabits(db);
@@ -178,7 +181,15 @@ export async function askHabits(db: SupabaseClient, now: Date): Promise<number> 
     (habit.scheduled_days ?? ALL_DAYS).includes(weekday(today)) && !answered.has(habit.id)
   );
   for (const habit of pending) {
-    await sendTelegramMessage(`¿Has hecho «${habit.name}» hoy?`, habitButtons(habit.id, today));
+    const question = `¿Has hecho «${habit.name}» hoy?`, buttons = habitButtons(habit.id, today);
+    const telegramMessageId = await sendTelegramMessage(question, buttons);
+    const { error } = await db.from("chat_messages").insert({
+      role: "assistant",
+      text: question,
+      buttons,
+      telegram_message_id: telegramMessageId ?? null,
+    });
+    if (error) throw new Error(`No se pudo guardar la pregunta de «${habit.name}» en el chat: ${error.message}`);
   }
   return pending.length;
 }
