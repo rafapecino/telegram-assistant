@@ -84,7 +84,8 @@ Deno.test("avisa al bajar del precio objetivo, y no repite hasta que baje más",
 
 Deno.test("sin precio objetivo, avisa si baja un 5 % o más", () => {
   const best = parseOffers(PS5_RESULTS)[0];
-  assertEquals(priceAlert(watch({ best_price: 449 }), best)?.includes("ha bajado de 449,00\u00a0€ a 399,00\u00a0€"), true);
+  const alert = priceAlert(watch({ best_price: 449 }), best);
+  assertEquals(alert?.includes("ha bajado de 449,00\u00a0€ a 399,00\u00a0€"), true);
   assertEquals(priceAlert(watch({ best_price: 410 }), best), null);
   assertEquals(priceAlert(watch({}), best), null);
 });
