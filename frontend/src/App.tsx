@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Scale, Cigarette, CupSoda, Mic, Square, Brain, CloudSun, AlertTriangle, Settings, Download, ChevronLeft, ChevronRight, Newspaper, Search, TrendingUp, Lightbulb, Tag } from 'lucide-react';
+import { sectionFromSearch, sectionSearch, initialSection, readLastSection, rememberSection, type Section } from './navigation';
+import { madridNow, nextHourInMadrid } from './form-time';
+import { selectHomeWeather } from './home-weather';
 import chatbotLogo from './assets/chatbot-logo.png';
 
 type Row = Record<string, any>;
-type Section = 'overview'|'finances'|'reminders'|'shopping_items'|'birthdays'|'habits'|'weight'|'calendar'|'weather'|'memory'|'settings'|'news'|'markets'|'prices';
 
 // La clave publicable de Supabase está pensada para ir en el navegador; los permisos los decide panel-api.
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? 'https://znzyzstvfqsrilhzyqub.supabase.co';
@@ -20,6 +22,11 @@ const navigation: {id:Section; label:string; icon:typeof LayoutDashboard}[] = [
   {id:'shopping_items',label:'Lista de la compra',icon:ShoppingBasket},
   {id:'birthdays',label:'Cumpleaños',icon:Cake},{id:'habits',label:'Hábitos',icon:Flame},{id:'weight',label:'Peso',icon:Scale},{id:'calendar',label:'Agenda',icon:CalendarDays},{id:'weather',label:'Tiempo',icon:CloudSun},{id:'news',label:'Noticias',icon:Newspaper},{id:'markets',label:'Mercados',icon:TrendingUp},{id:'prices',label:'Precios',icon:Tag},
   {id:'memory',label:'Memoria',icon:Brain},{id:'settings',label:'Ajustes',icon:Settings}
+];
+const NAV_GROUPS:{label:string;sections:Section[]}[]=[
+  {label:'Mi día',sections:['overview','reminders','calendar','shopping_items','birthdays','habits','weight']},
+  {label:'Consultas',sections:['finances','weather','news','markets','prices']},
+  {label:'Mi asistente',sections:['memory','settings']}
 ];
 const resources = ['expenses','incomes','budgets','reminders','shopping_items','birthdays','habits','habit_checks','weight_entries','calendar','bank_connection','memory','weather','weather_alerts'] as const;
 const euro = (v:number) => new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(v);
@@ -41,14 +48,10 @@ async function api(resource:string, token:string, method='GET', data?:object, pa
 /** Sin conexión o con un fallo del servidor tiene sentido reintentar; con un dato no válido, no. */
 const isRetryable=(error:unknown)=>{const status=(error as {status?:number}).status;return status===0||(status??0)>=500};
 
-/** Fecha y hora actuales en Madrid, para proponer valores en los formularios. */
-function madridNow(date = new Date()) {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Madrid',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(date).map(p=>[p.type,p.value]));
-  return {date:`${parts.year}-${parts.month}-${parts.day}`,time:`${parts.hour}:${parts.minute}`};
+function Card({title,aside,children,className=''}:{title:ReactNode;aside?:ReactNode;children:ReactNode;className?:string}) {return <section className={`card ${className}`}><div className="card-heading"><h2>{title}</h2>{aside}</div>{children}</section>}
+function SectionLink({target,goTo,className,children}:{target:Section;goTo:(section:Section)=>void;className?:string;children:ReactNode}) {
+  return <a href={sectionSearch(window.location.search,target)} className={className} onClick={e=>{if(e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();goTo(target)}}>{children}</a>;
 }
-const nextHourInMadrid = () => madridNow(new Date(Math.ceil((Date.now()+60_000)/3_600_000)*3_600_000));
-
-function Card({title,aside,children,className=''}:{title:string;aside?:ReactNode;children:ReactNode;className?:string}) {return <section className={`card ${className}`}><div className="card-heading"><h2>{title}</h2>{aside}</div>{children}</section>}
 function Empty({children}:{children:ReactNode}) {return <p className="empty">{children}</p>}
 function InlineForm({label,placeholder,onSubmit,type='text'}:{label:string;placeholder:string;onSubmit:(text:string)=>Promise<boolean>;type?:string}) {
   const [value,setValue]=useState(''),[busy,setBusy]=useState(false);
@@ -85,18 +88,19 @@ function SpendingChart({expenses,period}:{expenses:Row[];period:number}) {
 }
 
 function ReminderForm({save}:{save:(data:object)=>Promise<boolean>}) {
-  const [date,setDate]=useState(()=>nextHourInMadrid().date),[time,setTime]=useState(()=>nextHourInMadrid().time),[busy,setBusy]=useState(false);
+  const [when,setWhen]=useState(nextHourInMadrid),[busy,setBusy]=useState(false);
+  const {date,time}=when;
   async function submit(e:FormEvent<HTMLFormElement>){
     e.preventDefault();const form=e.currentTarget,data=new FormData(form);setBusy(true);
-    try{if(await save({text:data.get('text'),local_datetime:`${date}T${time}`,repeat:data.get('repeat')||null,advance_minutes:data.get('advance')?Number(data.get('advance')):null})){form.reset();setDate(nextHourInMadrid().date);setTime(nextHourInMadrid().time)}}
+    try{if(await save({text:data.get('text'),local_datetime:`${date}T${time}`,repeat:data.get('repeat')||null,advance_minutes:data.get('advance')?Number(data.get('advance')):null})){form.reset();setWhen(nextHourInMadrid())}}
     finally{setBusy(false)}
   }
   return <form className="stack-form" onSubmit={submit}><input name="text" required maxLength={500} placeholder="¿Qué quieres recordar?" aria-label="Texto del recordatorio"/>
-    <div className="form-row"><label>Fecha<input type="date" value={date} onChange={e=>setDate(e.target.value)} required/></label><label>Hora<input type="time" value={time} onChange={e=>setTime(e.target.value)} required/></label>
+    <div className="form-row"><label>Fecha<input type="date" value={date} onChange={e=>setWhen({...when,date:e.target.value})} required/></label><label>Hora<input type="time" value={time} onChange={e=>setWhen({...when,time:e.target.value})} required/></label>
     <label>Repetición<select name="repeat"><option value="">Una vez</option><option value="daily">Cada día</option><option value="weekdays">Lunes a viernes</option><option value="weekly">Cada semana</option><option value="monthly">Cada mes</option></select></label>
     <label>Aviso previo<select name="advance"><option value="">Automático</option><option value="30">30 minutos antes</option><option value="1440">Un día antes</option></select></label>
-    <button className="primary" type="submit" disabled={busy}><Plus size={17}/> Añadir</button></div>
-    <p className="form-hint">Proponemos mañana a la hora actual. Puedes cambiar la fecha o la hora.</p></form>
+    <button className="primary" type="submit" disabled={busy}><Plus size={17}/> Crear recordatorio</button></div>
+    <p className="form-hint">Proponemos la próxima hora en punto (hora de Madrid). Revisa la fecha y la hora antes de guardar.</p></form>
 }
 
 function EventForm({save}:{save:(data:object)=>Promise<boolean>}) {
@@ -158,8 +162,9 @@ async function transcribe(audio:Blob, token:string):Promise<string>{
 
 function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>}) {
   const [messages,setMessages]=useState<ChatMessage[]>([]),[draft,setDraft]=useState(''),[busy,setBusy]=useState(false),[chatError,setChatError]=useState('');
-  const end=useRef<HTMLDivElement>(null),recorder=useRef<MediaRecorder|null>(null),[recording,setRecording]=useState(false);
-  useEffect(()=>{end.current?.scrollIntoView({block:'nearest'})},[messages,busy]);
+  const chatLog=useRef<HTMLDivElement>(null),recorder=useRef<MediaRecorder|null>(null),[recording,setRecording]=useState(false);
+  // Desplaza solo el historial: scrollIntoView también arrastraba la página de Inicio.
+  useEffect(()=>{const log=chatLog.current;if(log)log.scrollTop=log.scrollHeight},[messages,busy]);
   // La conversación se guarda en el servidor: al volver al panel sigue donde se dejó.
   useEffect(()=>{api('chat_messages',token).then(setMessages).catch(e=>setChatError(e instanceof Error?e.message:'No se pudo cargar la conversación.'))},[token]);
   // Tras cada respuesta se relee la conversación: un «sí» escrito o un botón también cambian la pregunta que contestan.
@@ -196,11 +201,10 @@ function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>
     catch(e){setChatError(e instanceof Error?e.message:'No se pudo borrar la conversación.')}
   }
   return <Card title="Pregúntale a tu asistente" aside={messages.length?<button className="text-link" onClick={()=>void clear()} disabled={busy}>Nueva conversación</button>:undefined} className="chat-card">
-    <div className="chat-log" aria-live="polite">
+    <div ref={chatLog} className="chat-log" aria-live="polite">
       {!messages.length&&<div className="chat-welcome"><img className="chat-avatar large" src={chatbotLogo} alt=""/><p>Dime, que para eso estoy.</p></div>}
       {messages.map((m,i)=><div key={i} className={`chat-row ${m.role}`}>{m.role==='assistant'&&<img className="chat-avatar" src={chatbotLogo} alt=""/>}<div className={`chat-message ${m.role}`}><p>{linkify(m.text)}</p>{m.buttons&&<div className="chat-buttons">{m.buttons.flat().map(b=><button key={b.callback_data} className="secondary" onClick={()=>void press(b.callback_data)} disabled={busy}>{b.text}</button>)}</div>}</div></div>)}
       {busy&&<div className="chat-row assistant"><img className="chat-avatar" src={chatbotLogo} alt=""/><div className="chat-message assistant typing"><p>Pensando…</p></div></div>}
-      <div ref={end}/>
     </div>
     {chatError&&<p className="error" role="alert">{chatError}</p>}
     <form className="inline-form chat-form" onSubmit={e=>{e.preventDefault();void send(draft)}}><label className="sr-only" htmlFor="chat-input">Mensaje para el asistente</label><input id="chat-input" value={draft} maxLength={1000} placeholder={recording?'Grabando… pulsa ■ para enviar':'Escribe un mensaje…'} disabled={recording} onChange={e=>setDraft(e.target.value)} autoComplete="off"/><button className={`icon-button ${recording?'primary recording':'secondary'}`} type="button" onClick={()=>void toggleRecording()} disabled={busy} aria-label={recording?'Parar y enviar la nota de voz':'Grabar una nota de voz'}>{recording?<Square size={16}/>:<Mic size={18}/>}</button><button className="primary icon-button" type="submit" disabled={busy||recording||!draft.trim()} aria-label="Enviar mensaje"><Send size={18}/></button></form>
@@ -217,13 +221,14 @@ const weekday=(date:string)=>new Intl.DateTimeFormat('es-ES',{weekday:'long',day
 function dayLabel(date:string){const today=todayInMadrid();if(date===today)return 'Hoy';if(date===new Date(Date.parse(`${today}T00:00:00Z`)+DAY_MS).toISOString().slice(0,10))return 'Mañana';const name=weekday(date);return name.charAt(0).toUpperCase()+name.slice(1)}
 const rainText=(day:Row)=>day.rainProbability!=null?` · ${day.rainProbability} % lluvia`:'';
 
-/** En el bloque azul del Inicio: hoy en cada sitio y los avisos de AEMET vigentes. */
-function HeroWeather({forecasts,alerts}:{forecasts?:Row[];alerts?:Row[]}) {
-  if(!forecasts&&!alerts?.length)return null;
-  return <div className="hero-weather">
-    {forecasts?.map(f=>{const today=f.days[0];return <span key={f.place}>{weatherEmoji(today.code)} {f.place} · {Math.round(today.min)}–{Math.round(today.max)} °C{rainText(today)}</span>})}
-    {alerts?.map(a=><span key={a.id} className="hero-alert">{ALERT_LEVEL_EMOJI[a.level]} {a.event} · {a.zone}</span>)}
-  </div>;
+/** Solo el lugar que toca hoy, sin mostrar una previsión de otro día o ubicación. */
+function TodayWeather({forecasts,alerts,goTo}:{forecasts:Row[];alerts:Row[];goTo:(section:Section)=>void}) {
+  const {place,day}=selectHomeWeather(forecasts as {place:string;days:(Row & {date:string})[]}[],todayInMadrid());
+  return <div className="today-weather-wrap"><SectionLink target="weather" goTo={goTo} className="today-weather">
+    <span className="today-weather-icon" aria-hidden="true">{day?weatherEmoji(Number(day.code)):'🌤️'}</span>
+    <span><strong>{place}</strong><small>{day?`${day.description??'Hoy'}${rainText(day)}`:'Previsión de hoy no disponible'}</small></span>
+    {day&&<strong className="today-weather-temperature">{Math.round(Number(day.min))}° / {Math.round(Number(day.max))}°</strong>}<ArrowUpRight size={16} aria-hidden="true"/>
+  </SectionLink>{alerts.length>0&&<SectionLink target="weather" goTo={goTo} className="today-weather-alert"><AlertTriangle size={16} aria-hidden="true"/>{alerts.length===1?'Hay un aviso meteorológico':'Hay avisos meteorológicos'} · Ver detalles</SectionLink>}</div>;
 }
 
 function WeatherSection({forecasts,alerts}:{forecasts?:Row[];alerts?:Row[]}) {
@@ -565,8 +570,7 @@ function AgendaSection({token,reminders,habits,checks,calendar,saveEvent,goToSet
   </>;
 }
 
-// La noticia que acompaña a cada sección, de su tema.
-const SECTION_NEWS_TOPIC:Partial<Record<Section,string>>={overview:'destacadas',finances:'economia',reminders:'espana',shopping_items:'gastronomia',birthdays:'cultura',habits:'salud',weight:'salud',calendar:'madrid',weather:'clima',memory:'ciencia',settings:'tecnologia',markets:'economia'};
+// Formato de la fecha de los titulares.
 function timeAgo(v:string|null):string{
   if(!v)return '';const minutes=Math.max(1,Math.round((Date.now()-Date.parse(v))/60000));
   if(minutes<60)return `hace ${minutes} min`;const hours=Math.round(minutes/60);if(hours<24)return `hace ${hours} h`;
@@ -778,32 +782,56 @@ function AddDialog({type,setType,token,isCalendarConnected,onClose,onSaved,goToS
 }
 
 /** Lo de hoy, primero: recordatorios y eventos del día, hábitos sin contestar y atajos para añadir. */
-function TodaySummary({data,isLoading,onAdd,answerHabit}:{data:Record<string,any>;isLoading:boolean;onAdd:(type:AddType)=>void;answerHabit:(habitId:number,done:boolean)=>void}) {
+function TodaySummary({data,isLoading,onAdd,answerHabit,goTo,token}:{data:Record<string,any>;token:string;isLoading:boolean;onAdd:(type:AddType)=>void;goTo:(section:Section)=>void;answerHabit:(habitId:number,done:boolean)=>void}) {
   const today=todayInMadrid(), list=(key:string):Row[]=>Array.isArray(data[key])?data[key]:[];
   const reminders=list('reminders').filter(r=>madridDateOf(r.remind_at)===today);
   const events:Row[]=data.calendar?.connected?data.calendar.events.filter((e:Row)=>e.date===today||(e.start&&madridDateOf(e.start)===today)):[];
+  const birthdays=list('birthdays').filter(b=>Number(b.month)===Number(today.slice(5,7))&&Number(b.day)===Number(today.slice(8,10)));
   const answered=new Set(list('habit_checks').filter(c=>c.date===today).map(c=>c.habit_id));
   const habits=list('habits').filter(h=>(h.scheduled_days??[1,2,3,4,5,6,7]).includes(isoWeekday(today))&&!answered.has(h.id));
   const hasData='reminders' in data;
+  const hasItems=reminders.length+events.length+habits.length+birthdays.length>0;
   return <section className="card today-card" aria-labelledby="today-title">
-    <div className="card-heading"><h2 id="today-title">Hoy</h2></div>
-    {!hasData&&isLoading?<Empty>Cargando lo de hoy…</Empty>:<div className="today-grid">
-      <div><h3><Bell size={15}/> Recordatorios</h3>{reminders.length?reminders.map(r=><p key={r.id} className="today-item"><strong>{dateTime(r.remind_at).split(', ').at(-1)}</strong> {r.text}</p>):<p className="today-empty">Nada para hoy.</p>}</div>
-      <div><h3><CalendarDays size={15}/> Calendario</h3>{!data.calendar?.connected?<p className="today-empty">Conecta Google en Ajustes para ver tus eventos.</p>:events.length?events.map((e,i)=><p key={i} className="today-item"><strong>{e.start?dateTime(e.start).split(', ').at(-1):'Todo el día'}</strong> {e.title}</p>):<p className="today-empty">Sin eventos hoy.</p>}</div>
-      <div><h3><Flame size={15}/> Hábitos pendientes</h3>{habits.length?habits.map(h=><div key={h.id} className="today-habit"><span>{h.name}</span><button className="habit-answer done" onClick={()=>answerHabit(h.id,true)} aria-label={`Hecho: ${h.name}`}>Hecho</button><button className="habit-answer" onClick={()=>answerHabit(h.id,false)} aria-label={`Hoy no: ${h.name}`}>Hoy no</button></div>):<p className="today-empty">{list('habits').length?'Todo contestado por hoy.':'Aún no sigues ningún hábito.'}</p>}</div>
+    <div className="card-heading"><h2 id="today-title">Tu día de hoy</h2><button className="text-link" onClick={()=>onAdd('reminder')}>Añadir…</button></div>
+    <TodayWeather forecasts={Array.isArray(data.weather)?data.weather:[]} alerts={Array.isArray(data.weather_alerts)?data.weather_alerts:[]} goTo={goTo}/>
+    {!hasData&&isLoading?<Empty>Cargando lo de hoy…</Empty>:hasItems&&<div className="today-grid">
+      {reminders.length>0&&<div><h3><SectionLink target="reminders" goTo={goTo}><Bell size={15} aria-hidden="true"/> Recordatorios <ArrowUpRight size={14} aria-hidden="true"/></SectionLink></h3>{reminders.slice(0,3).map(r=><p key={r.id} className="today-item"><strong>{dateTime(r.remind_at).split(', ').at(-1)}</strong> {r.text}</p>)}</div>}
+      {events.length>0&&<div><h3><SectionLink target="calendar" goTo={goTo}><CalendarDays size={15} aria-hidden="true"/> Calendario <ArrowUpRight size={14} aria-hidden="true"/></SectionLink></h3>{events.slice(0,3).map((e,i)=><p key={i} className="today-item"><strong>{e.start?dateTime(e.start).split(', ').at(-1):'Todo el día'}</strong> {e.title}</p>)}</div>}
+      {habits.length>0&&<div><h3><SectionLink target="habits" goTo={goTo}><Flame size={15} aria-hidden="true"/> Hábitos pendientes <ArrowUpRight size={14} aria-hidden="true"/></SectionLink></h3>{habits.slice(0,3).map(h=><div key={h.id} className="today-habit"><span>{h.name}</span><button className="habit-answer done" onClick={()=>answerHabit(h.id,true)} aria-label={`Hecho: ${h.name}`}>Hecho</button><button className="habit-answer" onClick={()=>answerHabit(h.id,false)} aria-label={`Hoy no: ${h.name}`}>Hoy no</button></div>)}</div>}
+      {birthdays.length>0&&<div><h3><SectionLink target="birthdays" goTo={goTo}><Cake size={15} aria-hidden="true"/> Cumpleaños <ArrowUpRight size={14} aria-hidden="true"/></SectionLink></h3>{birthdays.map(b=><p className="today-item" key={b.id}>{b.name}</p>)}</div>}
     </div>}
-    <div className="quick-add" role="group" aria-label="Añadir rápido">{ADD_TYPES.map(t=><button key={t.id} className="secondary" onClick={()=>onAdd(t.id)}><Plus size={14}/> {t.label}</button>)}</div>
+    <div className="today-editorial"><SectionNews token={token} topic="destacadas" onMore={()=>goTo('news')}/><CuriosityCard token={token}/></div>
   </section>;
 }
 
 export function App(){
   const [token,setToken]=useState(''),[authReady,setAuthReady]=useState(false);
-  const [section,setSection]=useState<Section>('overview'),[mobileOpen,setMobileOpen]=useState(false);
+  const [section,updateSection]=useState<Section>(()=>initialSection(window.location.search,readLastSection())),[mobileOpen,setMobileOpen]=useState(false);
+  const contentRef=useRef<HTMLElement>(null),sidebarNavRef=useRef<HTMLElement>(null);
+  const setSection=useCallback((target:Section)=>{
+    if(sectionFromSearch(window.location.search)!==target){
+      window.history.pushState(null,'',`${window.location.pathname}${sectionSearch(window.location.search,target)}`);
+    }
+    updateSection(target);setMobileOpen(false);setNotice('');
+    window.scrollTo({top:0,left:0,behavior:'instant'});
+  },[]);
+  useEffect(()=>{const restore=()=>{updateSection(sectionFromSearch(window.location.search));setMobileOpen(false);setNotice('');window.scrollTo({top:0})};window.addEventListener('popstate',restore);return ()=>window.removeEventListener('popstate',restore)},[]);
+  useEffect(()=>{if(token){document.title=`${navigation.find(n=>n.id===section)!.label} · Mi asistente`;contentRef.current?.focus({preventScroll:true})}},[section,token]);
   const [data,setData]=useState<Record<string,any>>({}),[loading,setLoading]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
   const [period,setPeriod]=useState(30),[funnyLine,setFunnyLine]=useState('');
   const [addType,setAddType]=useState<AddType|null>(null),[retry,setRetry]=useState<(()=>void)|null>(null),[isSearching,setIsSearching]=useState(false);
-  // «/» abre la búsqueda, salvo si se está escribiendo en un campo.
-  useEffect(()=>{const open=(e:KeyboardEvent)=>{const target=e.target as HTMLElement;if(e.key==='/'&&!target.closest('input,textarea,select,[contenteditable]')){e.preventDefault();setIsSearching(true)}};window.addEventListener('keydown',open);return ()=>window.removeEventListener('keydown',open)},[]);
+  // La PWA abre /: recupera la sección y deja una URL que también pueda compartirse.
+  useEffect(()=>{
+    rememberSection(section);
+    if(!new URLSearchParams(window.location.search).has('section')){
+      window.history.replaceState(null,'',`${window.location.pathname}${sectionSearch(window.location.search,section)}`);
+    }
+  },[section]);
+  useEffect(()=>{const previous=window.history.scrollRestoration;window.history.scrollRestoration='manual';return ()=>{window.history.scrollRestoration=previous}},[]);
+  useLayoutEffect(()=>{if(authReady&&token)window.scrollTo({top:0,left:0,behavior:'instant'})},[section,authReady,Boolean(token)]);
+  useEffect(()=>{if(mobileOpen&&sidebarNavRef.current)sidebarNavRef.current.scrollTop=0},[mobileOpen]);
+  // «/» y Ctrl/Cmd+K abren la búsqueda. No interrumpen formularios ni otros diálogos.
+  useEffect(()=>{const open=(e:KeyboardEvent)=>{const target=e.target as HTMLElement;const shortcut=(e.key==='k'&&(e.ctrlKey||e.metaKey))||e.key==='/';if(!shortcut||target.closest('input,textarea,select,[contenteditable]')||document.querySelector('dialog[open]'))return;e.preventDefault();setIsSearching(true)};window.addEventListener('keydown',open);return ()=>window.removeEventListener('keydown',open)},[]);
   useEffect(()=>{if(!mobileOpen)return;const close=(e:KeyboardEvent)=>{if(e.key==='Escape')setMobileOpen(false)};window.addEventListener('keydown',close);return ()=>window.removeEventListener('keydown',close)},[mobileOpen]);
   // La confirmación se va sola; los errores se quedan hasta cerrarlos o reintentar.
   useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(''),5000);return ()=>clearTimeout(timer)},[notice]);
@@ -849,15 +877,20 @@ export function App(){
   const current=navigation.find(n=>n.id===section)!;
   if(!authReady)return <div className="login-screen"><div className="login-card">Cargando acceso…</div></div>;
   if(!token)return <LoginScreen error={error} setError={setError}/>;
-  return <div className="shell"><aside className={`sidebar ${mobileOpen?'open':''}`}><div className="sidebar-top"><div className="identity"><img src={chatbotLogo} alt="Mi asistente"/><small>PANEL PERSONAL</small></div><button className="mobile-close icon-button" aria-label="Cerrar menú" onClick={()=>setMobileOpen(false)}><X/></button></div><nav aria-label="Navegación principal">{navigation.map(({id,label,icon:Icon})=><button key={id} className={section===id?'nav-item active':'nav-item'} aria-current={section===id?'page':undefined} onClick={()=>{setSection(id);setMobileOpen(false);setNotice('')}}><Icon size={19} strokeWidth={1.8}/>{label}</button>)}</nav><div className="sidebar-bottom"><div className="sidebar-note"><span className="status-dot"/>Conectado a tu asistente</div><button className="nav-item logout" onClick={logout}><LogOut size={18}/> Cerrar sesión</button></div></aside>{mobileOpen&&<div className="backdrop" onClick={()=>setMobileOpen(false)}/>}
-  <div className="workspace"><header className="topbar">{/* En el móvil, dentro de una sección, la vuelta al inicio ocupa el sitio del menú (que ya está en «Más»). */}{section==='overview'?<button className="mobile-menu icon-button" aria-label="Abrir menú" onClick={()=>setMobileOpen(true)}><Menu/></button>:<button className="mobile-menu icon-button back-home" onClick={()=>{setSection('overview');setNotice('');window.scrollTo({top:0})}}><ChevronLeft size={20} aria-hidden="true"/> Inicio</button>}<div className="breadcrumbs"><span className="crumb-root">Mi espacio <span>/</span> </span><strong>{current.label}</strong></div><button className="icon-button search-button" onClick={()=>setIsSearching(true)} aria-label="Buscar (atajo: /)"><Search size={19}/></button><button className="primary add-button" onClick={()=>setAddType('reminder')}><Plus size={17}/> Añadir</button><button className="refresh icon-button" onClick={()=>void refresh()} disabled={loading} aria-label="Actualizar datos"><RefreshCw size={18} className={loading?'spin':''}/></button></header>
-  <main className="content"><div className="page-heading"><div><div className="eyebrow">PANEL PERSONAL</div><h1>{section==='overview'?dailyGreeting():current.label}</h1><p>{section==='overview'?funnyLine||'Aquí tienes lo importante de un vistazo.':section==='memory'?'Lo que tu asistente sabe de ti. Lo usa para hablarte con gracia.':section==='finances'?'Tus ingresos, gastos y límites en un mismo lugar.':section==='weather'?'Previsión de los próximos 7 días y avisos de AEMET.':section==='settings'?'Cuentas conectadas, permisos y tus datos.':section==='news'?'Titulares de España y del mundo, por temas.':section==='markets'?'Nasdaq, criptomonedas y divisas. Tú eliges qué seguir.':section==='prices'?'Compara precios en tiendas españolas y vigila los que quieras.':'Organiza y consulta tus cosas sin salir del panel.'}</p></div><span className="today">{new Intl.DateTimeFormat('es-ES',{dateStyle:'full',timeZone:'Europe/Madrid'}).format(new Date())}</span></div>
-  {SECTION_NEWS_TOPIC[section]&&<SectionNews token={token} topic={SECTION_NEWS_TOPIC[section]!} onMore={()=>setSection('news')}/>}
+  return <div className="shell"><a className="skip-link" href="#main-content" onClick={e=>{e.preventDefault();contentRef.current?.focus();contentRef.current?.scrollIntoView()}}>Saltar al contenido</a><aside className={`sidebar ${mobileOpen?'open':''}`}><div className="sidebar-top"><div className="identity"><img src={chatbotLogo} alt="Mi asistente"/><small>PANEL PERSONAL</small></div><button className="mobile-close icon-button" aria-label="Cerrar menú" onClick={()=>setMobileOpen(false)}><X/></button></div><nav ref={sidebarNavRef} aria-label="Navegación principal">{NAV_GROUPS.map(group=><div className="nav-group" key={group.label}><p className="nav-group-label">{group.label}</p>{group.sections.map(id=>{const {label,icon:Icon}=navigation.find(n=>n.id===id)!;return <a key={id} href={sectionSearch(window.location.search,id)} className={section===id?'nav-item active':'nav-item'} aria-current={section===id?'page':undefined} onClick={e=>{if(e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();setSection(id)}}><Icon size={19} strokeWidth={1.8} aria-hidden="true"/>{label}</a>})}</div>)}</nav><div className="sidebar-bottom"><div className="sidebar-note"><span className="status-dot"/>Conectado a tu asistente</div><button className="nav-item logout" onClick={logout}><LogOut size={18}/> Cerrar sesión</button></div></aside>{mobileOpen&&<div className="backdrop" onClick={()=>setMobileOpen(false)}/>}
+  <div className="workspace"><header className="topbar">{/* En el móvil, dentro de una sección, la vuelta al inicio ocupa el sitio del menú (que ya está en «Más»). */}{section==='overview'?<button className="mobile-menu icon-button" aria-label="Abrir menú" onClick={()=>setMobileOpen(true)}><Menu/></button>:<button className="mobile-menu icon-button back-home" onClick={()=>setSection('overview')}><ChevronLeft size={20} aria-hidden="true"/> Inicio</button>}<div className="breadcrumbs"><span className="crumb-root">Mi espacio <span>/</span> </span><strong>{current.label}</strong></div><button className="icon-button search-button" onClick={()=>setIsSearching(true)} aria-label="Buscar (atajos: / o Ctrl+K)" title="Buscar · / o Ctrl+K"><Search size={19}/></button><button className="primary add-button" onClick={()=>setAddType('reminder')}><Plus size={17}/> Añadir…</button><button className="refresh icon-button" onClick={()=>void refresh()} disabled={loading} aria-label="Actualizar datos"><RefreshCw size={18} className={loading?'spin':''}/></button></header>
+  <main id="main-content" ref={contentRef} tabIndex={-1} className={`content ${section==='overview'?'overview-content':''}`}><div className="page-heading"><div><div className="eyebrow">PANEL PERSONAL</div><h1>{section==='overview'?dailyGreeting():current.label}</h1><p className={section==='overview'?'overview-subtitle':undefined}>{section==='overview'?funnyLine||'Aquí tienes lo importante de un vistazo.':section==='memory'?'Lo que tu asistente sabe de ti. Lo usa para hablarte con gracia.':section==='finances'?'Tus ingresos, gastos y límites en un mismo lugar.':section==='weather'?'Previsión de los próximos 7 días y avisos de AEMET.':section==='settings'?'Cuentas conectadas, permisos y tus datos.':section==='news'?'Titulares de España y del mundo, por temas.':section==='markets'?'Nasdaq, criptomonedas y divisas. Tú eliges qué seguir.':section==='prices'?'Compara precios en tiendas españolas y vigila los que quieras.':'Organiza y consulta tus cosas sin salir del panel.'}</p></div><span className="today">{new Intl.DateTimeFormat('es-ES',{dateStyle:'full',timeZone:'Europe/Madrid'}).format(new Date())}</span></div>
   {error&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{error}</span>{retry&&<button className="retry" onClick={retry}>Reintentar</button>}<button onClick={()=>{setError('');setRetry(null)}} aria-label="Cerrar error"><X size={16}/></button></div>}{notice&&<div className="notice" role="status"><Check size={17}/>{notice}</div>}
-  {section==='overview'&&<><TodaySummary data={data} isLoading={loading} onAdd={setAddType} answerHabit={(habitId,done)=>void action('habit_checks','POST',{habit_id:habitId,done},undefined,done?'Hábito apuntado. ¡Bien!':'Apuntado como no hecho hoy.')}/><CuriosityCard token={token}/><AssistantChat token={token} onChange={()=>refresh()}/>
-    <section className="dashboard-hero"><div><span className="hero-kicker">TU DÍA EN ORDEN</span><h2>Tu asistente, de un vistazo.</h2><p>Los números, recordatorios y próximos planes reunidos aquí.</p><HeroWeather forecasts={Array.isArray(data.weather)?data.weather:undefined} alerts={Array.isArray(data.weather_alerts)?data.weather_alerts:undefined}/><div className="hero-actions"><button onClick={()=>setSection('finances')}>Ver finanzas <ArrowUpRight size={16}/></button><button onClick={()=>setSection('reminders')}>Mis recordatorios <Bell size={16}/></button></div></div><div className="hero-balance"><small>Balance · últimos {period} días</small><strong>{euro(totals.earned-totals.spent)}</strong><span>{expenses.length} movimientos · {rows('reminders').length} recordatorios</span></div></section>
-    <div className="summary-grid overview-metrics"><div className="metric"><div className="metric-icon warm"><Wallet size={21}/></div><span>Balance del periodo</span><strong className={totals.earned-totals.spent>=0?'positive':'negative'}>{euro(totals.earned-totals.spent)}</strong><small>Ingresos menos gastos</small></div><div className="metric"><div className="metric-icon lilac"><Bell size={21}/></div><span>Recordatorios</span><strong>{rows('reminders').length}</strong><small>Pendientes</small></div><div className="metric"><div className="metric-icon peach"><ShoppingBasket size={21}/></div><span>Lista de la compra</span><strong>{rows('shopping_items').length}</strong><small>Productos por comprar</small></div><div className="metric"><div className="metric-icon mint"><Flame size={21}/></div><span>Hábitos</span><strong>{rows('habits').length}</strong><small>{rows('habit_checks').filter(r=>r.date===todayInMadrid()&&r.done).length} completados hoy</small></div><div className="metric"><div className="metric-icon peach"><Cigarette size={21}/></div><span>Tabaco</span><strong>{euro(tobaccoTotal(expenses))}</strong><small>Últimos {period} días</small></div><div className="metric"><div className="metric-icon mint"><CupSoda size={21}/></div><span>Energéticas</span><strong>{expenses.reduce((n,r)=>n+energyDrinkCans(r),0)}</strong><small>Latas · últimos {period} días</small></div></div>
-    <div className="two-cols"><Card title="Próximos recordatorios" aside={<button className="text-link" onClick={()=>setSection('reminders')}>Ver todos →</button>}>{rows('reminders').length?rows('reminders').slice(0,4).map(r=><div className="list-row" key={r.id}><span className="row-symbol lilac"><Bell size={17}/></span><span className="row-main"><strong>{r.text}</strong><small>{dateTime(r.remind_at)}</small></span></div>):<Empty>No tienes recordatorios pendientes.</Empty>}</Card><Card title="En tu calendario" aside={<button className="text-link" onClick={()=>setSection('calendar')}>Ver agenda →</button>}>{data.calendar?.connected?data.calendar.events.length?data.calendar.events.slice(0,4).map((e:Row,i:number)=><div className="list-row" key={i}><span className="row-symbol mint"><CalendarDays size={17}/></span><span className="row-main"><strong>{e.title}</strong><small>{e.start?dateTime(e.start):e.date}</small></span></div>):<Empty>No hay eventos en los próximos días.</Empty>:<Empty>Conecta Google Calendar para ver tus eventos.</Empty>}</Card></div></>}
+  {section==='overview'&&<div className="overview-layout"><AssistantChat token={token} onChange={()=>refresh()}/>
+    <TodaySummary token={token} data={data} goTo={setSection} isLoading={loading} onAdd={setAddType} answerHabit={(habitId,done)=>void action('habit_checks','POST',{habit_id:habitId,done},undefined,done?'Hábito apuntado. ¡Bien!':'Apuntado como no hecho hoy.')}/>
+    <div className="summary-grid overview-metrics" aria-label="Tus secciones">
+      <SectionLink target="finances" goTo={setSection} className="metric metric-link"><div className="metric-icon warm"><Wallet size={21}/></div><span>Finanzas</span><strong className={totals.earned-totals.spent>=0?'positive':'negative'}>{euro(totals.earned-totals.spent)}</strong><small>Balance · últimos {period} días</small></SectionLink>
+      <SectionLink target="habits" goTo={setSection} className="metric metric-link"><div className="metric-icon mint"><Flame size={21}/></div><span>Hábitos</span><strong>{rows('habit_checks').filter(r=>r.date===todayInMadrid()&&r.done).length} completados</strong><small>Tu progreso de hoy</small></SectionLink>
+      <SectionLink target="markets" goTo={setSection} className="metric metric-link"><div className="metric-icon lilac"><TrendingUp size={21}/></div><span>Mercados</span><strong>Tu seguimiento</strong><small>Empresas, cripto y divisas</small></SectionLink>
+      <SectionLink target="prices" goTo={setSection} className="metric metric-link"><div className="metric-icon peach"><Tag size={21}/></div><span>Precios</span><strong>Comparar y vigilar</strong><small>Productos y ofertas</small></SectionLink>
+    </div>
+    <details className="home-more"><summary>Próximos planes</summary><div className="home-more-content"><div className="two-cols overview-upcoming"><Card className="section-card" title={<SectionLink target="reminders" goTo={setSection} className="card-section-link">Próximos recordatorios <ArrowUpRight size={16} aria-hidden="true"/></SectionLink>}>{rows('reminders').length?rows('reminders').slice(0,4).map(r=><div className="list-row" key={r.id}><span className="row-symbol lilac"><Bell size={17}/></span><span className="row-main"><strong>{r.text}</strong><small>{dateTime(r.remind_at)}</small></span></div>):<Empty>No tienes recordatorios pendientes.</Empty>}</Card><Card className="section-card" title={<SectionLink target="calendar" goTo={setSection} className="card-section-link">En tu calendario <ArrowUpRight size={16} aria-hidden="true"/></SectionLink>}>{data.calendar?.connected?data.calendar.events.length?data.calendar.events.slice(0,4).map((e:Row,i:number)=><div className="list-row" key={i}><span className="row-symbol mint"><CalendarDays size={17}/></span><span className="row-main"><strong>{e.title}</strong><small>{e.start?dateTime(e.start):e.date}</small></span></div>):<Empty>No hay eventos en los próximos días.</Empty>:<Empty>Conecta Google Calendar para ver tus eventos.</Empty>}</Card></div></div></details>
+  </div>}
   {section==='finances'&&<>{budgets.filter((r:Row)=>budgetState(r.spent,Number(r.budget.monthly_limit)).level!=='ok').map((r:Row)=><div key={r.budget.id} className={`budget-warning ${budgetState(r.spent,Number(r.budget.monthly_limit)).level}`} role="status"><AlertTriangle size={17} aria-hidden="true"/><span><strong>{r.budget.category}:</strong> {budgetState(r.spent,Number(r.budget.monthly_limit)).text}</span></div>)}<MarketsStrip token={token} onMore={()=>setSection('markets')}/><div className="section-toolbar"><div className="segmented" role="group" aria-label="Periodo de finanzas">{[7,30,90].map(p=><button key={p} className={period===p?'selected':''} aria-pressed={period===p} onClick={()=>setPeriod(p)}>{p} días</button>)}</div></div><div className="summary-grid finance-metrics"><div className="metric income-tile"><span>Ingresos</span><strong className="positive">{euro(totals.earned)}</strong><small><ArrowUpRight size={14}/> En el periodo</small></div><div className="metric expense-tile"><span>Gastos</span><strong>{euro(totals.spent)}</strong><small><ArrowDownRight size={14}/> En el periodo</small></div><div className="metric balance-tile"><span>Balance</span><strong className={totals.earned-totals.spent>=0?'positive':'negative'}>{euro(totals.earned-totals.spent)}</strong><small>Ingresos − gastos</small></div></div><div className="bank-strip"><div><strong>{data.bank_connection?.connected?'Banco conectado':'Conecta tu banco'}</strong><p>{data.bank_connection?.connected?'Los movimientos se importan automáticamente cada día.':'Conecta tu cuenta para ver tus gastos e ingresos aquí.'}</p></div>{data.bank_connection?.connected?<button className="secondary" onClick={()=>{if(window.confirm('¿Desconectar el banco? Los movimientos importados se conservarán.'))void action('bank_connection','DELETE')}}>Desconectar</button>:<button className="primary" onClick={async()=>{try{const result=await api('bank_link',token,'POST',{});window.location.assign(result.url)}catch(e){setError(e instanceof Error?e.message:'No se pudo conectar')}}}>Conectar banco <ArrowUpRight size={17}/></button>}</div><div className="two-cols"><Card title="Análisis de gastos"><SpendingChart expenses={expenses} period={period}/></Card><TobaccoCard expenses={expenses} period={period}/></div><div className="two-cols"><EnergyDrinkCard expenses={expenses} period={period}/><BizumCard expenses={expenses} incomes={incomes} period={period}/></div><Card title="Presupuestos mensuales"><form className="budget-form" onSubmit={e=>{e.preventDefault();const form=new FormData(e.currentTarget);void action('budgets','POST',{category:form.get('category'),monthly_limit:Number(form.get('limit'))});e.currentTarget.reset()}}><label>Categoría<select name="category" required>{['Total','Supermercado','Restaurantes','Transporte','Hogar','Suscripciones','Ocio','Salud','Compras','Otros'].map(c=><option key={c}>{c}</option>)}</select></label><label>Límite mensual (€)<input name="limit" type="number" min="0.01" step="0.01" required placeholder="200"/></label><button className="primary" type="submit">Guardar</button></form>{budgets.length?budgets.map((r:Row)=><div className="budget-item" key={r.budget.id}><div className="between"><strong>{r.budget.category}</strong><button className="delete icon-button" aria-label={`Quitar presupuesto de ${r.budget.category}`} onClick={()=>void action('budgets','DELETE',undefined,{category:r.budget.category})}><Trash2 size={16}/></button></div><p>{euro(r.spent)} de {euro(Number(r.budget.monthly_limit))}</p><div className="track"><span className={budgetState(r.spent,Number(r.budget.monthly_limit)).level} style={{width:`${Math.min(100,r.spent/Number(r.budget.monthly_limit)*100)}%`}}/></div><p className={`budget-state ${budgetState(r.spent,Number(r.budget.monthly_limit)).level}`}>{budgetState(r.spent,Number(r.budget.monthly_limit)).text}</p></div>):<Empty>Aún no has creado presupuestos.</Empty>}</Card><MovementSearch token={token}/><Card title="Movimientos recientes"><div className="table-wrap" tabIndex={0} role="region" aria-label="Movimientos (desliza para ver todas las columnas)"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th>Importe</th></tr></thead><tbody>{([...(expenses.map(r=>({...r,kind:'expense'}))),...(incomes.map(r=>({...r,kind:'income'})))] as Row[]).sort((a,b)=>b.booking_date.localeCompare(a.booking_date)).slice(0,25).map((r,i)=><tr key={`${r.kind}-${r.id}-${i}`}><td>{r.booking_date}</td><td>{r.description}</td><td>{r.kind==='income'?'Ingreso':r.category}</td><td className={r.kind==='income'?'positive':''}>{r.kind==='income'?'+':'−'}{euro(Number(r.amount))}</td></tr>)}</tbody></table>{!expenses.length&&!incomes.length&&<Empty>No hay movimientos en este periodo.</Empty>}</div></Card></>}
   {section==='reminders'&&<Card title="Tus recordatorios" aside={<span className="count">{rows('reminders').length} pendientes</span>}><ReminderForm save={payload=>action('reminders','POST',payload)}/>{rows('reminders').map(r=><div className="list-row" key={r.id}><span className="row-symbol lilac"><Bell size={17}/></span><span className="row-main"><strong>{r.text}</strong><small>{dateTime(r.remind_at)} {r.repeat?`· ${r.repeat}`:''} · Aviso {r.advance_minutes===1440?'un día':'30 min'} antes</small></span><button className="delete icon-button" aria-label={`Eliminar ${r.text}`} onClick={()=>void action('reminders','DELETE',undefined,{id:String(r.id)})}><Trash2 size={17}/></button></div>)}{!rows('reminders').length&&<Empty>Añade tu primer recordatorio arriba.</Empty>}</Card>}
   {section==='shopping_items'&&<Card title="Por comprar" aside={<span className="count">{rows('shopping_items').length} productos</span>}><InlineForm label="Añadir producto" placeholder="Añadir a la lista…" onSubmit={text=>action('shopping_items','POST',{text})}/>{rows('shopping_items').map(r=><div className="list-row" key={r.id}><button className="check-button" aria-label={`Marcar ${r.text} como comprado`} onClick={()=>void action('shopping_items','DELETE',undefined,{id:String(r.id)},'Tachado de la lista.')}><Check size={16}/></button><span className="row-main"><strong>{r.text}</strong></span><button className="delete icon-button" aria-label={`Eliminar ${r.text}`} onClick={()=>void action('shopping_items','DELETE',undefined,{id:String(r.id)})}><Trash2 size={17}/></button></div>)}{!rows('shopping_items').length&&<Empty>Tu lista está vacía. Añade algo que necesites.</Empty>}</Card>}
@@ -872,7 +905,7 @@ export function App(){
   {section==='settings'&&<SettingsSection token={token} onChange={()=>refresh()}/>}
   {section==='memory'&&<MemorySection content={String(data.memory?.content??'')} save={content=>action('memory','POST',{content},undefined,'Memoria guardada.')}/>}
   <footer>Tu asistente personal · Datos actualizados desde Supabase</footer></main></div>
-  <nav className="bottom-nav" aria-label="Accesos rápidos">{BOTTOM_NAV.map(id=>{const item=navigation.find(n=>n.id===id)!,Icon=item.icon;return <button key={id} className={section===id?'active':''} aria-current={section===id?'page':undefined} onClick={()=>{setSection(id);setNotice('');window.scrollTo({top:0})}}><Icon size={20} aria-hidden="true"/><span>{item.label}</span></button>})}<button className={mobileOpen?'active':''} aria-label="Más secciones" aria-expanded={mobileOpen} onClick={()=>setMobileOpen(true)}><Menu size={20} aria-hidden="true"/><span>Más</span></button></nav>
+  <nav className="bottom-nav" aria-label="Accesos rápidos">{BOTTOM_NAV.map(id=>{const item=navigation.find(n=>n.id===id)!,Icon=item.icon;return <a href={sectionSearch(window.location.search,id)} key={id} className={section===id?'active':''} aria-current={section===id?'page':undefined} onClick={e=>{if(e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();setSection(id)}}><Icon size={20} aria-hidden="true"/><span>{item.label}</span></a>})}<button className={mobileOpen?'active':''} aria-label="Más secciones" aria-expanded={mobileOpen} onClick={()=>setMobileOpen(true)}><Menu size={20} aria-hidden="true"/><span>Más</span></button></nav>
   {isSearching&&<SearchDialog token={token} onClose={()=>setIsSearching(false)} goTo={target=>{setIsSearching(false);setSection(target);window.scrollTo({top:0})}}/>}
   {addType&&<AddDialog type={addType} setType={setAddType} token={token} isCalendarConnected={!!data.calendar?.connected} onClose={()=>setAddType(null)} onSaved={async message=>{setAddType(null);setError('');setRetry(null);setNotice(message);await refresh()}} goToSettings={()=>{setAddType(null);setSection('settings')}}/>}</div>
 }
