@@ -14,7 +14,8 @@ Bot personal de Telegram que:
 - Lleva la lista de la compra ("añade leche y pan"), con un botón por cosa para tacharla.
 - Guarda notas sueltas ("apunta que la talla de Marta es la 38") y responde preguntas sobre ellas.
 - Recuerda cumpleaños y avisa el día antes y el mismo día.
-- Sigue hábitos diarios: cada noche a las 21:00 pregunta si los has hecho, con botones Sí/No, y lleva la racha.
+- Sigue hábitos diarios: cada noche a las 21:00 pregunta si los has hecho, con botones Sí/No, y lleva la racha. La
+  pregunta llega a Telegram y al chat del panel; contestar en uno actualiza el otro, y vale con escribir «sí» o «no».
 - Consulta y crea eventos en Google Calendar ("¿qué tengo mañana?").
 - Busca en Gmail ("¿tengo algo de Hacienda?") y enseña remitente, asunto y fecha. Solo lee: no envía ni borra.
   No enseña Promociones (salvo las que Gmail marca como importantes), Social ni Foros, ni los remitentes de la
@@ -178,7 +179,12 @@ Seguridad del panel:
 En el Inicio hay un chat con el asistente: entiende lo mismo que el bot de Telegram (gastos, compra, recordatorios…)
 y contesta preguntas generales con el mismo modelo de Groq, teniendo en cuenta los últimos 10 mensajes de la
 conversación. La conversación se guarda en la tabla `chat_messages`: al abrir el panel se ven los últimos 50 mensajes,
-sin los botones, y «Nueva conversación» la borra entera. La de Telegram no se guarda.
+con sus botones, y «Nueva conversación» la borra entera. La de Telegram no se guarda.
+
+Un «sí» o un «no» sueltos («ya», «hecho», «todavía no»…) contestan la pregunta de sí o no pendiente más reciente de
+las últimas 24 horas, como si se pulsara su botón, sin llamar a Groq. En el panel valen los hábitos, las propuestas
+para la memoria y la confirmación de desconectar; en Telegram, solo los hábitos, porque las demás preguntas guardadas
+se hicieron en el panel.
 
 La conexión con Google Calendar utiliza el mismo flujo OAuth del bot. El panel muestra los eventos del mes en curso.
 El periodo de finanzas se elige entre 7, 30 y 90 días; los presupuestos siempre corresponden al mes actual.

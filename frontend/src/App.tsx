@@ -154,16 +154,17 @@ function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>
   useEffect(()=>{end.current?.scrollIntoView({block:'nearest'})},[messages,busy]);
   // La conversación se guarda en el servidor: al volver al panel sigue donde se dejó.
   useEffect(()=>{api('chat_messages',token).then(setMessages).catch(e=>setChatError(e instanceof Error?e.message:'No se pudo cargar la conversación.'))},[token]);
-  async function ask(payload:object, apply:(reply:ChatMessage)=>void){
+  // Tras cada respuesta se relee la conversación: un «sí» escrito o un botón también cambian la pregunta que contestan.
+  async function ask(payload:object){
     setBusy(true);setChatError('');
-    try{const reply=await api('chat',token,'POST',payload);apply({role:'assistant',text:reply.text,buttons:reply.buttons});await onChange()}
+    try{await api('chat',token,'POST',payload);setMessages(await api('chat_messages',token));await onChange()}
     catch(e){setChatError(e instanceof Error?e.message:'No se pudo hablar con el asistente.')}
     finally{setBusy(false)}
   }
   async function send(text:string){
     const message=text.trim();if(!message||busy)return;
     setDraft('');setMessages(m=>[...m,{role:'user',text:message}]);
-    await ask({message},reply=>setMessages(m=>[...m,reply]));
+    await ask({message});
   }
   // Lo dicho se manda como si se hubiera escrito, así se ve lo que ha entendido.
   async function sendAudio(audio:Blob){
@@ -180,7 +181,7 @@ function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>
     catch{setChatError('No puedo usar el micrófono. Revisa el permiso del navegador.')}
   }
   // Como en Telegram, pulsar un botón actualiza el mensaje que lo contenía (por ejemplo, tachar de la compra).
-  async function press(index:number,data:string){await ask({button:data,original:messages[index].text},reply=>setMessages(m=>m.map((msg,i)=>i===index?reply:msg)))}
+  async function press(data:string){await ask({button:data})}
   async function clear(){
     setChatError('');
     try{await api('chat_messages',token,'DELETE');setMessages([])}
@@ -189,7 +190,7 @@ function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>
   return <Card title="Pregúntale a tu asistente" aside={messages.length?<button className="text-link" onClick={()=>void clear()} disabled={busy}>Nueva conversación</button>:undefined} className="chat-card">
     <div className="chat-log" aria-live="polite">
       {!messages.length&&<div className="chat-welcome"><img className="chat-avatar large" src={chatbotLogo} alt=""/><p>Dime, que para eso estoy.</p></div>}
-      {messages.map((m,i)=><div key={i} className={`chat-row ${m.role}`}>{m.role==='assistant'&&<img className="chat-avatar" src={chatbotLogo} alt=""/>}<div className={`chat-message ${m.role}`}><p>{linkify(m.text)}</p>{m.buttons&&<div className="chat-buttons">{m.buttons.flat().map(b=><button key={b.callback_data} className="secondary" onClick={()=>void press(i,b.callback_data)} disabled={busy}>{b.text}</button>)}</div>}</div></div>)}
+      {messages.map((m,i)=><div key={i} className={`chat-row ${m.role}`}>{m.role==='assistant'&&<img className="chat-avatar" src={chatbotLogo} alt=""/>}<div className={`chat-message ${m.role}`}><p>{linkify(m.text)}</p>{m.buttons&&<div className="chat-buttons">{m.buttons.flat().map(b=><button key={b.callback_data} className="secondary" onClick={()=>void press(b.callback_data)} disabled={busy}>{b.text}</button>)}</div>}</div></div>)}
       {busy&&<div className="chat-row assistant"><img className="chat-avatar" src={chatbotLogo} alt=""/><div className="chat-message assistant typing"><p>Pensando…</p></div></div>}
       <div ref={end}/>
     </div>

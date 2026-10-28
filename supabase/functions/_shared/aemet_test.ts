@@ -173,7 +173,7 @@ Deno.test("un aviso nuevo se manda por Telegram y se apunta", async () => {
   const { db, queries } = fakeDb((query) => query[1].startsWith("select(") ? { data: [] } : {});
   const respond = (request: Request) =>
     request.url.includes("api.telegram.org")
-      ? Response.json({ ok: true })
+      ? Response.json({ ok: true, result: { message_id: 1 } })
       : aemet(buildTar({ "a.xml": RAIN }))(request);
   await withFakeFetch(ENV, respond, async (requests) => {
     assertEquals(await notifyNewWeatherAlerts(db, NOW), 1);
