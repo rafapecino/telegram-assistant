@@ -10,6 +10,7 @@ import { askGroqForJson } from "./groq.ts";
 import { HABIT_INTENT_FORMAT, type HabitRequest, parseHabitRequest } from "./habits.ts";
 import { type MadridClock, madridClock } from "./madrid-time.ts";
 import { MANUAL_EXPENSE_INTENT_FORMAT, type ManualExpenseRequest, parseManualExpense } from "./manual-expenses.ts";
+import { MARKETS_INTENT_FORMAT, type MarketsRequest, parseMarketsRequest } from "./markets.ts";
 import { NOTE_INTENT_FORMAT, type NoteRequest, parseNoteRequest } from "./notes.ts";
 import { parseReminderRequest, REMINDER_INTENT_FORMAT, type ReminderRequest } from "./reminders.ts";
 import { parseShoppingRequest, SHOPPING_INTENT_FORMAT, type ShoppingRequest } from "./shopping.ts";
@@ -31,6 +32,7 @@ export type MessageIntent =
   | GmailRequest
   | BusRequest
   | ConnectionRequest
+  | MarketsRequest
   | { kind: "unknown" };
 
 export function buildIntentPrompt(clock: MadridClock): string {
@@ -52,6 +54,7 @@ export function buildIntentPrompt(clock: MadridClock): string {
     `- ${GMAIL_INTENT_FORMAT}`,
     `- ${BUS_INTENT_FORMAT}`,
     `- ${CONNECTION_INTENT_FORMAT}`,
+    `- ${MARKETS_INTENT_FORMAT}`,
     '- Cualquier otra cosa: {"intent": "unknown"}',
   ].join("\n");
 }
@@ -72,6 +75,7 @@ export function parseMessageIntent(raw: unknown, now: Date): MessageIntent {
   if (intent === "gmail") return parseGmailRequest(raw);
   if (intent === "bus") return parseBusRequest(raw);
   if (intent === "connection") return parseConnectionRequest(raw);
+  if (intent === "markets") return parseMarketsRequest(raw);
   return { kind: "unknown" };
 }
 

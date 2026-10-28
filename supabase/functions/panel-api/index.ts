@@ -15,6 +15,8 @@ import { transcribeAudio } from "../_shared/groq.ts";
 import { inventFunnyLine, loadMemory, saveMemory } from "../_shared/memory.ts";
 import { fetchWeatherAlerts } from "../_shared/aemet.ts";
 import { loadNews, NEWS_TOPICS } from "../_shared/news.ts";
+import { fetchCuriosity } from "../_shared/curiosity.ts";
+import { fetchQuotes, followAsset, loadWatchlist, type MarketKind, unfollowAsset } from "../_shared/markets.ts";
 import { parseMovementFilters, searchEverything, searchMovements } from "../_shared/search.ts";
 import { UserFacingError } from "../_shared/errors.ts";
 import { corsHeaders, describeErrorForClient, isOverRateLimit, recordAccessDenied } from "../_shared/panel-security.ts";
@@ -137,6 +139,11 @@ Deno.serve(async (request) => {
       }
       if (resource === "movements") return json(await searchMovements(db, parseMovementFilters(url.searchParams)), 200, cors);
       if (resource === "search") return json(await searchEverything(db, url.searchParams.get("q"), today), 200, cors);
+      if (resource === "markets") {
+        const assets = await loadWatchlist(db);
+        return json({ assets, ...await fetchQuotes(assets, now) }, 200, cors);
+      }
+      if (resource === "curiosity") return json(await fetchCuriosity(today), 200, cors);
       if (resource === "news_topics") {
         return json(Object.entries(NEWS_TOPICS).map(([id, topic]) => ({ id, label: topic.label })), 200, cors);
       }
@@ -193,6 +200,10 @@ Deno.serve(async (request) => {
           advance_minutes: input.advance_minutes ?? null }, now);
         if (reminder.kind === "invalid") throw new UserFacingError(reminder.message);
         await saveReminder(db, reminder.text, reminder.remindAt, reminder.repeat, reminder.advanceMinutes);
+      } else if (resource === "market_watchlist") {
+        if (input.kind !== "stock" && input.kind !== "crypto" && input.kind !== "currency") throw new UserFacingError("Elige qué tipo es.");
+        const asset = await followAsset(db, input.kind as MarketKind, String(input.query ?? ""));
+        return json({ ok: true, asset }, 200, cors);
       } else if (resource === "expenses" || resource === "incomes") {
         const kind = resource === "expenses" ? "expense" : "income";
         await saveManualEntry(db, kind, parseManualEntry(input, kind, today));
@@ -222,6 +233,8 @@ Deno.serve(async (request) => {
         await deleteBudget(db, category);
       } else if (resource === "bank_connection") {
         await disconnectBank(db, now);
+      } else if (resource === "market_watchlist") {
+        await unfollowAsset(db, validId(url.searchParams.get("id")));
       } else if (resource === "google_connection") {
         await disconnectCalendar(db);
       } else if (resource === "personal_data") {

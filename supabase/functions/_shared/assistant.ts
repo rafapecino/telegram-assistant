@@ -36,7 +36,8 @@ const CAPABILITIES = [
   "conectar o desconectar el banco y la cuenta de Google",
   "registro del peso corporal para ver si sube o baja",
   "apuntar a mano energéticas o tabaco pagados en efectivo",
-  "un resumen cada mañana a las 8:00 con el tiempo, avisos, recordatorios, eventos, correo y cumpleaños",
+  "cotizaciones de acciones del Nasdaq, criptomonedas y divisas, y elegir cuáles seguir",
+  "un resumen cada mañana a las 8:00 con el tiempo, avisos, recordatorios, eventos, correo, cumpleaños y una curiosidad",
 ].join("; ");
 
 async function replyToBudgetDelete(db: SupabaseClient, category: string): Promise<string> {
