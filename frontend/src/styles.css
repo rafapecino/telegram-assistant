@@ -116,4 +116,4 @@ a.nav-item{text-decoration:none}
 .today-editorial .curiosity-card .card-heading{margin-bottom:8px}
 .today-editorial .curiosity-card h2{font-size:14px}
 .today-editorial .curiosity-card p{font-size:13px;margin-bottom:6px}
-.today-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+.today-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}.back-home{flex-shrink:0;gap:2px;padding:8px 10px 8px 4px;color:#1469ce;font-weight:700;font-size:14px}.back-home svg{flex-shrink:0}.topbar .breadcrumbs{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}

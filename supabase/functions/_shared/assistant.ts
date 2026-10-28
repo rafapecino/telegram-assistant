@@ -32,6 +32,7 @@ const CAPABILITIES = [
   "consultar y crear eventos en Google Calendar",
   "buscar correos en Gmail (solo remitente, asunto y fecha; no puede enviar)",
   "cuándo pasa el autobús de la EMT por una parada, con paradas guardadas por nombre",
+  "el tiempo de hoy y de los próximos días en cualquier ciudad",
   "avisos meteorológicos de AEMET para la Comunidad de Madrid",
   "conectar o desconectar el banco y la cuenta de Google",
   "registro del peso corporal para ver si sube o baja",
