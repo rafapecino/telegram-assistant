@@ -22,7 +22,9 @@ export const HELP_TEXT = [
   '• Filtros del correo: "no me enseñes los correos de Uber", "vuelve a enseñarme los de Uber" o "¿qué filtras?".',
   '• Autobús EMT: "la parada de casa es la 1234" y luego "¿cuándo pasa el bus de casa?".',
   "• Avisos de AEMET para Madrid: te escribo cuando sale uno nuevo y salen en el resumen de la mañana.",
-  "• Cada día a las 8:00 te mando un resumen: tiempo, avisos, recordatorios, calendario, correo y cumpleaños.",
+  '• Mercados: "¿cómo va el bitcoin?", "¿cómo van los mercados?", "sigue AMD" o "deja de seguir Tesla".',
+  "• Cada día a las 8:00 te mando un resumen: tiempo, avisos, recordatorios, calendario, correo, cumpleaños y una " +
+  "curiosidad de un día como hoy.",
   "• También me puedes mandar notas de voz.",
   '• Conexiones: "conecta el banco", "vuelve a conectar Google" o "desconecta el banco". Google da el calendario y ' +
   "Gmail; el banco importa los gastos cada día a las 8:00.",
