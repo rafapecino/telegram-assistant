@@ -7,6 +7,7 @@ import { importRecentExpenses, sendWeeklySummary } from "../_shared/expenses.ts"
 import { askHabits, HABIT_QUESTION_HOUR } from "../_shared/habits.ts";
 import { madridClock } from "../_shared/madrid-time.ts";
 import { MORNING_SUMMARY_HOUR, sendMorningSummary } from "../_shared/morning.ts";
+import { checkPriceWatches, PRICE_CHECK_HOUR } from "../_shared/prices.ts";
 import { sendDueReminders } from "../_shared/reminders.ts";
 import { sendTelegramMessage, setTelegramWebhook } from "../_shared/telegram.ts";
 
@@ -33,6 +34,10 @@ async function morningSummary(db: SupabaseClient, now: Date): Promise<string> {
 
 async function weatherAlerts(db: SupabaseClient, now: Date): Promise<string> {
   return `Enviados ${await notifyNewWeatherAlerts(db, now)} avisos de AEMET`;
+}
+
+async function priceWatches(db: SupabaseClient, now: Date): Promise<string> {
+  return `Enviados ${await checkPriceWatches(db, now)} avisos de precios`;
 }
 
 async function habitQuestions(db: SupabaseClient, now: Date): Promise<string> {
@@ -64,6 +69,7 @@ async function runHourlyJobs(db: SupabaseClient, now: Date): Promise<string> {
   if (clock.hour === DAILY_IMPORT_HOUR) tasks.push(importAndCheckBudgets);
   if (clock.isSunday && clock.hour === WEEKLY_SUMMARY_HOUR) tasks.push(importAndSummarize);
   if (clock.hour === HABIT_QUESTION_HOUR) tasks.push(habitQuestions);
+  if (clock.hour === PRICE_CHECK_HOUR) tasks.push(priceWatches);
   return await runAll(db, now, tasks);
 }
 
@@ -81,6 +87,8 @@ async function runJob(db: SupabaseClient, job: string, now: Date): Promise<strin
       return morningSummary(db, now);
     case "habits":
       return habitQuestions(db, now);
+    case "price-watches":
+      return priceWatches(db, now);
     case "weather-alerts":
       return weatherAlerts(db, now);
     case "setup-telegram-webhook":
