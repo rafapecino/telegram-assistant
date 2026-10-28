@@ -23,6 +23,7 @@ export const HELP_TEXT = [
   '• Autobús EMT: "la parada de casa es la 1234" y luego "¿cuándo pasa el bus de casa?".',
   "• Avisos de AEMET para Madrid: te escribo cuando sale uno nuevo y salen en el resumen de la mañana.",
   '• Mercados: "¿cómo va el bitcoin?", "¿cómo van los mercados?", "sigue AMD" o "deja de seguir Tesla".',
+  '• Precios: "¿dónde está más barata la PS5?" o "avísame si la PS5 baja de 400 €". Miro cada día a las 10:00.',
   "• Cada día a las 8:00 te mando un resumen: tiempo, avisos, recordatorios, calendario, correo, cumpleaños y una " +
   "curiosidad de un día como hoy.",
   "• También me puedes mandar notas de voz.",

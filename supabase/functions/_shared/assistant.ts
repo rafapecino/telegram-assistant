@@ -37,6 +37,7 @@ const CAPABILITIES = [
   "registro del peso corporal para ver si sube o baja",
   "apuntar a mano energéticas o tabaco pagados en efectivo",
   "cotizaciones de acciones del Nasdaq, criptomonedas y divisas, y elegir cuáles seguir",
+  "comparar precios de un producto en tiendas españolas y vigilarlo para avisar cuando baje",
   "un resumen cada mañana a las 8:00 con el tiempo, avisos, recordatorios, eventos, correo, cumpleaños y una curiosidad",
 ].join("; ");
 

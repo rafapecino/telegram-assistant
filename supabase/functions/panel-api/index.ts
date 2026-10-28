@@ -17,6 +17,7 @@ import { fetchWeatherAlerts } from "../_shared/aemet.ts";
 import { loadNews, NEWS_TOPICS } from "../_shared/news.ts";
 import { fetchCuriosity } from "../_shared/curiosity.ts";
 import { fetchQuotes, followAsset, loadWatchlist, type MarketKind, unfollowAsset } from "../_shared/markets.ts";
+import { addWatch, comparePrices, listWatches, removeWatch } from "../_shared/prices.ts";
 import { parseMovementFilters, searchEverything, searchMovements } from "../_shared/search.ts";
 import { UserFacingError } from "../_shared/errors.ts";
 import { corsHeaders, describeErrorForClient, isOverRateLimit, recordAccessDenied } from "../_shared/panel-security.ts";
@@ -143,6 +144,8 @@ Deno.serve(async (request) => {
         const assets = await loadWatchlist(db);
         return json({ assets, ...await fetchQuotes(assets, now) }, 200, cors);
       }
+      if (resource === "prices") return json(await comparePrices(url.searchParams.get("q")), 200, cors);
+      if (resource === "price_watches") return json(await listWatches(db), 200, cors);
       if (resource === "curiosity") return json(await fetchCuriosity(today), 200, cors);
       if (resource === "news_topics") {
         return json(Object.entries(NEWS_TOPICS).map(([id, topic]) => ({ id, label: topic.label })), 200, cors);
@@ -204,6 +207,8 @@ Deno.serve(async (request) => {
         if (input.kind !== "stock" && input.kind !== "crypto" && input.kind !== "currency") throw new UserFacingError("Elige qué tipo es.");
         const asset = await followAsset(db, input.kind as MarketKind, String(input.query ?? ""));
         return json({ ok: true, asset }, 200, cors);
+      } else if (resource === "price_watches") {
+        return json({ ok: true, watch: await addWatch(db, input.query, input.max_price) }, 200, cors);
       } else if (resource === "expenses" || resource === "incomes") {
         const kind = resource === "expenses" ? "expense" : "income";
         await saveManualEntry(db, kind, parseManualEntry(input, kind, today));
@@ -235,6 +240,8 @@ Deno.serve(async (request) => {
         await disconnectBank(db, now);
       } else if (resource === "market_watchlist") {
         await unfollowAsset(db, validId(url.searchParams.get("id")));
+      } else if (resource === "price_watches") {
+        await removeWatch(db, validId(url.searchParams.get("id")));
       } else if (resource === "google_connection") {
         await disconnectCalendar(db);
       } else if (resource === "personal_data") {
