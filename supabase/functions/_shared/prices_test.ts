@@ -27,6 +27,7 @@ const CONSOLE: Offer = {
   url: "https://tienda.es/PcComponentes",
   rating: null,
   delivery: null,
+  isSecondHand: false,
 };
 /** Groq de prueba: la primera llamada precisa la búsqueda y la segunda elige las ofertas. */
 const groq = (content: unknown) => Response.json({ choices: [{ message: { content: JSON.stringify(content) } }] });
@@ -61,13 +62,14 @@ const watch = (values: Partial<PriceWatch>): PriceWatch => ({
   ...values,
 });
 
-Deno.test("se queda con ofertas con precio y enlace https, sin segunda mano", () => {
-  assertEquals(extractOffers(PS5_RESULTS).map((offer) => offer.title), [
-    "PlayStation 5 Slim",
-    "Mando DualSense",
-    "PlayStation 5 Slim Digital",
-    "PlayStation 5 Slim",
-    "PlayStation 5 Pro",
+Deno.test("se queda con ofertas con precio y enlace https, y marca las de segunda mano", () => {
+  assertEquals(extractOffers(PS5_RESULTS).map((offer) => [offer.title, offer.isSecondHand]), [
+    ["PlayStation 5 Slim", false],
+    ["Mando DualSense", false],
+    ["PlayStation 5 Slim Digital", false],
+    ["PlayStation 5 Slim", false],
+    ["PlayStation 5 Pro", false],
+    ["PS5 como nueva", true],
   ]);
   assertEquals(extractOffers({}), []);
 });
@@ -75,6 +77,7 @@ Deno.test("se queda con ofertas con precio y enlace https, sin segunda mano", ()
 Deno.test("ordena de más barato a más caro, una oferta por tienda", () => {
   assertEquals(rankOffers(extractOffers(PS5_RESULTS)).map((offer) => [offer.source, offer.price]), [
     ["Amazon", 59],
+    ["Wallapop", 300],
     ["PcComponentes", 399],
     ["MediaMarkt", 449],
     ["El Corte Inglés", 799],
@@ -187,4 +190,10 @@ Deno.test("entiende buscar, vigilar con o sin precio, dejar de vigilar y ver la 
 
 Deno.test("sin resultados lo dice", () => {
   assertEquals(formatOffers("PS7", []), "No he encontrado precios de «PS7» en tiendas españolas.");
+});
+
+Deno.test("las de segunda mano salen marcadas en la lista y en los avisos", () => {
+  const used = { ...CONSOLE, source: "Wallapop", price: 300, isSecondHand: true };
+  assertEquals(formatOffers("PS5", [used]).includes("300,00\u00a0€ en Wallapop (2ª mano)"), true);
+  assertEquals(priceAlert(watch({ max_price: 350 }), used)?.includes("Wallapop (2ª mano):"), true);
 });

@@ -24,6 +24,8 @@ export interface Offer {
   url: string;
   rating: number | null;
   delivery: string | null;
+  // Wallapop, Vinted, usados o reacondicionados: se enseñan, pero marcados.
+  isSecondHand: boolean;
 }
 
 export interface PriceWatch {
@@ -53,20 +55,19 @@ function httpsUrl(raw: unknown): string | null {
   }
 }
 
-// Mercados de segunda mano y productos usados o reacondicionados: se quiere comparar el producto nuevo.
+// Mercados de segunda mano y productos usados o reacondicionados: entran en la comparación, marcados como «2ª mano».
 const SECOND_HAND =
   /wallapop|vinted|milanuncios|segunda mano|reacondicionad|usad[oa]s?\b|seminuev|refurbish|back ?market/i;
 // Las que se mandan a Groq para elegir: más no mejoran el resultado y alargan la respuesta.
 const MAX_CANDIDATES = 40;
 
-/** Las ofertas con precio y enlace https, sin las de segunda mano. Aún sin filtrar por si son el producto. */
+/** Las ofertas con precio y enlace https, marcando las de segunda mano. Aún sin filtrar por si son el producto. */
 export function extractOffers(raw: unknown): Offer[] {
   const results = (raw as { shopping_results?: Record<string, unknown>[] } | null)?.shopping_results ?? [];
   return results.flatMap((result): Offer[] => {
     const price = Number(result.extracted_price), url = httpsUrl(result.link ?? result.product_link);
     if (!Number.isFinite(price) || price <= 0 || !url || typeof result.title !== "string") return [];
     const source = typeof result.source === "string" ? result.source.slice(0, 80) : "Tienda";
-    if (SECOND_HAND.test(source) || SECOND_HAND.test(result.title)) return [];
     return [{
       title: result.title.slice(0, 200),
       price,
@@ -75,6 +76,7 @@ export function extractOffers(raw: unknown): Offer[] {
       url,
       rating: Number.isFinite(Number(result.rating)) ? Number(result.rating) : null,
       delivery: typeof result.delivery === "string" ? result.delivery.slice(0, 80) : null,
+      isSecondHand: SECOND_HAND.test(source) || SECOND_HAND.test(result.title),
     }];
   }).slice(0, MAX_CANDIDATES);
 }
@@ -132,7 +134,8 @@ export async function selectMatching(query: string, offers: Offer[]): Promise<Of
     const raw = await askGroqForJson(
       [
         "Decides qué ofertas de tiendas son el producto que alguien quiere comprar.",
-        "Quédate solo con el producto en sí, nuevo. Descarta accesorios, juegos, fundas, mandos sueltos, recambios,",
+        "Quédate solo con el producto en sí, nuevo o de segunda mano. Descarta accesorios, juegos, fundas,",
+        "mandos sueltos, recambios,",
         "piezas, productos de otra marca o de otro modelo, y cosas que solo lo mencionan («para PS5»).",
         "Los packs del producto con algo de regalo sí valen. Si el nombre es genérico («PS5»), cualquier versión",
         "del producto principal vale (Slim, Digital, Pro).",
@@ -235,8 +238,11 @@ export async function removeWatch(db: SupabaseClient, id: number): Promise<void>
 const euros = new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" });
 
 /** Si toca avisar con este mejor precio, el texto del aviso; si no, null. */
+const secondHandLabel = (offer: Offer) => offer.isSecondHand ? " (2ª mano)" : "";
+
+/** Si toca avisar con este mejor precio, el texto del aviso; si no, null. */
 export function priceAlert(watch: PriceWatch, best: Offer): string | null {
-  const shop = `${best.source}: ${best.title}\n${best.url}`;
+  const shop = `${best.source}${secondHandLabel(best)}: ${best.title}\n${best.url}`;
   if (watch.max_price !== null) {
     const isUnderTarget = best.price <= watch.max_price;
     const isNewLow = watch.notified_price === null || best.price < watch.notified_price;
@@ -279,7 +285,7 @@ export async function checkPriceWatches(db: SupabaseClient, now: Date): Promise<
 export function formatOffers(query: string, offers: Offer[]): string {
   if (!offers.length) return `No he encontrado precios de «${query}» en tiendas españolas.`;
   const lines = offers.slice(0, 5).map((offer) =>
-    `• ${euros.format(offer.price)} en ${offer.source}: ${offer.title}\n  ${offer.url}`
+    `• ${euros.format(offer.price)} en ${offer.source}${secondHandLabel(offer)}: ${offer.title}\n  ${offer.url}`
   );
   return [`🏷️ «${query}», de más barato a más caro:`, ...lines].join("\n");
 }
