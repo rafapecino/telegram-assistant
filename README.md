@@ -171,6 +171,11 @@ falla, lo escrito se queda en la ventana para corregirlo o reenviarlo. Los gasto
 como `manual`, igual que las energéticas y el tabaco del chat. Los errores de conexión o del servidor se pueden
 reintentar desde el propio aviso.
 
+La Agenda junta, por semanas o por meses, los eventos de Google Calendar, los recordatorios (con sus repeticiones) y
+los hábitos de cada día, con icono, color y texto para distinguir cada tipo. En Hábitos se eligen los días en que
+toca cada uno y se ven las últimas cuatro semanas: hecho, no hecho, sin apuntar o descanso. Los días de descanso no
+cuentan como fallo ni rompen la racha; se puede marcar cualquier día de los últimos cuatro meses pulsándolo.
+
 En Ajustes se ven las cuentas conectadas (Google y el banco), desde cuándo y con qué permisos, y se pueden conectar
 o desconectar. Los permisos de Google son los que Google dice que tiene el token, no los que se pidieron. También se
 puede descargar una copia de todos los datos en .json (sin las claves de conexión) y borrar categorías de datos: hay
