@@ -6,6 +6,8 @@ import { deletePersonalData, exportPersonalData, parseCategories, summarizePerso
 import { loadBudgetStatuses, parseBudgetRequest, saveBudget, deleteBudget } from "../_shared/budgets.ts";
 import { parseReminderRequest, saveReminder } from "../_shared/reminders.ts";
 import { recordHabit } from "../_shared/habits.ts";
+import { EXPENSE_CATEGORIES } from "../_shared/expenses.ts";
+import { parseManualEntry, saveManualEntry } from "../_shared/manual-entries.ts";
 import { createBankLink, disconnectBank, hasBankConnections } from "../_shared/bank-connection.ts";
 import { clearChatMessages, loadChatMessages, parseChatInput, replyToChat } from "../_shared/panel-chat.ts";
 import { parseWeightRequest, saveWeight } from "../_shared/weight.ts";
@@ -131,6 +133,7 @@ Deno.serve(async (request) => {
       if (resource === "connected_accounts") {
         return json({ google: await describeGoogleAccount(db), bank: await listBankAccess(db) }, 200, cors);
       }
+      if (resource === "expense_categories") return json(EXPENSE_CATEGORIES, 200, cors);
       if (resource === "data_summary") return json(await summarizePersonalData(db), 200, cors);
       if (resource === "data_export") return json(await exportPersonalData(db, now), 200, cors);
       if (resource === "habit_checks") {
@@ -177,6 +180,9 @@ Deno.serve(async (request) => {
           advance_minutes: input.advance_minutes ?? null }, now);
         if (reminder.kind === "invalid") throw new UserFacingError(reminder.message);
         await saveReminder(db, reminder.text, reminder.remindAt, reminder.repeat, reminder.advanceMinutes);
+      } else if (resource === "expenses" || resource === "incomes") {
+        const kind = resource === "expenses" ? "expense" : "income";
+        await saveManualEntry(db, kind, parseManualEntry(input, kind, today));
       } else if (resource === "weight_entries") {
         const weight = parseWeightRequest({ action: "save", kg: input.kg, date: input.date }, today);
         if (weight.kind !== "weight_save") throw new UserFacingError(weight.kind === "invalid" ? weight.message : "Peso no válido.");
