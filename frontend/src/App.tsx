@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Scale, Cigarette, CupSoda, Mic, Square, Brain, CloudSun, AlertTriangle, Settings, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Scale, Cigarette, CupSoda, Mic, Square, Brain, CloudSun, AlertTriangle, Settings, Download, ChevronLeft, ChevronRight, Newspaper } from 'lucide-react';
 import chatbotLogo from './assets/chatbot-logo.png';
 
 type Row = Record<string, any>;
-type Section = 'overview'|'finances'|'reminders'|'shopping_items'|'birthdays'|'habits'|'weight'|'calendar'|'weather'|'memory'|'settings';
+type Section = 'overview'|'finances'|'reminders'|'shopping_items'|'birthdays'|'habits'|'weight'|'calendar'|'weather'|'memory'|'settings'|'news';
 
 // La clave publicable de Supabase está pensada para ir en el navegador; los permisos los decide panel-api.
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? 'https://znzyzstvfqsrilhzyqub.supabase.co';
@@ -16,7 +16,7 @@ const chartColors = ['#1779db','#f08143','#32ad91','#8a66d7','#e6b33e','#ea7091'
 const navigation: {id:Section; label:string; icon:typeof LayoutDashboard}[] = [
   {id:'overview',label:'Inicio',icon:LayoutDashboard},{id:'finances',label:'Finanzas',icon:Wallet},{id:'reminders',label:'Recordatorios',icon:Bell},
   {id:'shopping_items',label:'Lista de la compra',icon:ShoppingBasket},
-  {id:'birthdays',label:'Cumpleaños',icon:Cake},{id:'habits',label:'Hábitos',icon:Flame},{id:'weight',label:'Peso',icon:Scale},{id:'calendar',label:'Agenda',icon:CalendarDays},{id:'weather',label:'Tiempo',icon:CloudSun},
+  {id:'birthdays',label:'Cumpleaños',icon:Cake},{id:'habits',label:'Hábitos',icon:Flame},{id:'weight',label:'Peso',icon:Scale},{id:'calendar',label:'Agenda',icon:CalendarDays},{id:'weather',label:'Tiempo',icon:CloudSun},{id:'news',label:'Noticias',icon:Newspaper},
   {id:'memory',label:'Memoria',icon:Brain},{id:'settings',label:'Ajustes',icon:Settings}
 ];
 const resources = ['expenses','incomes','budgets','reminders','shopping_items','birthdays','habits','habit_checks','weight_entries','calendar','bank_connection','memory','weather','weather_alerts'] as const;
@@ -561,6 +561,36 @@ function AgendaSection({token,reminders,habits,checks,calendar,saveEvent,goToSet
   </>;
 }
 
+// La noticia que acompaña a cada sección, de su tema.
+const SECTION_NEWS_TOPIC:Partial<Record<Section,string>>={overview:'destacadas',finances:'economia',reminders:'espana',shopping_items:'gastronomia',birthdays:'cultura',habits:'salud',weight:'salud',calendar:'madrid',weather:'clima',memory:'ciencia',settings:'tecnologia'};
+function timeAgo(v:string|null):string{
+  if(!v)return '';const minutes=Math.max(1,Math.round((Date.now()-Date.parse(v))/60000));
+  if(minutes<60)return `hace ${minutes} min`;const hours=Math.round(minutes/60);if(hours<24)return `hace ${hours} h`;
+  const days=Math.round(hours/24);return days===1?'ayer':`hace ${days} días`;
+}
+
+/** Un titular del tema de la sección. Es un extra: si falla no se enseña nada (queda en la consola). */
+function SectionNews({token,topic,onMore}:{token:string;topic:string;onMore:()=>void}) {
+  const [item,setItem]=useState<Row|null>(null);
+  useEffect(()=>{setItem(null);api('news',token,'GET',undefined,{topic,limit:'1'}).then(items=>setItem(items[0]??null)).catch(e=>console.error('No se pudo cargar la noticia de la sección',e))},[token,topic]);
+  if(!item)return null;
+  return <aside className="section-news" aria-label="Noticia relacionada"><Newspaper size={16} aria-hidden="true"/><a href={item.url} target="_blank" rel="noopener noreferrer">{item.title}</a><small>{item.source} · {timeAgo(item.publishedAt)}</small><button className="text-link" onClick={onMore}>Más noticias →</button></aside>;
+}
+
+function NewsSection({token}:{token:string}) {
+  const [topics,setTopics]=useState<Row[]>([]),[topic,setTopic]=useState('destacadas'),[items,setItems]=useState<Row[]|null>(null),[problem,setProblem]=useState('');
+  useEffect(()=>{api('news_topics',token).then(setTopics).catch(e=>setProblem(e instanceof Error?e.message:'No se pudieron cargar los temas.'))},[token]);
+  const load=useCallback(()=>{setItems(null);setProblem('');api('news',token,'GET',undefined,{topic,limit:'20'}).then(setItems).catch(e=>{setItems([]);setProblem(e instanceof Error?e.message:'No se pudieron cargar las noticias.')})},[token,topic]);
+  useEffect(()=>{load()},[load]);
+  return <>
+    <div className="news-topics" role="group" aria-label="Temas">{topics.map(t=><button key={t.id} className={topic===t.id?'selected':''} aria-pressed={topic===t.id} onClick={()=>setTopic(t.id)}>{t.label}</button>)}</div>
+    {problem&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{problem}</span><button className="retry" onClick={load}>Reintentar</button></div>}
+    <Card title={topics.find(t=>t.id===topic)?.label??'Noticias'}>
+      {items===null?<Empty>Cargando titulares…</Empty>:items.length?<ul className="news-list">{items.map(n=><li key={n.url}><a href={n.url} target="_blank" rel="noopener noreferrer">{n.title}</a><small>{n.source}{n.publishedAt?` · ${timeAgo(n.publishedAt)}`:''}</small>{n.summary&&<p>{n.summary}</p>}</li>)}</ul>:!problem&&<Empty>No hay titulares recientes de este tema. Prueba con otro.</Empty>}
+    </Card>
+  </>;
+}
+
 /** Ventana para crear cualquier cosa. Si falla, lo escrito se queda y se puede volver a enviar. */
 function AddDialog({type,setType,token,isCalendarConnected,onClose,onSaved,goToSettings}:{type:AddType;setType:(type:AddType)=>void;token:string;isCalendarConnected:boolean;onClose:()=>void;onSaved:(message:string)=>Promise<void>;goToSettings:()=>void}) {
   const dialog=useRef<HTMLDialogElement>(null),[problem,setProblem]=useState(''),[categories,setCategories]=useState<string[]>([]);
@@ -651,7 +681,8 @@ export function App(){
   if(!token)return <LoginScreen error={error} setError={setError}/>;
   return <div className="shell"><aside className={`sidebar ${mobileOpen?'open':''}`}><div className="sidebar-top"><div className="identity"><img src={chatbotLogo} alt="Mi asistente"/><small>PANEL PERSONAL</small></div><button className="mobile-close icon-button" aria-label="Cerrar menú" onClick={()=>setMobileOpen(false)}><X/></button></div><nav aria-label="Navegación principal">{navigation.map(({id,label,icon:Icon})=><button key={id} className={section===id?'nav-item active':'nav-item'} aria-current={section===id?'page':undefined} onClick={()=>{setSection(id);setMobileOpen(false);setNotice('')}}><Icon size={19} strokeWidth={1.8}/>{label}</button>)}</nav><div className="sidebar-bottom"><div className="sidebar-note"><span className="status-dot"/>Conectado a tu asistente</div><button className="nav-item logout" onClick={logout}><LogOut size={18}/> Cerrar sesión</button></div></aside>{mobileOpen&&<div className="backdrop" onClick={()=>setMobileOpen(false)}/>}
   <div className="workspace"><header className="topbar"><button className="mobile-menu icon-button" aria-label="Abrir menú" onClick={()=>setMobileOpen(true)}><Menu/></button><div className="breadcrumbs">Mi espacio <span>/</span> <strong>{current.label}</strong></div><button className="primary add-button" onClick={()=>setAddType('reminder')}><Plus size={17}/> Añadir</button><button className="refresh icon-button" onClick={()=>void refresh()} disabled={loading} aria-label="Actualizar datos"><RefreshCw size={18} className={loading?'spin':''}/></button></header>
-  <main className="content"><div className="page-heading"><div><div className="eyebrow">PANEL PERSONAL</div><h1>{section==='overview'?dailyGreeting():current.label}</h1><p>{section==='overview'?funnyLine||'Aquí tienes lo importante de un vistazo.':section==='memory'?'Lo que tu asistente sabe de ti. Lo usa para hablarte con gracia.':section==='finances'?'Tus ingresos, gastos y límites en un mismo lugar.':section==='weather'?'Previsión de los próximos 7 días y avisos de AEMET.':section==='settings'?'Cuentas conectadas, permisos y tus datos.':'Organiza y consulta tus cosas sin salir del panel.'}</p></div><span className="today">{new Intl.DateTimeFormat('es-ES',{dateStyle:'full',timeZone:'Europe/Madrid'}).format(new Date())}</span></div>
+  <main className="content"><div className="page-heading"><div><div className="eyebrow">PANEL PERSONAL</div><h1>{section==='overview'?dailyGreeting():current.label}</h1><p>{section==='overview'?funnyLine||'Aquí tienes lo importante de un vistazo.':section==='memory'?'Lo que tu asistente sabe de ti. Lo usa para hablarte con gracia.':section==='finances'?'Tus ingresos, gastos y límites en un mismo lugar.':section==='weather'?'Previsión de los próximos 7 días y avisos de AEMET.':section==='settings'?'Cuentas conectadas, permisos y tus datos.':section==='news'?'Titulares de España y del mundo, por temas.':'Organiza y consulta tus cosas sin salir del panel.'}</p></div><span className="today">{new Intl.DateTimeFormat('es-ES',{dateStyle:'full',timeZone:'Europe/Madrid'}).format(new Date())}</span></div>
+  {SECTION_NEWS_TOPIC[section]&&<SectionNews token={token} topic={SECTION_NEWS_TOPIC[section]!} onMore={()=>setSection('news')}/>}
   {error&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{error}</span>{retry&&<button className="retry" onClick={retry}>Reintentar</button>}<button onClick={()=>{setError('');setRetry(null)}} aria-label="Cerrar error"><X size={16}/></button></div>}{notice&&<div className="notice" role="status"><Check size={17}/>{notice}</div>}
   {section==='overview'&&<><TodaySummary data={data} isLoading={loading} onAdd={setAddType} answerHabit={(habitId,done)=>void action('habit_checks','POST',{habit_id:habitId,done},undefined,done?'Hábito apuntado. ¡Bien!':'Apuntado como no hecho hoy.')}/><AssistantChat token={token} onChange={()=>refresh()}/>
     <section className="dashboard-hero"><div><span className="hero-kicker">TU DÍA EN ORDEN</span><h2>Tu asistente, de un vistazo.</h2><p>Los números, recordatorios y próximos planes reunidos aquí.</p><HeroWeather forecasts={Array.isArray(data.weather)?data.weather:undefined} alerts={Array.isArray(data.weather_alerts)?data.weather_alerts:undefined}/><div className="hero-actions"><button onClick={()=>setSection('finances')}>Ver finanzas <ArrowUpRight size={16}/></button><button onClick={()=>setSection('reminders')}>Mis recordatorios <Bell size={16}/></button></div></div><div className="hero-balance"><small>Balance · últimos {period} días</small><strong>{euro(totals.earned-totals.spent)}</strong><span>{expenses.length} movimientos · {rows('reminders').length} recordatorios</span></div></section>
@@ -665,6 +696,7 @@ export function App(){
   {section==='weight'&&<WeightSection entries={rows('weight_entries')} save={payload=>action('weight_entries','POST',payload)} remove={id=>void action('weight_entries','DELETE',undefined,{id:String(id)})}/>}
   {section==='calendar'&&<AgendaSection token={token} reminders={rows('reminders')} habits={rows('habits')} checks={rows('habit_checks')} calendar={data.calendar} saveEvent={payload=>action('calendar','POST',payload,undefined,'Evento creado en tu calendario.')} goToSettings={()=>setSection('settings')}/>}
   {section==='weather'&&<WeatherSection forecasts={Array.isArray(data.weather)?data.weather:undefined} alerts={Array.isArray(data.weather_alerts)?data.weather_alerts:undefined}/>}
+  {section==='news'&&<NewsSection token={token}/>}
   {section==='settings'&&<SettingsSection token={token} onChange={()=>refresh()}/>}
   {section==='memory'&&<MemorySection content={String(data.memory?.content??'')} save={content=>action('memory','POST',{content},undefined,'Memoria guardada.')}/>}
   <footer>Tu asistente personal · Datos actualizados desde Supabase</footer></main></div>

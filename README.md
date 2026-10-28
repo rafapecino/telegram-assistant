@@ -176,6 +176,12 @@ los hábitos de cada día, con icono, color y texto para distinguir cada tipo. E
 toca cada uno y se ven las últimas cuatro semanas: hecho, no hecho, sin apuntar o descanso. Los días de descanso no
 cuentan como fallo ni rompen la racha; se puede marcar cualquier día de los últimos cuatro meses pulsándolo.
 
+La sección Noticias enseña titulares por temas (destacadas, España, mundo, Madrid, economía, tecnología, ciencia,
+salud, clima, deportes, cultura y gastronomía) desde los RSS públicos de El País, elDiario.es, 20minutos, La
+Vanguardia, BBC Mundo, Telemadrid, Expansión y Xataka: sin clave ni coste. Cada sección del panel muestra arriba un
+titular de su tema (Finanzas, economía; Hábitos, salud; Agenda, Madrid…). `panel-api` los guarda 15 minutos en
+memoria, descarta noticias de más de una semana y enlaces que no sean web, y si un medio falla enseña los demás.
+
 En Ajustes se ven las cuentas conectadas (Google y el banco), desde cuándo y con qué permisos, y se pueden conectar
 o desconectar. Los permisos de Google son los que Google dice que tiene el token, no los que se pidieron. También se
 puede descargar una copia de todos los datos en .json (sin las claves de conexión) y borrar categorías de datos: hay
