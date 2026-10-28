@@ -219,7 +219,13 @@ export function toCalendarEvent(event: GoogleEvent): CalendarEvent {
 }
 
 /** Eventos de los días indicados (en hora de Madrid), en orden. */
-export async function listEvents(db: SupabaseClient, dateFrom: string, dateTo: string): Promise<CalendarEvent[]> {
+/** Eventos entre dos fechas; con `textQuery`, solo los que lo contienen (la búsqueda la hace Google). */
+export async function listEvents(
+  db: SupabaseClient,
+  dateFrom: string,
+  dateTo: string,
+  textQuery?: string,
+): Promise<CalendarEvent[]> {
   const query = new URLSearchParams({
     timeMin: madridLocalToUtc(`${dateFrom}T00:00`).toISOString(),
     timeMax: madridLocalToUtc(`${addDaysToDate(dateTo, 1)}T00:00`).toISOString(),
@@ -227,6 +233,7 @@ export async function listEvents(db: SupabaseClient, dateFrom: string, dateTo: s
     orderBy: "startTime",
     maxResults: "100",
   });
+  if (textQuery) query.set("q", textQuery);
   const result = await callCalendar(db, `${EVENTS_URL}?${query}`);
   return ((result.items ?? []) as GoogleEvent[]).map(toCalendarEvent);
 }

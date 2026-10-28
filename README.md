@@ -171,6 +171,13 @@ falla, lo escrito se queda en la ventana para corregirlo o reenviarlo. Los gasto
 como `manual`, igual que las energéticas y el tabaco del chat. Los errores de conexión o del servidor se pueden
 reintentar desde el propio aviso.
 
+En Finanzas, «Buscar movimientos» filtra gastos e ingresos por texto, categoría (o solo ingresos) y fechas en el
+servidor, en periodos de hasta dos años, y resume cuántos hay, lo gastado, lo ingresado y el balance. Los
+presupuestos dicen en palabras cómo van: al 80 % avisan de que están cerca del límite y, si se superan, de cuánto; esos
+avisos salen también arriba de Finanzas. La lupa de la barra superior (o la tecla «/») busca a la vez en
+recordatorios, eventos de Google Calendar, hábitos, lista de la compra y movimientos, y lleva a la sección de cada
+resultado.
+
 La Agenda junta, por semanas o por meses, los eventos de Google Calendar, los recordatorios (con sus repeticiones) y
 los hábitos de cada día, con icono, color y texto para distinguir cada tipo. En Hábitos se eligen los días en que
 toca cada uno y se ven las últimas cuatro semanas: hecho, no hecho, sin apuntar o descanso. Los días de descanso no
