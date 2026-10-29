@@ -11,6 +11,10 @@ interface DataCategory {
 }
 
 export const DATA_CATEGORIES: Record<string, DataCategory> = {
+  tasks: {label:"Tareas sin hora", tables:[{name:"tasks",key:"id"}]},
+  debts: {label:"Deudas y conciliaciones", tables:[{name:"debts",key:"id"}]},
+  goals: {label:"Objetivos de consumo", tables:[{name:"consumption_goals",key:"item"}]},
+  reviews: {label:"Historial de repasos y bajadas de precio", tables:[{name:"review_deliveries",key:"key"},{name:"price_drops",key:"id"}]},
   finances: {
     label: "Gastos, ingresos y presupuestos",
     tables: [

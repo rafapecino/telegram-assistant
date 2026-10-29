@@ -1,0 +1,22 @@
+import {build} from 'esbuild';
+import {JSDOM} from 'jsdom';
+import assert from 'node:assert/strict';
+import {fileURLToPath} from 'node:url';
+const p=fileURLToPath(new URL('..',import.meta.url));
+await build({entryPoints:[`${p}/src/LifePanels.tsx`],outfile:`${p}/node_modules/.cache/qa/life-ui.mjs`,bundle:true,format:'esm',platform:'node',packages:'external',jsx:'automatic'});
+const dom=new JSDOM('<div id="root"></div>',{url:'https://test.invalid',pretendToBeVisual:true});
+for(const k of ['window','document','HTMLElement','HTMLInputElement','Event','MouseEvent','FormData'])globalThis[k]=dom.window[k];
+Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+globalThis.IS_REACT_ACT_ENVIRONMENT=true;
+const {createRoot}=await import('react-dom/client');const {act,createElement:h}=await import('react');
+const {LifePanels,DeliveriesPanel}=await import(`${p}/node_modules/.cache/qa/life-ui.mjs`);
+const tick=()=>new Promise(r=>setTimeout(r,5));let root=createRoot(document.getElementById('root'));const calls=[];
+const data={tasks:[{id:1,text:'Tarea atrasada',scheduled_on:'2020-01-01',completed_at:null}],debts:[],goals:[]};
+let fail=false;const api=async(r,m='GET',v)=>{calls.push({r,m,v});if(m==='POST'&&fail)throw Error('Error de prueba');return r==='life'?data:r==='deliveries'?{notices:[]}:{};};
+async function render(C,props){await act(async()=>{root.render(h(C,props));await tick()})}
+await render(LifePanels,{api});assert.match(document.body.textContent,/Tarea atrasada/);assert.match(document.body.textContent,/días anteriores/);
+const input=document.getElementById('new-task');await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'Conservar borrador');input.dispatchEvent(new Event('input',{bubbles:true}));await tick()});
+fail=true;await act(async()=>{document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await tick()});assert.equal(input.value,'Conservar borrador');assert.match(document.querySelector('[role=alert]').textContent,/Error de prueba/);
+fail=false;await act(async()=>{document.querySelector('[aria-label="Completar tarea: Tarea atrasada"]').click();await tick()});assert.equal(calls.at(-2).r,'task_status');assert.equal(calls.at(-2).v.done,true);
+await act(async()=>root.unmount());root=createRoot(document.getElementById('root'));await render(DeliveriesPanel,{api});assert.match(document.body.textContent,/Sin avisos de envío/);await act(async()=>root.unmount());
+console.log('PASS: tareas atrasadas, conservar texto tras error, completar y estado vacío de envíos');

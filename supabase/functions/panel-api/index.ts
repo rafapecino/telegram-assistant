@@ -1,3 +1,4 @@
+import { loadLife, loadDeliveries, lifeWrite, weeklyReview } from "../_shared/life.ts";
 import { loadFinanceInsightExpenses } from '../_shared/finance-insights.ts';
 import { preparePanelDraft } from '../_shared/panel-drafts.ts';
 import { createAdminClient } from "../_shared/database.ts";
@@ -91,7 +92,7 @@ const NOT_FOUND = Symbol("recurso no encontrado");
 // Lo que el panel carga al abrirse, en una sola petición: con una por recurso, Supabase cortaba con 429.
 const DASHBOARD_RESOURCES = [
   "expenses", "incomes", "budgets", "reminders", "shopping_items", "birthdays", "habits", "habit_checks",
-  "weight_entries", "calendar", "bank_connection", "memory", "weather", "weather_alerts",
+  "weight_entries", "calendar", "bank_connection", "memory", "weather", "weather_alerts", "debt_settlements",
 ];
 async function readResource(db: ReturnType<typeof createAdminClient>, resource: string, params: URLSearchParams, now: Date, today: string): Promise<unknown> {
   if (resources.has(resource)) {
@@ -102,6 +103,10 @@ async function readResource(db: ReturnType<typeof createAdminClient>, resource: 
     else query = query.order("id", { ascending: false });
     const { data, error } = await query; if (error) throw error; return data;
   }
+  if (resource === "debt_settlements") { const {data,error}=await db.from("debts").select("income_id,expense_id,amount").eq("status","settled").not("income_id","is",null); if(error)throw error;return data; }
+  if (resource === "life") return loadLife(db, today);
+  if (resource === "deliveries") return loadDeliveries(db, today);
+  if (resource === "weekly_review") return { text: await weeklyReview(db, now) };
   if (resource === "budgets") return await loadBudgetStatuses(db, now);
   if (resource === "memory") return { content: await loadMemory(db) };
   if (resource === "chat_messages") return await loadChatMessages(db);
@@ -206,6 +211,7 @@ Deno.serve(async (request) => {
     if (request.method === "POST" && resource === "transcribe") return json({ text: await transcribeUpload(request) }, 200, cors);
     if (request.method === "POST") {
       const input = await body(request, resource === "chat" || resource === "memory" ? MAX_CHAT_BODY : MAX_BODY);
+      if (["tasks","task_status","debts","debt_status","consumption_goals","reconcile_debts"].includes(resource)) return json(await lifeWrite(db, resource, input, today), 200, cors);
       if (resource === "chat_draft") {
         const parsed=parseChatInput(input);
         if(parsed.kind!=='message')throw new UserFacingError('Escribe lo que quieres preparar.');

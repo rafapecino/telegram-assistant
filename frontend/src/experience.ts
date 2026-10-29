@@ -40,5 +40,5 @@ export function dayFocus(data:Record<string,any>,now=new Date()){
 export function isDraftCandidate(message:string){
   const text=message.normalize('NFD').replace(/\p{M}/gu,'').toLowerCase().trim();
   if(/^(si|no|ya|hecho|todavia no|vale|ok)[.!]?$/.test(text))return false;
-  return /\b(anad\w*|apunt\w*|guard\w*|crea\w*|registra\w*|recuerd\w*|avisa\w*|vigila\w*|gaste|pague)\b/.test(text)||/\b(he pagado|toma nota|peso \d)\b/.test(text)||/\b(quiero|necesito|pon|ponme)\b.*\b(recordatorio|nota|habito|gasto|ingreso|evento|presupuesto)\b/.test(text);
+  return /\b(tarea|me debe|debo|objetivo|limite semanal)\b/.test(text)||/\b(anad\w*|apunt\w*|guard\w*|crea\w*|registra\w*|recuerd\w*|avisa\w*|vigila\w*|gaste|pague)\b/.test(text)||/\b(he pagado|toma nota|peso \d)\b/.test(text)||/\b(quiero|necesito|pon|ponme)\b.*\b(recordatorio|nota|habito|gasto|ingreso|evento|presupuesto)\b/.test(text);
 }
