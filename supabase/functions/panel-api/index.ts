@@ -1,3 +1,5 @@
+import { loadFinanceInsightExpenses } from '../_shared/finance-insights.ts';
+import { preparePanelDraft } from '../_shared/panel-drafts.ts';
 import { createAdminClient } from "../_shared/database.ts";
 import { addDaysToDate, madridClock, madridMonthStart } from "../_shared/madrid-time.ts";
 import { listEvents, createEvent, createCalendarLink, disconnectCalendar, isCalendarConnected, parseCalendarRequest } from "../_shared/calendar.ts";
@@ -117,6 +119,7 @@ async function readResource(db: ReturnType<typeof createAdminClient>, resource: 
   if (resource === "connected_accounts") {
     return { google: await describeGoogleAccount(db), bank: await listBankAccess(db) };
   }
+  if (resource === "finance_insights") return await loadFinanceInsightExpenses(db,today);
   if (resource === "movements") return await searchMovements(db, parseMovementFilters(params));
   if (resource === "search") return await searchEverything(db, params.get("q"), today);
   if (resource === "markets") {
@@ -203,10 +206,19 @@ Deno.serve(async (request) => {
     if (request.method === "POST" && resource === "transcribe") return json({ text: await transcribeUpload(request) }, 200, cors);
     if (request.method === "POST") {
       const input = await body(request, resource === "chat" || resource === "memory" ? MAX_CHAT_BODY : MAX_BODY);
+      if (resource === "chat_draft") {
+        const parsed=parseChatInput(input);
+        if(parsed.kind!=='message')throw new UserFacingError('Escribe lo que quieres preparar.');
+        return json({proposal:await preparePanelDraft(parsed.message,now)},200,cors);
+      }
       if (resource === "chat") return json(await replyToChat(db, parseChatInput(input), now), 200, cors);
       if (resource === "memory") { await saveMemory(db, input.content); return json({ ok: true }, 200, cors); }
       if (resource === "shopping_items" || resource === "notes") {
-        const { error } = await db.from(resource).insert({ text: validText(input.text, resource === "notes" ? 1000 : 100) }); if (error) throw error;
+        const text=validText(input.text,resource==='notes'?1000:100);
+        const {error}=resource==='notes'&&input.id!=null
+          ?await db.from('notes').update({text}).eq('id',validId(input.id))
+          :await db.from(resource).insert({text});
+        if(error)throw error;
       } else if (resource === "birthdays") {
         const day = Number(input.day), month = Number(input.month), year = input.year === "" || input.year == null ? null : Number(input.year);
         if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(day) || day < 1 || day > new Date(2024, month, 0).getDate() || year !== null && (!Number.isInteger(year) || year < 1900 || year > 2100)) throw new UserFacingError("Fecha de cumpleaños no válida.");

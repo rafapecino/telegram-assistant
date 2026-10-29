@@ -101,6 +101,7 @@ export interface GlobalResults {
   events: CalendarEvent[];
   habits: { id: number; name: string }[];
   shopping: { id: number; text: string }[];
+  notes: { id: number; text: string; created_at: string }[];
   movements: Movement[];
   // Si Google falla, se enseña lo demás y se avisa.
   eventsProblem?: string;
@@ -120,14 +121,15 @@ async function searchEvents(db: SupabaseClient, text: string, today: string): Pr
 export async function searchEverything(db: SupabaseClient, raw: string | null, today: string): Promise<GlobalResults> {
   const text = validText(raw);
   if (text.length < 2) throw new UserFacingError("Escribe al menos dos letras para buscar.");
-  const [reminders, habits, shopping, movements, events] = await Promise.all([
+  const [reminders, habits, shopping, notes, movements, events] = await Promise.all([
     searchColumn<GlobalResults["reminders"][number]>(db, "reminders", "id,text,remind_at", "text", text),
     searchColumn<GlobalResults["habits"][number]>(db, "habits", "id,name", "name", text),
     searchColumn<GlobalResults["shopping"][number]>(db, "shopping_items", "id,text", "text", text),
+    searchColumn<GlobalResults["notes"][number]>(db, "notes", "id,text,created_at", "text", text),
     searchMovements(db, { text, category: "", from: null, to: null }, GLOBAL_LIMIT),
     searchEvents(db, text, today).then((found) => ({ found }), (error: unknown) => ({ error })),
   ]);
-  const results: GlobalResults = { reminders, habits, shopping, movements, events: [] };
+  const results: GlobalResults = { reminders, habits, shopping, notes, movements, events: [] };
   if ("found" in events) results.events = events.found;
   else if (!(events.error instanceof CalendarNotConnectedError)) {
     console.error("No se pudo buscar en el calendario:", events.error);

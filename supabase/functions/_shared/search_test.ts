@@ -67,7 +67,7 @@ Deno.test("la búsqueda global mira en todo y sin Google conectado no falla", as
   assertEquals(results.events, []);
   assertEquals(results.eventsProblem, undefined);
   const tables = queries.map((query) => query[0]);
-  for (const table of ["reminders", "habits", "shopping_items", "expenses", "incomes"]) {
+  for (const table of ["reminders", "habits", "shopping_items", "notes", "expenses", "incomes"]) {
     assertEquals(tables.includes(`from("${table}")`), true, table);
   }
   await assertRejects(() => searchEverything(db, "a", TODAY), Error, "dos letras");

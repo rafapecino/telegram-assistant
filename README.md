@@ -285,3 +285,37 @@ actualidad están plegados al final. El chat desplaza exclusivamente su historia
 El tiempo del resumen usa la fecha de Madrid: Stratesys de lunes a jueves y Villanueva de la Cañada
 viernes, sábado y domingo. Se busca la previsión de hoy, sin sustituirla por otra ubicación o fecha.
 El resumen incluye recordatorios, calendario, hábitos pendientes y los cumpleaños del día.
+
+## Mejoras de uso del panel
+
+- Notas: guardar texto y enlaces, buscar en las notas cargadas, editar y eliminar con margen para deshacer.
+  La búsqueda global también incluye notas. El botón Añadir permite crear una nota.
+- Chat: las peticiones de creación compatibles preparan un formulario editable. La preparación no escribe
+  datos; los endpoints habituales vuelven a validar todo al confirmar. Las consultas y respuestas cortas
+  mantienen el flujo habitual. Se conservan los flujos del bot de Telegram.
+- Deshacer: los borrados normales de recordatorios, compra, cumpleaños, hábitos, peso, presupuestos, notas
+  y seguimientos de precios esperan ocho segundos. Cancelar evita la petición DELETE. Cerrar la página
+  cancela los temporizadores que aún no hayan empezado. Borrados masivos y desconexiones no usan esta cola.
+- Resumen diario: destaca el próximo evento/recordatorio y los recordatorios anteriores pendientes. Desde
+  las 19:00, si no queda nada pendiente, prepara el día siguiente, con su previsión meteorológica.
+- Finanzas: compara el mes hasta hoy con el mismo tramo del mes anterior. Sugiere posibles cargos recurrentes
+  solo con tres meses de importes estables e intervalos mensuales. La comparativa marca las cargas parciales.
+- Precios: permite editar el precio objetivo del seguimiento existente y muestra la última comprobación.
+- Actualización: el panel indica la última carga completa y conserva datos previos ante un fallo parcial.
+  No guarda información personal ni borrados pendientes en almacenamiento local.
+
+Las nuevas rutas de panel-api conservan la validación de sesión, la lista de cuentas autorizadas y los
+límites de peticiones. No requieren cambios de esquema ni nuevos permisos. Desplegar panel-api antes de la interfaz.
+
+Pruebas adicionales:
+
+```bash
+cd frontend
+npm ci
+npm test
+npm run test:ui
+npm run build
+```
+
+`test:ui` usa datos ficticios y comprueba Notas, propuestas editables, datos antiguos y cancelación/ejecución
+de borrados diferidos. No accede a una cuenta ni llama a los servicios reales.

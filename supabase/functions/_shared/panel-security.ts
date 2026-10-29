@@ -36,7 +36,7 @@ const GENERAL_LIMIT_PER_MINUTE = 300;
 const QUOTA_LIMIT_PER_MINUTE = 10;
 
 export function usesExternalQuota(method: string, resource: string): boolean {
-  return (method === "POST" && (resource === "chat" || resource === "transcribe")) ||
+  return (method === "POST" && (resource === "chat" || resource === "chat_draft" || resource === "transcribe")) ||
     (method === "GET" && (resource === "greeting" || resource === "prices"));
 }
 

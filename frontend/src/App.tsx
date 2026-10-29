@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Scale, Cigarette, CupSoda, Mic, Square, Brain, CloudSun, AlertTriangle, Settings, Download, ChevronLeft, ChevronRight, Newspaper, Search, TrendingUp, Lightbulb, Tag } from 'lucide-react';
+import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Scale, Cigarette, CupSoda, Mic, Square, Brain, CloudSun, AlertTriangle, Settings, Download, ChevronLeft, ChevronRight, Newspaper, Search, TrendingUp, Lightbulb, Tag, FileText, Pencil } from 'lucide-react';
 import { sectionFromSearch, sectionSearch, initialSection, readLastSection, rememberSection, type Section } from './navigation';
 import { madridNow, nextHourInMadrid } from './form-time';
+import {DataFreshness,FinanceInsights,NotesPanel,ProposalEditor,UndoTray,useUndoQueue} from './ExperiencePanels';
+import {dayFocus,isDraftCandidate,type Draft} from './experience';
 import { selectHomeWeather } from './home-weather';
 import chatbotLogo from './assets/chatbot-logo.png';
 
@@ -21,12 +23,12 @@ const navigation: {id:Section; label:string; icon:typeof LayoutDashboard}[] = [
   {id:'overview',label:'Inicio',icon:LayoutDashboard},{id:'finances',label:'Finanzas',icon:Wallet},{id:'reminders',label:'Recordatorios',icon:Bell},
   {id:'shopping_items',label:'Lista de la compra',icon:ShoppingBasket},
   {id:'birthdays',label:'Cumpleaños',icon:Cake},{id:'habits',label:'Hábitos',icon:Flame},{id:'weight',label:'Peso',icon:Scale},{id:'calendar',label:'Agenda',icon:CalendarDays},{id:'weather',label:'Tiempo',icon:CloudSun},{id:'news',label:'Noticias',icon:Newspaper},{id:'markets',label:'Mercados',icon:TrendingUp},{id:'prices',label:'Precios',icon:Tag},
-  {id:'memory',label:'Memoria',icon:Brain},{id:'settings',label:'Ajustes',icon:Settings}
+  {id:'notes',label:'Notas',icon:FileText},{id:'memory',label:'Memoria',icon:Brain},{id:'settings',label:'Ajustes',icon:Settings}
 ];
 const NAV_GROUPS:{label:string;sections:Section[]}[]=[
   {label:'Mi día',sections:['overview','reminders','calendar','shopping_items','birthdays','habits','weight']},
   {label:'Consultas',sections:['finances','weather','news','markets','prices']},
-  {label:'Mi asistente',sections:['memory','settings']}
+  {label:'Mi asistente',sections:['notes','memory','settings']}
 ];
 const resources = ['expenses','incomes','budgets','reminders','shopping_items','birthdays','habits','habit_checks','weight_entries','calendar','bank_connection','memory','weather','weather_alerts'] as const;
 const euro = (v:number) => new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(v);
@@ -161,7 +163,7 @@ async function transcribe(audio:Blob, token:string):Promise<string>{
 }
 
 function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>}) {
-  const [messages,setMessages]=useState<ChatMessage[]>([]),[draft,setDraft]=useState(''),[busy,setBusy]=useState(false),[chatError,setChatError]=useState('');
+  const [messages,setMessages]=useState<ChatMessage[]>([]),[draft,setDraft]=useState(''),[busy,setBusy]=useState(false),[chatError,setChatError]=useState(''),[proposal,setProposal]=useState<Draft|null>(null),[proposalNotice,setProposalNotice]=useState('');
   const chatLog=useRef<HTMLDivElement>(null),recorder=useRef<MediaRecorder|null>(null),[recording,setRecording]=useState(false);
   // Desplaza solo el historial: scrollIntoView también arrastraba la página de Inicio.
   useEffect(()=>{const log=chatLog.current;if(log)log.scrollTop=log.scrollHeight},[messages,busy]);
@@ -176,8 +178,11 @@ function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>
   }
   async function send(text:string){
     const message=text.trim();if(!message||busy)return;
-    setDraft('');setMessages(m=>[...m,{role:'user',text:message}]);
-    await ask({message});
+    setBusy(true);setChatError('');setProposalNotice('');
+    try{if(isDraftCandidate(message)){const prepared=await api('chat_draft',token,'POST',{message});
+      if(prepared.proposal){setProposal(prepared.proposal);setDraft('');return}}
+      setDraft('');setMessages(m=>[...m,{role:'user',text:message}]);await ask({message});
+    }catch(e){setChatError(e instanceof Error?e.message:'No se pudo preparar el mensaje. No se ha enviado.')}finally{setBusy(false)}
   }
   // Lo dicho se manda como si se hubiera escrito, así se ve lo que ha entendido.
   async function sendAudio(audio:Blob){
@@ -200,15 +205,16 @@ function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>
     try{await api('chat_messages',token,'DELETE');setMessages([])}
     catch(e){setChatError(e instanceof Error?e.message:'No se pudo borrar la conversación.')}
   }
-  return <Card title="Pregúntale a tu asistente" aside={messages.length?<button className="text-link" onClick={()=>void clear()} disabled={busy}>Nueva conversación</button>:undefined} className="chat-card">
+  return <><Card title="Pregúntale a tu asistente" aside={messages.length?<button className="text-link" onClick={()=>void clear()} disabled={busy}>Nueva conversación</button>:undefined} className="chat-card">
     <div ref={chatLog} className="chat-log" aria-live="polite">
       {!messages.length&&<div className="chat-welcome"><img className="chat-avatar large" src={chatbotLogo} alt=""/><p>Dime, que para eso estoy.</p></div>}
       {messages.map((m,i)=><div key={i} className={`chat-row ${m.role}`}>{m.role==='assistant'&&<img className="chat-avatar" src={chatbotLogo} alt=""/>}<div className={`chat-message ${m.role}`}><p>{linkify(m.text)}</p>{m.buttons&&<div className="chat-buttons">{m.buttons.flat().map(b=><button key={b.callback_data} className="secondary" onClick={()=>void press(b.callback_data)} disabled={busy}>{b.text}</button>)}</div>}</div></div>)}
       {busy&&<div className="chat-row assistant"><img className="chat-avatar" src={chatbotLogo} alt=""/><div className="chat-message assistant typing"><p>Pensando…</p></div></div>}
     </div>
+    {proposalNotice&&<p className="inline-success" role="status">{proposalNotice}</p>}
     {chatError&&<p className="error" role="alert">{chatError}</p>}
     <form className="inline-form chat-form" onSubmit={e=>{e.preventDefault();void send(draft)}}><label className="sr-only" htmlFor="chat-input">Mensaje para el asistente</label><input id="chat-input" value={draft} maxLength={1000} placeholder={recording?'Grabando… pulsa ■ para enviar':'Escribe un mensaje…'} disabled={recording} onChange={e=>setDraft(e.target.value)} autoComplete="off"/><button className={`icon-button ${recording?'primary recording':'secondary'}`} type="button" onClick={()=>void toggleRecording()} disabled={busy} aria-label={recording?'Parar y enviar la nota de voz':'Grabar una nota de voz'}>{recording?<Square size={16}/>:<Mic size={18}/>}</button><button className="primary icon-button" type="submit" disabled={busy||recording||!draft.trim()} aria-label="Enviar mensaje"><Send size={18}/></button></form>
-  </Card>;
+  </Card>{proposal&&<ProposalEditor draft={proposal} api={(r,m,d,p)=>api(r,token,m,d,p)} onClose={()=>setProposal(null)} onSaved={async()=>{setProposalNotice('Guardado. Puedes verlo en su sección.');await onChange()}}/>}</>;
 }
 
 const ALERT_LEVEL_EMOJI:Record<string,string>={amarillo:'🟡',naranja:'🟠',rojo:'🔴'};
@@ -222,11 +228,11 @@ function dayLabel(date:string){const today=todayInMadrid();if(date===today)retur
 const rainText=(day:Row)=>day.rainProbability!=null?` · ${day.rainProbability} % lluvia`:'';
 
 /** Solo el lugar que toca hoy, sin mostrar una previsión de otro día o ubicación. */
-function TodayWeather({forecasts,alerts,goTo}:{forecasts:Row[];alerts:Row[];goTo:(section:Section)=>void}) {
-  const {place,day}=selectHomeWeather(forecasts as {place:string;days:(Row & {date:string})[]}[],todayInMadrid());
+function TodayWeather({forecasts,alerts,goTo,date=todayInMadrid()}:{forecasts:Row[];alerts:Row[];goTo:(section:Section)=>void;date?:string}) {
+  const {place,day}=selectHomeWeather(forecasts as {place:string;days:(Row & {date:string})[]}[],date);
   return <div className="today-weather-wrap"><SectionLink target="weather" goTo={goTo} className="today-weather">
     <span className="today-weather-icon" aria-hidden="true">{day?weatherEmoji(Number(day.code)):'🌤️'}</span>
-    <span><strong>{place}</strong><small>{day?`${day.description??'Hoy'}${rainText(day)}`:'Previsión de hoy no disponible'}</small></span>
+    <span><strong>{place}</strong><small>{day?`${day.description??'Previsión'}${rainText(day)}`:`Previsión de ${date===todayInMadrid()?'hoy':'mañana'} no disponible`}</small></span>
     {day&&<strong className="today-weather-temperature">{Math.round(Number(day.min))}° / {Math.round(Number(day.max))}°</strong>}<ArrowUpRight size={16} aria-hidden="true"/>
   </SectionLink>{alerts.length>0&&<SectionLink target="weather" goTo={goTo} className="today-weather-alert"><AlertTriangle size={16} aria-hidden="true"/>{alerts.length===1?'Hay un aviso meteorológico':'Hay avisos meteorológicos'} · Ver detalles</SectionLink>}</div>;
 }
@@ -423,9 +429,9 @@ function SettingsSection({token,onChange}:{token:string;onChange:()=>Promise<voi
   </>;
 }
 
-type AddType='reminder'|'expense'|'income'|'event'|'habit';
-const ADD_TYPES:{id:AddType;label:string}[]=[{id:'reminder',label:'Recordatorio'},{id:'expense',label:'Gasto'},{id:'income',label:'Ingreso'},{id:'event',label:'Evento'},{id:'habit',label:'Hábito'}];
-const ADD_DONE:Record<AddType,string>={reminder:'Recordatorio creado.',expense:'Gasto apuntado.',income:'Ingreso apuntado.',event:'Evento creado en tu calendario.',habit:'Hábito creado.'};
+type AddType='reminder'|'expense'|'income'|'event'|'habit'|'note';
+const ADD_TYPES:{id:AddType;label:string}[]=[{id:'reminder',label:'Recordatorio'},{id:'expense',label:'Gasto'},{id:'income',label:'Ingreso'},{id:'event',label:'Evento'},{id:'habit',label:'Hábito'},{id:'note',label:'Nota'}];
+const ADD_DONE:Record<AddType,string>={reminder:'Recordatorio creado.',expense:'Gasto apuntado.',income:'Ingreso apuntado.',event:'Evento creado en tu calendario.',habit:'Hábito creado.',note:'Nota guardada.'};
 const madridDateOf=(v:string)=>new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Madrid'}).format(new Date(v));
 // 1 = lunes … 7 = domingo, como scheduled_days en el servidor.
 const isoWeekday=(date:string)=>new Date(`${date}T12:00:00Z`).getUTCDay()||7;
@@ -649,20 +655,22 @@ function SearchDialog({token,onClose,goTo}:{token:string;onClose:()=>void;goTo:(
   useEffect(()=>{
     const query=text.trim();if(query.length<2){setResults(null);setProblem('');return}
     // Espera a que se deje de escribir para no buscar con cada letra.
-    const timer=setTimeout(()=>{setBusy(true);setProblem('');api('search',token,'GET',undefined,{q:query}).then(setResults).catch(e=>setProblem(e instanceof Error?e.message:'No se pudo buscar.')).finally(()=>setBusy(false))},300);
-    return ()=>clearTimeout(timer);
+    let active=true;setResults(null);
+    const timer=setTimeout(()=>{setBusy(true);setProblem('');api('search',token,'GET',undefined,{q:query}).then(r=>{if(active)setResults(r)}).catch(e=>{if(active)setProblem(e instanceof Error?e.message:'No se pudo buscar.')}).finally(()=>{if(active)setBusy(false)})},300);
+    return ()=>{active=false;clearTimeout(timer)};
   },[text,token]);
   const groups:{title:string;items:SearchTarget[]}[]=results?[
     {title:'Recordatorios',items:results.reminders.map((r:Row)=>({section:'reminders',label:r.text,detail:dateTime(r.remind_at),Icon:Bell}))},
     {title:'Eventos',items:results.events.map((e:Row)=>({section:'calendar',label:e.title,detail:e.start?dateTime(e.start):`${e.date} · Todo el día`,Icon:CalendarDays}))},
     {title:'Hábitos',items:results.habits.map((h:Row)=>({section:'habits',label:h.name,detail:'Hábito',Icon:Flame}))},
     {title:'Lista de la compra',items:results.shopping.map((i:Row)=>({section:'shopping_items',label:i.text,detail:'Por comprar',Icon:ShoppingBasket}))},
+    {title:'Notas',items:(results.notes??[]).map((n:Row)=>({section:'notes',label:n.text,detail:dateTime(n.created_at),Icon:FileText}))},
     {title:'Movimientos',items:results.movements.map((m:Row)=>({section:'finances',label:m.description,detail:`${m.booking_date} · ${m.kind==='income'?'+':'−'}${euro(m.amount)} · ${m.category}`,Icon:Wallet}))},
   ].filter(g=>g.items.length):[];
   return <dialog ref={dialog} className="add-dialog search-dialog" aria-labelledby="search-title" onClose={onClose}>
     <div className="card-heading"><h2 id="search-title">Buscar</h2><button className="icon-button" onClick={onClose} aria-label="Cerrar"><X size={18}/></button></div>
     <label className="sr-only" htmlFor="global-search">Buscar en tu panel</label>
-    <input ref={input} id="global-search" className="search-input" type="search" value={text} onChange={e=>setText(e.target.value)} placeholder="Recordatorios, eventos, hábitos, compra, movimientos…" autoComplete="off"/>
+    <input ref={input} id="global-search" className="search-input" type="search" value={text} onChange={e=>setText(e.target.value)} placeholder="Recordatorios, notas, eventos, hábitos, movimientos…" autoComplete="off"/>
     <div aria-live="polite">
       {problem&&<p className="error" role="alert">{problem}</p>}
       {results?.eventsProblem&&<p className="form-hint">{results.eventsProblem}</p>}
@@ -736,12 +744,13 @@ function CuriosityCard({token}:{token:string}) {
 /** Comparar precios en tiendas (Google Shopping vía SerpApi) y vigilar productos para que avise cuando bajen. */
 function PricesSection({token}:{token:string}) {
   const [query,setQuery]=useState(''),[result,setResult]=useState<Row|null>(null),[watches,setWatches]=useState<Row[]|null>(null);
-  const [watchQuery,setWatchQuery]=useState(''),[maxPrice,setMaxPrice]=useState(''),[busy,setBusy]=useState(''),[problem,setProblem]=useState(''),[notice,setNotice]=useState('');
+  const [watchQuery,setWatchQuery]=useState(''),[maxPrice,setMaxPrice]=useState(''),[busy,setBusy]=useState(''),[problem,setProblem]=useState(''),[notice,setNotice]=useState(''),[watchEdit,setWatchEdit]=useState<number|null>(null);
+  const watchRemoval=useUndoQueue(setProblem);
   const loadWatches=useCallback(async()=>{try{setWatches(await api('price_watches',token))}catch(e){setProblem(e instanceof Error?e.message:'No se pudieron cargar los productos vigilados.')}},[token]);
   useEffect(()=>{void loadWatches()},[loadWatches]);
   async function run(task:string,work:()=>Promise<void>){setBusy(task);setProblem('');setNotice('');try{await work()}catch(e){setProblem(e instanceof Error?e.message:'No se pudo completar.')}finally{setBusy('')}}
-  const search=(e:FormEvent)=>{e.preventDefault();void run('search',async()=>{const found=await api('prices',token,'GET',undefined,{q:query});setResult(found);setWatchQuery(found.query)})};
-  const watch=(e:FormEvent)=>{e.preventDefault();void run('watch',async()=>{const {watch:saved}=await api('price_watches',token,'POST',{query:watchQuery,max_price:maxPrice.replace(',','.')||null});setNotice(`Vigilo «${saved.query}» cada día a las 10:00.`);setMaxPrice('');await loadWatches()})};
+  const search=(e:FormEvent)=>{e.preventDefault();void run('search',async()=>{const found=await api('prices',token,'GET',undefined,{q:query});setResult(found);setWatchQuery(found.query);setWatchEdit(null)})};
+  const watch=(e:FormEvent)=>{e.preventDefault();void run('watch',async()=>{const {watch:saved}=await api('price_watches',token,'POST',{query:watchQuery,max_price:maxPrice.replace(',','.')||null});setNotice(`Vigilo «${saved.query}» cada día a las 10:00.`);setMaxPrice('');setWatchQuery('');setWatchEdit(null);await loadWatches()})};
   return <>
     {problem&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{problem}</span></div>}
     {notice&&<div className="notice" role="status"><Check size={17}/>{notice}</div>}
@@ -752,11 +761,11 @@ function PricesSection({token}:{token:string}) {
         <p className="form-hint">Busqué «{result.searchQuery}» y me quedé solo con el producto (sin juegos ni accesorios); lo de segunda mano va marcado. Quedan {result.left} búsquedas este mes.</p></>}
     </Card>
     <Card title="Vigilar un producto" aside={watches&&<span className="count">{watches.length} de 5</span>}>
-      <form className="stack-form" onSubmit={watch}><div className="form-row"><label>Producto<input value={watchQuery} onChange={e=>setWatchQuery(e.target.value)} required minLength={2} maxLength={100} placeholder="PS5"/></label><label>Avísame si baja de (€, opcional)<input inputMode="decimal" value={maxPrice} onChange={e=>setMaxPrice(e.target.value)} pattern="[0-9]+([.,][0-9]{1,2})?" placeholder="400"/></label><button className="primary" type="submit" disabled={!!busy}><Tag size={16}/> {busy==='watch'?'Guardando…':'Vigilar'}</button></div>
+      <form className="stack-form" onSubmit={watch}><div className="form-row"><label>Producto<input id="watch-product" disabled={watchEdit!==null} value={watchQuery} onChange={e=>setWatchQuery(e.target.value)} required minLength={2} maxLength={100} placeholder="PS5"/></label><label>Avísame si baja de (€, opcional)<input inputMode="decimal" value={maxPrice} onChange={e=>setMaxPrice(e.target.value)} pattern="[0-9]+([.,][0-9]{1,2})?" placeholder="400"/></label><button className="primary" type="submit" disabled={!!busy}><Tag size={16}/> {busy==='watch'?'Guardando…':watchEdit!==null?'Guardar objetivo':'Vigilar'}</button>{watchEdit!==null&&<button type="button" className="secondary" onClick={()=>{setWatchEdit(null);setWatchQuery('');setMaxPrice('')}}>Cancelar edición</button>}</div>
         <p className="form-hint">Lo miro cada día a las 10:00 y te aviso por Telegram. Sin precio, te aviso si baja un 5 % o más.</p></form>
-      {watches===null?<Empty>Cargando…</Empty>:watches.length?watches.map(w=><div className="list-row" key={w.id}><span className="row-symbol warm"><Tag size={17}/></span><span className="row-main"><strong>{w.query}</strong><small>{w.best_price!=null?<>Mejor: {euro(Number(w.best_price))} en {w.best_link?<a href={w.best_link} target="_blank" rel="noopener noreferrer">{w.best_source}</a>:w.best_source}</>:'Aún sin revisar'} · {w.max_price!=null?`Aviso por debajo de ${euro(Number(w.max_price))}`:'Aviso si baja un 5 %'}{w.checked_at?` · Revisado ${dateTime(w.checked_at)}`:''}</small></span><button className="delete icon-button" aria-label={`Dejar de vigilar ${w.query}`} disabled={!!busy} onClick={()=>void run('remove',async()=>{await api('price_watches',token,'DELETE',undefined,{id:String(w.id)});setNotice(`Ya no vigilo «${w.query}».`);await loadWatches()})}><Trash2 size={16}/></button></div>):<Empty>No vigilas ningún producto. Compara uno arriba y pulsa Vigilar, o dile al chat «avísame si la PS5 baja de 400 €».</Empty>}
+      {watches===null?<Empty>Cargando…</Empty>:watches.length?watches.filter(w=>!watchRemoval.pending.some(p=>p.id===`watch:${w.id}`)).map(w=><div className="list-row" key={w.id}><span className="row-symbol warm"><Tag size={17}/></span><span className="row-main"><strong>{w.query}</strong><span className={`watch-status ${!w.checked_at||Date.now()-Date.parse(w.checked_at)>36*3600000?'is-stale':''}`}>{!w.checked_at?'Sin revisar':Date.now()-Date.parse(w.checked_at)>36*3600000?'Revisión pendiente':'Revisión al día'}</span><small>{w.best_price!=null?<>Mejor: {euro(Number(w.best_price))} en {w.best_link?<a href={w.best_link} target="_blank" rel="noopener noreferrer">{w.best_source}</a>:w.best_source}</>:'Aún sin revisar'} · {w.max_price!=null?`Aviso por debajo de ${euro(Number(w.max_price))}`:'Aviso si baja un 5 %'}{w.checked_at?` · Revisado ${dateTime(w.checked_at)}`:''}</small></span><button className="icon-button" aria-label={`Editar objetivo de ${w.query}`} onClick={()=>{setWatchEdit(w.id);setWatchQuery(w.query);setMaxPrice(w.max_price==null?'':String(w.max_price));document.getElementById('watch-product')?.closest('form')?.scrollIntoView({block:'center',behavior:'smooth'})}}><Pencil size={16}/></button><button className="delete icon-button" aria-label={`Dejar de vigilar ${w.query}`} disabled={!!busy} onClick={()=>watchRemoval.schedule(`watch:${w.id}`,'Seguimiento pendiente de eliminar',async()=>{await api('price_watches',token,'DELETE',undefined,{id:String(w.id)});setWatches(current=>current?.filter(item=>item.id!==w.id)??null);await loadWatches()})}><Trash2 size={16}/></button></div>):<Empty>No vigilas ningún producto. Compara uno arriba y pulsa Vigilar, o dile al chat «avísame si la PS5 baja de 400 €».</Empty>}
     </Card>
-  </>;
+  <UndoTray queue={watchRemoval}/></>;
 }
 
 /** Ventana para crear cualquier cosa. Si falla, lo escrito se queda y se puede volver a enviar. */
@@ -777,13 +786,16 @@ function AddDialog({type,setType,token,isCalendarConnected,onClose,onSaved,goToS
     {type==='reminder'&&<ReminderForm save={payload=>save('reminders',payload)}/>}
     {(type==='expense'||type==='income')&&<MoneyForm key={type} kind={type} categories={categories} save={payload=>save(type==='expense'?'expenses':'incomes',payload)}/>}
     {type==='event'&&(isCalendarConnected?<EventForm save={payload=>save('calendar',payload)}/>:<div className="empty">Para crear eventos conecta Google en Ajustes.<br/><button className="text-link" onClick={goToSettings}>Ir a Ajustes →</button></div>)}
+    {type==='note'&&<InlineForm label="Guardar nota" placeholder="Una idea, un enlace, un detalle…" onSubmit={text=>save('notes',{text})}/>}
     {type==='habit'&&<InlineForm label="Crear hábito" placeholder="Por ejemplo: leer 20 minutos…" onSubmit={name=>save('habits',{name})}/>}
   </dialog>;
 }
 
 /** Lo de hoy, primero: recordatorios y eventos del día, hábitos sin contestar y atajos para añadir. */
 function TodaySummary({data,isLoading,onAdd,answerHabit,goTo,token}:{data:Record<string,any>;token:string;isLoading:boolean;onAdd:(type:AddType)=>void;goTo:(section:Section)=>void;answerHabit:(habitId:number,done:boolean)=>void}) {
-  const today=todayInMadrid(), list=(key:string):Row[]=>Array.isArray(data[key])?data[key]:[];
+  const [clock,setClock]=useState(()=>new Date());
+  useEffect(()=>{const timer=setInterval(()=>setClock(new Date()),60000);return ()=>clearInterval(timer)},[]);
+  const focus=dayFocus(data,clock),today=focus.date, list=(key:string):Row[]=>Array.isArray(data[key])?data[key]:[];
   const reminders=list('reminders').filter(r=>madridDateOf(r.remind_at)===today);
   const events:Row[]=data.calendar?.connected?data.calendar.events.filter((e:Row)=>e.date===today||(e.start&&madridDateOf(e.start)===today)):[];
   const birthdays=list('birthdays').filter(b=>Number(b.month)===Number(today.slice(5,7))&&Number(b.day)===Number(today.slice(8,10)));
@@ -792,8 +804,10 @@ function TodaySummary({data,isLoading,onAdd,answerHabit,goTo,token}:{data:Record
   const hasData='reminders' in data;
   const hasItems=reminders.length+events.length+habits.length+birthdays.length>0;
   return <section className="card today-card" aria-labelledby="today-title">
-    <div className="card-heading"><h2 id="today-title">Tu día de hoy</h2><button className="text-link" onClick={()=>onAdd('reminder')}>Añadir…</button></div>
-    <TodayWeather forecasts={Array.isArray(data.weather)?data.weather:[]} alerts={Array.isArray(data.weather_alerts)?data.weather_alerts:[]} goTo={goTo}/>
+    <div className="card-heading"><h2 id="today-title">{focus.isTomorrow?'Mañana, de un vistazo':'Tu día de hoy'}</h2><button className="text-link" onClick={()=>onAdd('reminder')}>Añadir…</button></div>
+    <TodayWeather date={today} forecasts={Array.isArray(data.weather)?data.weather:[]} alerts={Array.isArray(data.weather_alerts)?data.weather_alerts:[]} goTo={goTo}/>
+    {focus.overdue>0&&<div className="daily-focus"><SectionLink target="reminders" goTo={goTo}><strong>{focus.overdue===1?'Tienes un recordatorio pendiente de una hora anterior':`Tienes ${focus.overdue} recordatorios de horas anteriores`}</strong>Revisar recordatorios →</SectionLink></div>}
+    {focus.next&&<div className="daily-focus"><strong>Lo próximo · {dateTime(focus.next.at)}</strong><SectionLink target={focus.next.section as Section} goTo={goTo}>{focus.next.text} →</SectionLink></div>}
     {!hasData&&isLoading?<Empty>Cargando lo de hoy…</Empty>:hasItems&&<div className="today-grid">
       {reminders.length>0&&<div><h3><SectionLink target="reminders" goTo={goTo}><Bell size={15} aria-hidden="true"/> Recordatorios <ArrowUpRight size={14} aria-hidden="true"/></SectionLink></h3>{reminders.slice(0,3).map(r=><p key={r.id} className="today-item"><strong>{dateTime(r.remind_at).split(', ').at(-1)}</strong> {r.text}</p>)}</div>}
       {events.length>0&&<div><h3><SectionLink target="calendar" goTo={goTo}><CalendarDays size={15} aria-hidden="true"/> Calendario <ArrowUpRight size={14} aria-hidden="true"/></SectionLink></h3>{events.slice(0,3).map((e,i)=><p key={i} className="today-item"><strong>{e.start?dateTime(e.start).split(', ').at(-1):'Todo el día'}</strong> {e.title}</p>)}</div>}
@@ -806,6 +820,7 @@ function TodaySummary({data,isLoading,onAdd,answerHabit,goTo,token}:{data:Record
 
 export function App(){
   const [token,setToken]=useState(''),[authReady,setAuthReady]=useState(false);
+  const panelApi=useCallback((resource:string,method='GET',payload?:object,params?:Record<string,string>)=>api(resource,token,method,payload,params),[token]);
   const [section,updateSection]=useState<Section>(()=>initialSection(window.location.search,readLastSection())),[mobileOpen,setMobileOpen]=useState(false);
   const contentRef=useRef<HTMLElement>(null),sidebarNavRef=useRef<HTMLElement>(null);
   const setSection=useCallback((target:Section)=>{
@@ -818,6 +833,9 @@ export function App(){
   useEffect(()=>{const restore=()=>{updateSection(sectionFromSearch(window.location.search));setMobileOpen(false);setNotice('');window.scrollTo({top:0})};window.addEventListener('popstate',restore);return ()=>window.removeEventListener('popstate',restore)},[]);
   useEffect(()=>{if(token){document.title=`${navigation.find(n=>n.id===section)!.label} · Mi asistente`;contentRef.current?.focus({preventScroll:true})}},[section,token]);
   const [data,setData]=useState<Record<string,any>>({}),[loading,setLoading]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
+  const [refreshProblem,setRefreshProblem]=useState(false),[updatedAt,setUpdatedAt]=useState<number|null>(null),requestSequence=useRef(0),refreshLatest=useRef<()=>Promise<void>>(async()=>{});
+  const removalQueue=useUndoQueue(setError);
+  useEffect(()=>{if(!token){removalQueue.clear();setData({});setUpdatedAt(null)}},[token,removalQueue.clear]);
   const [period,setPeriod]=useState(30),[funnyLine,setFunnyLine]=useState('');
   const [addType,setAddType]=useState<AddType|null>(null),[retry,setRetry]=useState<(()=>void)|null>(null),[isSearching,setIsSearching]=useState(false);
   // La PWA abre /: recupera la sección y deja una URL que también pueda compartirse.
@@ -841,7 +859,7 @@ export function App(){
     return ()=>subscription.unsubscribe();
   },[]);
   const refresh=useCallback(async(t=token)=>{
-    if(!t)return;setLoading(true);setError('');setRetry(null);
+    if(!t)return;const sequence=++requestSequence.current;setLoading(true);setError('');setRetry(null);
     const from=new Date(Date.now()-(period-1)*86400000).toISOString().slice(0,10);
     // Todo en una petición: con una por recurso, Supabase cortaba la ráfaga con 429.
     const next:Record<string,any>={};const failures:string[]=[];let isAuthProblem=false,isPending=false;
@@ -849,7 +867,8 @@ export function App(){
       const parts:Record<string,{data?:unknown;error?:string}>=await api('dashboard',t,'GET',undefined,{from});
       resources.forEach(resource=>{const part=parts[resource];if(part&&'data' in part)next[resource]=part.data;else failures.push(part?.error??'Sin respuesta.')});
     }catch(e){failures.push(e instanceof Error?e.message:'No se pudo conectar con el asistente.');const status=(e as {status?:number}).status;isAuthProblem=status===401||status===403;isPending=status===403}
-    setData(next);setLoading(false);
+    if(sequence!==requestSequence.current)return;
+    setData(previous=>({...previous,...next}));setLoading(false);setRefreshProblem(failures.length>0);if(!failures.length)setUpdatedAt(Date.now());
     if(failures.length){
       setError(`No se ha podido cargar todo el panel: ${[...new Set(failures)].join(' · ')}`);setRetry(()=>()=>void refresh(t));
       if(isAuthProblem){
@@ -858,11 +877,16 @@ export function App(){
       }
     }
   },[token,period]);
+  refreshLatest.current=()=>refresh();
   useEffect(()=>{void refresh()},[refresh]);
   // La frase sorpresa es un extra: si Groq falla se queda el subtítulo de siempre, sin molestar con un aviso.
   useEffect(()=>{if(token)api('greeting',token).then(r=>setFunnyLine(String(r.text??''))).catch(e=>console.error('No se pudo inventar la frase',e))},[token]);
   async function action(resource:string,method:string,payload?:object,params?:Record<string,string>,done?:string):Promise<boolean>{
     setNotice('');setError('');setRetry(null);
+    if(method==='DELETE'&&['reminders','shopping_items','birthdays','habits','weight_entries','budgets'].includes(resource)){
+      const key=`${resource}:${params?.id??params?.category}`;
+      removalQueue.schedule(key,`${({reminders:'Recordatorio',shopping_items:'Producto',birthdays:'Cumpleaños',habits:'Hábito',weight_entries:'Registro de peso',budgets:'Presupuesto'} as Record<string,string>)[resource]} pendiente de eliminar`,async()=>{await api(resource,token,method,payload,params);setData(previous=>({...previous,[resource]:(previous[resource]??[]).filter((row:Row)=>resource==='budgets'?row.budget?.category!==params?.category:String(row.id)!==params?.id)}));await refreshLatest.current()});return true;
+    }
     try{await api(resource,token,method,payload,params);setNotice(done??(method==='DELETE'?'Eliminado.':'Guardado.'));await refresh();return true}
     catch(e){
       setError(e instanceof Error?e.message:'No se ha podido completar.');
@@ -870,8 +894,8 @@ export function App(){
       return false;
     }
   }
-  function logout(){void supabase.auth.signOut();setToken('');setData({});setError('')}
-  const rows=(key:string):Row[]=>Array.isArray(data[key])?data[key]:[];
+  function logout(){requestSequence.current++;removalQueue.clear();void supabase.auth.signOut();setToken('');setData({});setError('')}
+  const rows=(key:string):Row[]=>(Array.isArray(data[key])?data[key]:[]).filter((row:Row)=>!removalQueue.pending.some(p=>p.id===`${key}:${key==='budgets'?row.budget?.category:row.id}`));
   const expenses=rows('expenses'), incomes=rows('incomes'), budgets=rows('budgets');
   const totals=useMemo(()=>({spent:expenses.reduce((n,r)=>n+Number(r.amount),0),earned:incomes.reduce((n,r)=>n+Number(r.amount),0)}),[expenses,incomes]);
   const current=navigation.find(n=>n.id===section)!;
@@ -879,8 +903,9 @@ export function App(){
   if(!token)return <LoginScreen error={error} setError={setError}/>;
   return <div className="shell"><a className="skip-link" href="#main-content" onClick={e=>{e.preventDefault();contentRef.current?.focus();contentRef.current?.scrollIntoView()}}>Saltar al contenido</a><aside className={`sidebar ${mobileOpen?'open':''}`}><div className="sidebar-top"><div className="identity"><img src={chatbotLogo} alt="Mi asistente"/><small>PANEL PERSONAL</small></div><button className="mobile-close icon-button" aria-label="Cerrar menú" onClick={()=>setMobileOpen(false)}><X/></button></div><nav ref={sidebarNavRef} aria-label="Navegación principal">{NAV_GROUPS.map(group=><div className="nav-group" key={group.label}><p className="nav-group-label">{group.label}</p>{group.sections.map(id=>{const {label,icon:Icon}=navigation.find(n=>n.id===id)!;return <a key={id} href={sectionSearch(window.location.search,id)} className={section===id?'nav-item active':'nav-item'} aria-current={section===id?'page':undefined} onClick={e=>{if(e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();setSection(id)}}><Icon size={19} strokeWidth={1.8} aria-hidden="true"/>{label}</a>})}</div>)}</nav><div className="sidebar-bottom"><div className="sidebar-note"><span className="status-dot"/>Conectado a tu asistente</div><button className="nav-item logout" onClick={logout}><LogOut size={18}/> Cerrar sesión</button></div></aside>{mobileOpen&&<div className="backdrop" onClick={()=>setMobileOpen(false)}/>}
   <div className="workspace"><header className="topbar">{/* En el móvil, dentro de una sección, la vuelta al inicio ocupa el sitio del menú (que ya está en «Más»). */}{section==='overview'?<button className="mobile-menu icon-button" aria-label="Abrir menú" onClick={()=>setMobileOpen(true)}><Menu/></button>:<button className="mobile-menu icon-button back-home" onClick={()=>setSection('overview')}><ChevronLeft size={20} aria-hidden="true"/> Inicio</button>}<div className="breadcrumbs"><span className="crumb-root">Mi espacio <span>/</span> </span><strong>{current.label}</strong></div><button className="icon-button search-button" onClick={()=>setIsSearching(true)} aria-label="Buscar (atajos: / o Ctrl+K)" title="Buscar · / o Ctrl+K"><Search size={19}/></button><button className="primary add-button" onClick={()=>setAddType('reminder')}><Plus size={17}/> Añadir…</button><button className="refresh icon-button" onClick={()=>void refresh()} disabled={loading} aria-label="Actualizar datos"><RefreshCw size={18} className={loading?'spin':''}/></button></header>
-  <main id="main-content" ref={contentRef} tabIndex={-1} className={`content ${section==='overview'?'overview-content':''}`}><div className="page-heading"><div><div className="eyebrow">PANEL PERSONAL</div><h1>{section==='overview'?dailyGreeting():current.label}</h1><p className={section==='overview'?'overview-subtitle':undefined}>{section==='overview'?funnyLine||'Aquí tienes lo importante de un vistazo.':section==='memory'?'Lo que tu asistente sabe de ti. Lo usa para hablarte con gracia.':section==='finances'?'Tus ingresos, gastos y límites en un mismo lugar.':section==='weather'?'Previsión de los próximos 7 días y avisos de AEMET.':section==='settings'?'Cuentas conectadas, permisos y tus datos.':section==='news'?'Titulares de España y del mundo, por temas.':section==='markets'?'Nasdaq, criptomonedas y divisas. Tú eliges qué seguir.':section==='prices'?'Compara precios en tiendas españolas y vigila los que quieras.':'Organiza y consulta tus cosas sin salir del panel.'}</p></div><span className="today">{new Intl.DateTimeFormat('es-ES',{dateStyle:'full',timeZone:'Europe/Madrid'}).format(new Date())}</span></div>
+  <main id="main-content" ref={contentRef} tabIndex={-1} className={`content ${section==='overview'?'overview-content':''}`}><div className="page-heading"><div><div className="eyebrow">PANEL PERSONAL</div><h1>{section==='overview'?dailyGreeting():current.label}</h1><p className={section==='overview'?'overview-subtitle':undefined}>{section==='overview'?funnyLine||'Aquí tienes lo importante de un vistazo.':section==='notes'?'Ideas, enlaces y detalles para tener a mano.':section==='memory'?'Lo que tu asistente sabe de ti. Lo usa para hablarte con gracia.':section==='finances'?'Tus ingresos, gastos y límites en un mismo lugar.':section==='weather'?'Previsión de los próximos 7 días y avisos de AEMET.':section==='settings'?'Cuentas conectadas, permisos y tus datos.':section==='news'?'Titulares de España y del mundo, por temas.':section==='markets'?'Nasdaq, criptomonedas y divisas. Tú eliges qué seguir.':section==='prices'?'Compara precios en tiendas españolas y vigila los que quieras.':'Organiza y consulta tus cosas sin salir del panel.'}</p></div><span className="today">{new Intl.DateTimeFormat('es-ES',{dateStyle:'full',timeZone:'Europe/Madrid'}).format(new Date())}</span></div>
   {error&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{error}</span>{retry&&<button className="retry" onClick={retry}>Reintentar</button>}<button onClick={()=>{setError('');setRetry(null)}} aria-label="Cerrar error"><X size={16}/></button></div>}{notice&&<div className="notice" role="status"><Check size={17}/>{notice}</div>}
+  <DataFreshness updatedAt={updatedAt} loading={loading} problem={refreshProblem} onRefresh={()=>void refresh()}/>
   {section==='overview'&&<div className="overview-layout"><AssistantChat token={token} onChange={()=>refresh()}/>
     <TodaySummary token={token} data={data} goTo={setSection} isLoading={loading} onAdd={setAddType} answerHabit={(habitId,done)=>void action('habit_checks','POST',{habit_id:habitId,done},undefined,done?'Hábito apuntado. ¡Bien!':'Apuntado como no hecho hoy.')}/>
     <div className="summary-grid overview-metrics" aria-label="Tus secciones">
@@ -891,7 +916,7 @@ export function App(){
     </div>
     <details className="home-more"><summary>Próximos planes</summary><div className="home-more-content"><div className="two-cols overview-upcoming"><Card className="section-card" title={<SectionLink target="reminders" goTo={setSection} className="card-section-link">Próximos recordatorios <ArrowUpRight size={16} aria-hidden="true"/></SectionLink>}>{rows('reminders').length?rows('reminders').slice(0,4).map(r=><div className="list-row" key={r.id}><span className="row-symbol lilac"><Bell size={17}/></span><span className="row-main"><strong>{r.text}</strong><small>{dateTime(r.remind_at)}</small></span></div>):<Empty>No tienes recordatorios pendientes.</Empty>}</Card><Card className="section-card" title={<SectionLink target="calendar" goTo={setSection} className="card-section-link">En tu calendario <ArrowUpRight size={16} aria-hidden="true"/></SectionLink>}>{data.calendar?.connected?data.calendar.events.length?data.calendar.events.slice(0,4).map((e:Row,i:number)=><div className="list-row" key={i}><span className="row-symbol mint"><CalendarDays size={17}/></span><span className="row-main"><strong>{e.title}</strong><small>{e.start?dateTime(e.start):e.date}</small></span></div>):<Empty>No hay eventos en los próximos días.</Empty>:<Empty>Conecta Google Calendar para ver tus eventos.</Empty>}</Card></div></div></details>
   </div>}
-  {section==='finances'&&<>{budgets.filter((r:Row)=>budgetState(r.spent,Number(r.budget.monthly_limit)).level!=='ok').map((r:Row)=><div key={r.budget.id} className={`budget-warning ${budgetState(r.spent,Number(r.budget.monthly_limit)).level}`} role="status"><AlertTriangle size={17} aria-hidden="true"/><span><strong>{r.budget.category}:</strong> {budgetState(r.spent,Number(r.budget.monthly_limit)).text}</span></div>)}<MarketsStrip token={token} onMore={()=>setSection('markets')}/><div className="section-toolbar"><div className="segmented" role="group" aria-label="Periodo de finanzas">{[7,30,90].map(p=><button key={p} className={period===p?'selected':''} aria-pressed={period===p} onClick={()=>setPeriod(p)}>{p} días</button>)}</div></div><div className="summary-grid finance-metrics"><div className="metric income-tile"><span>Ingresos</span><strong className="positive">{euro(totals.earned)}</strong><small><ArrowUpRight size={14}/> En el periodo</small></div><div className="metric expense-tile"><span>Gastos</span><strong>{euro(totals.spent)}</strong><small><ArrowDownRight size={14}/> En el periodo</small></div><div className="metric balance-tile"><span>Balance</span><strong className={totals.earned-totals.spent>=0?'positive':'negative'}>{euro(totals.earned-totals.spent)}</strong><small>Ingresos − gastos</small></div></div><div className="bank-strip"><div><strong>{data.bank_connection?.connected?'Banco conectado':'Conecta tu banco'}</strong><p>{data.bank_connection?.connected?'Los movimientos se importan automáticamente cada día.':'Conecta tu cuenta para ver tus gastos e ingresos aquí.'}</p></div>{data.bank_connection?.connected?<button className="secondary" onClick={()=>{if(window.confirm('¿Desconectar el banco? Los movimientos importados se conservarán.'))void action('bank_connection','DELETE')}}>Desconectar</button>:<button className="primary" onClick={async()=>{try{const result=await api('bank_link',token,'POST',{});window.location.assign(result.url)}catch(e){setError(e instanceof Error?e.message:'No se pudo conectar')}}}>Conectar banco <ArrowUpRight size={17}/></button>}</div><div className="two-cols"><Card title="Análisis de gastos"><SpendingChart expenses={expenses} period={period}/></Card><TobaccoCard expenses={expenses} period={period}/></div><div className="two-cols"><EnergyDrinkCard expenses={expenses} period={period}/><BizumCard expenses={expenses} incomes={incomes} period={period}/></div><Card title="Presupuestos mensuales"><form className="budget-form" onSubmit={e=>{e.preventDefault();const form=new FormData(e.currentTarget);void action('budgets','POST',{category:form.get('category'),monthly_limit:Number(form.get('limit'))});e.currentTarget.reset()}}><label>Categoría<select name="category" required>{['Total','Supermercado','Restaurantes','Transporte','Hogar','Suscripciones','Ocio','Salud','Compras','Otros'].map(c=><option key={c}>{c}</option>)}</select></label><label>Límite mensual (€)<input name="limit" type="number" min="0.01" step="0.01" required placeholder="200"/></label><button className="primary" type="submit">Guardar</button></form>{budgets.length?budgets.map((r:Row)=><div className="budget-item" key={r.budget.id}><div className="between"><strong>{r.budget.category}</strong><button className="delete icon-button" aria-label={`Quitar presupuesto de ${r.budget.category}`} onClick={()=>void action('budgets','DELETE',undefined,{category:r.budget.category})}><Trash2 size={16}/></button></div><p>{euro(r.spent)} de {euro(Number(r.budget.monthly_limit))}</p><div className="track"><span className={budgetState(r.spent,Number(r.budget.monthly_limit)).level} style={{width:`${Math.min(100,r.spent/Number(r.budget.monthly_limit)*100)}%`}}/></div><p className={`budget-state ${budgetState(r.spent,Number(r.budget.monthly_limit)).level}`}>{budgetState(r.spent,Number(r.budget.monthly_limit)).text}</p></div>):<Empty>Aún no has creado presupuestos.</Empty>}</Card><MovementSearch token={token}/><Card title="Movimientos recientes"><div className="table-wrap" tabIndex={0} role="region" aria-label="Movimientos (desliza para ver todas las columnas)"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th>Importe</th></tr></thead><tbody>{([...(expenses.map(r=>({...r,kind:'expense'}))),...(incomes.map(r=>({...r,kind:'income'})))] as Row[]).sort((a,b)=>b.booking_date.localeCompare(a.booking_date)).slice(0,25).map((r,i)=><tr key={`${r.kind}-${r.id}-${i}`}><td>{r.booking_date}</td><td>{r.description}</td><td>{r.kind==='income'?'Ingreso':r.category}</td><td className={r.kind==='income'?'positive':''}>{r.kind==='income'?'+':'−'}{euro(Number(r.amount))}</td></tr>)}</tbody></table>{!expenses.length&&!incomes.length&&<Empty>No hay movimientos en este periodo.</Empty>}</div></Card></>}
+  {section==='finances'&&<><FinanceInsights api={panelApi}/>{budgets.filter((r:Row)=>budgetState(r.spent,Number(r.budget.monthly_limit)).level!=='ok').map((r:Row)=><div key={r.budget.id} className={`budget-warning ${budgetState(r.spent,Number(r.budget.monthly_limit)).level}`} role="status"><AlertTriangle size={17} aria-hidden="true"/><span><strong>{r.budget.category}:</strong> {budgetState(r.spent,Number(r.budget.monthly_limit)).text}</span></div>)}<MarketsStrip token={token} onMore={()=>setSection('markets')}/><div className="section-toolbar"><div className="segmented" role="group" aria-label="Periodo de finanzas">{[7,30,90].map(p=><button key={p} className={period===p?'selected':''} aria-pressed={period===p} onClick={()=>setPeriod(p)}>{p} días</button>)}</div></div><div className="summary-grid finance-metrics"><div className="metric income-tile"><span>Ingresos</span><strong className="positive">{euro(totals.earned)}</strong><small><ArrowUpRight size={14}/> En el periodo</small></div><div className="metric expense-tile"><span>Gastos</span><strong>{euro(totals.spent)}</strong><small><ArrowDownRight size={14}/> En el periodo</small></div><div className="metric balance-tile"><span>Balance</span><strong className={totals.earned-totals.spent>=0?'positive':'negative'}>{euro(totals.earned-totals.spent)}</strong><small>Ingresos − gastos</small></div></div><div className="bank-strip"><div><strong>{data.bank_connection?.connected?'Banco conectado':'Conecta tu banco'}</strong><p>{data.bank_connection?.connected?'Los movimientos se importan automáticamente cada día.':'Conecta tu cuenta para ver tus gastos e ingresos aquí.'}</p></div>{data.bank_connection?.connected?<button className="secondary" onClick={()=>{if(window.confirm('¿Desconectar el banco? Los movimientos importados se conservarán.'))void action('bank_connection','DELETE')}}>Desconectar</button>:<button className="primary" onClick={async()=>{try{const result=await api('bank_link',token,'POST',{});window.location.assign(result.url)}catch(e){setError(e instanceof Error?e.message:'No se pudo conectar')}}}>Conectar banco <ArrowUpRight size={17}/></button>}</div><div className="two-cols"><Card title="Análisis de gastos"><SpendingChart expenses={expenses} period={period}/></Card><TobaccoCard expenses={expenses} period={period}/></div><div className="two-cols"><EnergyDrinkCard expenses={expenses} period={period}/><BizumCard expenses={expenses} incomes={incomes} period={period}/></div><Card title="Presupuestos mensuales"><form className="budget-form" onSubmit={e=>{e.preventDefault();const form=new FormData(e.currentTarget);void action('budgets','POST',{category:form.get('category'),monthly_limit:Number(form.get('limit'))});e.currentTarget.reset()}}><label>Categoría<select name="category" required>{['Total','Supermercado','Restaurantes','Transporte','Hogar','Suscripciones','Ocio','Salud','Compras','Otros'].map(c=><option key={c}>{c}</option>)}</select></label><label>Límite mensual (€)<input name="limit" type="number" min="0.01" step="0.01" required placeholder="200"/></label><button className="primary" type="submit">Guardar</button></form>{budgets.length?budgets.map((r:Row)=><div className="budget-item" key={r.budget.id}><div className="between"><strong>{r.budget.category}</strong><button className="delete icon-button" aria-label={`Quitar presupuesto de ${r.budget.category}`} onClick={()=>void action('budgets','DELETE',undefined,{category:r.budget.category})}><Trash2 size={16}/></button></div><p>{euro(r.spent)} de {euro(Number(r.budget.monthly_limit))}</p><div className="track"><span className={budgetState(r.spent,Number(r.budget.monthly_limit)).level} style={{width:`${Math.min(100,r.spent/Number(r.budget.monthly_limit)*100)}%`}}/></div><p className={`budget-state ${budgetState(r.spent,Number(r.budget.monthly_limit)).level}`}>{budgetState(r.spent,Number(r.budget.monthly_limit)).text}</p></div>):<Empty>Aún no has creado presupuestos.</Empty>}</Card><MovementSearch token={token}/><Card title="Movimientos recientes"><div className="table-wrap" tabIndex={0} role="region" aria-label="Movimientos (desliza para ver todas las columnas)"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th>Importe</th></tr></thead><tbody>{([...(expenses.map(r=>({...r,kind:'expense'}))),...(incomes.map(r=>({...r,kind:'income'})))] as Row[]).sort((a,b)=>b.booking_date.localeCompare(a.booking_date)).slice(0,25).map((r,i)=><tr key={`${r.kind}-${r.id}-${i}`}><td>{r.booking_date}</td><td>{r.description}</td><td>{r.kind==='income'?'Ingreso':r.category}</td><td className={r.kind==='income'?'positive':''}>{r.kind==='income'?'+':'−'}{euro(Number(r.amount))}</td></tr>)}</tbody></table>{!expenses.length&&!incomes.length&&<Empty>No hay movimientos en este periodo.</Empty>}</div></Card></>}
   {section==='reminders'&&<Card title="Tus recordatorios" aside={<span className="count">{rows('reminders').length} pendientes</span>}><ReminderForm save={payload=>action('reminders','POST',payload)}/>{rows('reminders').map(r=><div className="list-row" key={r.id}><span className="row-symbol lilac"><Bell size={17}/></span><span className="row-main"><strong>{r.text}</strong><small>{dateTime(r.remind_at)} {r.repeat?`· ${r.repeat}`:''} · Aviso {r.advance_minutes===1440?'un día':'30 min'} antes</small></span><button className="delete icon-button" aria-label={`Eliminar ${r.text}`} onClick={()=>void action('reminders','DELETE',undefined,{id:String(r.id)})}><Trash2 size={17}/></button></div>)}{!rows('reminders').length&&<Empty>Añade tu primer recordatorio arriba.</Empty>}</Card>}
   {section==='shopping_items'&&<Card title="Por comprar" aside={<span className="count">{rows('shopping_items').length} productos</span>}><InlineForm label="Añadir producto" placeholder="Añadir a la lista…" onSubmit={text=>action('shopping_items','POST',{text})}/>{rows('shopping_items').map(r=><div className="list-row" key={r.id}><button className="check-button" aria-label={`Marcar ${r.text} como comprado`} onClick={()=>void action('shopping_items','DELETE',undefined,{id:String(r.id)},'Tachado de la lista.')}><Check size={16}/></button><span className="row-main"><strong>{r.text}</strong></span><button className="delete icon-button" aria-label={`Eliminar ${r.text}`} onClick={()=>void action('shopping_items','DELETE',undefined,{id:String(r.id)})}><Trash2 size={17}/></button></div>)}{!rows('shopping_items').length&&<Empty>Tu lista está vacía. Añade algo que necesites.</Empty>}</Card>}
   {section==='birthdays'&&<Card title="Cumpleaños" aside={<span className="count">{rows('birthdays').length} personas</span>}><form className="stack-form" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);void action('birthdays','POST',{name:f.get('name'),day:Number(f.get('day')),month:Number(f.get('month')),year:f.get('year')});e.currentTarget.reset()}}><div className="form-row"><label>Nombre<input name="name" required placeholder="Nombre"/></label><label>Día<input name="day" type="number" min="1" max="31" required placeholder="Día"/></label><label>Mes<select name="month">{Array.from({length:12},(_,i)=><option key={i} value={i+1}>{new Intl.DateTimeFormat('es-ES',{month:'long'}).format(new Date(2024,i,1))}</option>)}</select></label><label>Año opcional<input name="year" type="number" min="1900" max="2100" placeholder="Año"/></label><button className="primary" type="submit"><Plus size={17}/> Añadir</button></div></form>{rows('birthdays').sort((a,b)=>a.month-b.month||a.day-b.day).map(r=><div className="list-row" key={r.id}><span className="row-symbol peach"><Cake size={18}/></span><span className="row-main"><strong>{r.name}</strong><small>{r.day} de {new Intl.DateTimeFormat('es-ES',{month:'long'}).format(new Date(2024,r.month-1,1))}{r.year?` · ${r.year}`:''}</small></span><button className="delete icon-button" aria-label={`Eliminar cumpleaños de ${r.name}`} onClick={()=>void action('birthdays','DELETE',undefined,{id:String(r.id)})}><Trash2 size={17}/></button></div>)}{!rows('birthdays').length&&<Empty>Añade un cumpleaños para que no se te pase.</Empty>}</Card>}
@@ -902,10 +927,12 @@ export function App(){
   {section==='news'&&<NewsSection token={token}/>}
   {section==='markets'&&<MarketsSection token={token}/>}
   {section==='prices'&&<PricesSection token={token}/>}
+  {section==='notes'&&<NotesPanel key={token} api={panelApi}/>}
   {section==='settings'&&<SettingsSection token={token} onChange={()=>refresh()}/>}
   {section==='memory'&&<MemorySection content={String(data.memory?.content??'')} save={content=>action('memory','POST',{content},undefined,'Memoria guardada.')}/>}
-  <footer>Tu asistente personal · Datos actualizados desde Supabase</footer></main></div>
+  <footer>Tu asistente personal · Datos desde Supabase</footer></main></div>
   <nav className="bottom-nav" aria-label="Accesos rápidos">{BOTTOM_NAV.map(id=>{const item=navigation.find(n=>n.id===id)!,Icon=item.icon;return <a href={sectionSearch(window.location.search,id)} key={id} className={section===id?'active':''} aria-current={section===id?'page':undefined} onClick={e=>{if(e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();setSection(id)}}><Icon size={20} aria-hidden="true"/><span>{item.label}</span></a>})}<button className={mobileOpen?'active':''} aria-label="Más secciones" aria-expanded={mobileOpen} onClick={()=>setMobileOpen(true)}><Menu size={20} aria-hidden="true"/><span>Más</span></button></nav>
+  <UndoTray queue={removalQueue}/>
   {isSearching&&<SearchDialog token={token} onClose={()=>setIsSearching(false)} goTo={target=>{setIsSearching(false);setSection(target);window.scrollTo({top:0})}}/>}
   {addType&&<AddDialog type={addType} setType={setAddType} token={token} isCalendarConnected={!!data.calendar?.connected} onClose={()=>setAddType(null)} onSaved={async message=>{setAddType(null);setError('');setRetry(null);setNotice(message);await refresh()}} goToSettings={()=>{setAddType(null);setSection('settings')}}/>}</div>
 }

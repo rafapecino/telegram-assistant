@@ -46,6 +46,7 @@ Deno.test("limita a 300 peticiones por minuto y a 10 las que gastan cuota de Gro
   assertEquals(await isOverRateLimit(db, "u1", "GET", "notes"), false);
   assertEquals(queries.length, 1);
   assertEquals(await isOverRateLimit(dbCounting({ "quota:": 11 }).db, "u1", "POST", "chat"), true);
+  assertEquals(await isOverRateLimit(dbCounting({ "quota:": 11 }).db, "u1", "POST", "chat_draft"), true);
   assertEquals(await isOverRateLimit(dbCounting({ "quota:": 10 }).db, "u1", "POST", "transcribe"), false);
   assertEquals(await isOverRateLimit(dbCounting({ "quota:": 11 }).db, "u1", "GET", "greeting"), true);
   assertEquals(await isOverRateLimit(dbCounting({ "quota:": 11 }).db, "u1", "GET", "prices"), true);

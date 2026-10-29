@@ -3,7 +3,7 @@ export const SECTION_ROUTES = {
   overview: 'inicio', finances: 'finanzas', reminders: 'recordatorios',
   shopping_items: 'compra', birthdays: 'cumpleanos', habits: 'habitos',
   weight: 'peso', calendar: 'agenda', weather: 'tiempo', memory: 'memoria',
-  settings: 'ajustes', news: 'noticias', markets: 'mercados', prices: 'precios',
+  notes: 'notas', settings: 'ajustes', news: 'noticias', markets: 'mercados', prices: 'precios',
 } as const;
 export type Section = keyof typeof SECTION_ROUTES;
 
