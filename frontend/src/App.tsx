@@ -5,6 +5,7 @@ import { sectionFromSearch, sectionSearch, initialSection, readLastSection, reme
 import { madridNow, nextHourInMadrid } from './form-time';
 import {DataFreshness,FinanceInsights,NotesPanel,ProposalEditor,UndoTray,useUndoQueue} from './ExperiencePanels';
 import {dayFocus,isDraftCandidate,type Draft} from './experience';
+import {contextualGreeting} from './greetings';
 import { selectHomeWeather } from './home-weather';
 import chatbotLogo from './assets/chatbot-logo.png';
 
@@ -116,22 +117,7 @@ function EventForm({save}:{save:(data:object)=>Promise<boolean>}) {
     <label className="optional-time"><input type="checkbox" checked={hasTime} onChange={e=>setHasTime(e.target.checked)}/> Añadir hora (si no, será todo el día)</label></form>
 }
 
-// Uno distinto cada día, con la guasa que pidió Rafa. Sin «buenos días» porque el panel se abre a cualquier hora.
-const GREETINGS = [
-  '¿Qué pasa, Petzi? 👋','Buenas, Rafa 😏','¿Qué quieres ahora, pringao? 🙄','Aquí estoy, cabrón 😎','Dime, Rafa 👊',
-  'A sus órdenes, Petzi 🫡','¿Otra vez por aquí, Rafa? 😂','¿Qué tal la tesis, ingeniero? 📚','¿Ya vas por la segunda energética, Petzi? 🥤',
-  'Mira quién se ha acordado de mí 🙃','¿Hoy toca gimnasio o excusa, Rafa? 🏋️','Habla, cabrón, que no muerdo 🐶',
-  '¿Vienes a ver cuánto has gastado, pringao? 💸','Petzi, el ingeniero más procrastinador de Madrid 🏆','Bienvenido a tu centro de mando, Rafa 🚀',
-  '¿Otra pausa de la tesis, Petzi? 👀','Aquí tu asistente, más currante que tú 💪','¿Qué se le ofrece al señorito? 🎩',
-  'Rafa, que te veo venir 🕵️','Venga, Petzi, sorpréndeme 🎲',
-  '¿Qué pasa, máquina? ⚙️','Dime, fiera 🦁','Hombre, el crack ha vuelto ⚽','¿Qué se cuenta la figura? 🗿','A tus pies, campeón 🏅',
-  '¿Qué tramas, bribón? 😼','Hola, golfo, ¿de dónde vienes? 🌙','Menudo elemento tenemos aquí 🧪','¿Qué hay, pájaro? 🐦',
-  'Llegó el fenómeno 🌪️','Buenas, mamón 😜','¿Qué quieres, melón? 🍈','Dime, cenutrio, que tengo prisa 🏃',
-  'Bienvenido, señor ingeniero 👷','¿Cómo va eso, doctorando? 🎓','¿Y ahora qué, listillo? 🤓','Habla, tronco 🌳','¿Qué pasa, tigre? 🐯',
-  'Hola, sinvergüenza 😈','¿Qué necesitas, maestro? 🧙','Dime, artista 🎨','A ver, canalla, ¿qué has liado? 🃏','Buenas, jefe 💼',
-];
 const DAY_MS = 86_400_000;
-const dailyGreeting = () => GREETINGS[Math.floor(Date.parse(`${todayInMadrid()}T00:00:00Z`)/DAY_MS)%GREETINGS.length];
 
 // Los enlaces de autorización (banco, Google) llegan en el texto: se abren en otra pestaña para no perder el panel.
 function linkify(text:string):ReactNode[]{
@@ -836,6 +822,8 @@ export function App(){
   const [refreshProblem,setRefreshProblem]=useState(false),[updatedAt,setUpdatedAt]=useState<number|null>(null),requestSequence=useRef(0),refreshLatest=useRef<()=>Promise<void>>(async()=>{});
   const removalQueue=useUndoQueue(setError);
   useEffect(()=>{if(!token){removalQueue.clear();setData({});setUpdatedAt(null)}},[token,removalQueue.clear]);
+  const [greetingNow,setGreetingNow]=useState(()=>new Date());
+  useEffect(()=>{const update=()=>setGreetingNow(new Date());const timer=setInterval(update,60_000);window.addEventListener('focus',update);return()=>{clearInterval(timer);window.removeEventListener('focus',update)}},[]);
   const [period,setPeriod]=useState(30),[funnyLine,setFunnyLine]=useState('');
   const [addType,setAddType]=useState<AddType|null>(null),[retry,setRetry]=useState<(()=>void)|null>(null),[isSearching,setIsSearching]=useState(false);
   // La PWA abre /: recupera la sección y deja una URL que también pueda compartirse.
@@ -903,7 +891,7 @@ export function App(){
   if(!token)return <LoginScreen error={error} setError={setError}/>;
   return <div className="shell"><a className="skip-link" href="#main-content" onClick={e=>{e.preventDefault();contentRef.current?.focus();contentRef.current?.scrollIntoView()}}>Saltar al contenido</a><aside className={`sidebar ${mobileOpen?'open':''}`}><div className="sidebar-top"><div className="identity"><img src={chatbotLogo} alt="Mi asistente"/><small>PANEL PERSONAL</small></div><button className="mobile-close icon-button" aria-label="Cerrar menú" onClick={()=>setMobileOpen(false)}><X/></button></div><nav ref={sidebarNavRef} aria-label="Navegación principal">{NAV_GROUPS.map(group=><div className="nav-group" key={group.label}><p className="nav-group-label">{group.label}</p>{group.sections.map(id=>{const {label,icon:Icon}=navigation.find(n=>n.id===id)!;return <a key={id} href={sectionSearch(window.location.search,id)} className={section===id?'nav-item active':'nav-item'} aria-current={section===id?'page':undefined} onClick={e=>{if(e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();setSection(id)}}><Icon size={19} strokeWidth={1.8} aria-hidden="true"/>{label}</a>})}</div>)}</nav><div className="sidebar-bottom"><div className="sidebar-note"><span className="status-dot"/>Conectado a tu asistente</div><button className="nav-item logout" onClick={logout}><LogOut size={18}/> Cerrar sesión</button></div></aside>{mobileOpen&&<div className="backdrop" onClick={()=>setMobileOpen(false)}/>}
   <div className="workspace"><header className="topbar">{/* En el móvil, dentro de una sección, la vuelta al inicio ocupa el sitio del menú (que ya está en «Más»). */}{section==='overview'?<button className="mobile-menu icon-button" aria-label="Abrir menú" onClick={()=>setMobileOpen(true)}><Menu/></button>:<button className="mobile-menu icon-button back-home" onClick={()=>setSection('overview')}><ChevronLeft size={20} aria-hidden="true"/> Inicio</button>}<div className="breadcrumbs"><span className="crumb-root">Mi espacio <span>/</span> </span><strong>{current.label}</strong></div><button className="icon-button search-button" onClick={()=>setIsSearching(true)} aria-label="Buscar (atajos: / o Ctrl+K)" title="Buscar · / o Ctrl+K"><Search size={19}/></button><button className="primary add-button" onClick={()=>setAddType('reminder')}><Plus size={17}/> Añadir…</button><button className="refresh icon-button" onClick={()=>void refresh()} disabled={loading} aria-label="Actualizar datos"><RefreshCw size={18} className={loading?'spin':''}/></button></header>
-  <main id="main-content" ref={contentRef} tabIndex={-1} className={`content ${section==='overview'?'overview-content':''}`}><div className="page-heading"><div><div className="eyebrow">PANEL PERSONAL</div><h1>{section==='overview'?dailyGreeting():current.label}</h1><p className={section==='overview'?'overview-subtitle':undefined}>{section==='overview'?funnyLine||'Aquí tienes lo importante de un vistazo.':section==='notes'?'Ideas, enlaces y detalles para tener a mano.':section==='memory'?'Lo que tu asistente sabe de ti. Lo usa para hablarte con gracia.':section==='finances'?'Tus ingresos, gastos y límites en un mismo lugar.':section==='weather'?'Previsión de los próximos 7 días y avisos de AEMET.':section==='settings'?'Cuentas conectadas, permisos y tus datos.':section==='news'?'Titulares de España y del mundo, por temas.':section==='markets'?'Nasdaq, criptomonedas y divisas. Tú eliges qué seguir.':section==='prices'?'Compara precios en tiendas españolas y vigila los que quieras.':'Organiza y consulta tus cosas sin salir del panel.'}</p></div><span className="today">{new Intl.DateTimeFormat('es-ES',{dateStyle:'full',timeZone:'Europe/Madrid'}).format(new Date())}</span></div>
+  <main id="main-content" ref={contentRef} tabIndex={-1} className={`content ${section==='overview'?'overview-content':''}`}><div className="page-heading"><div><div className="eyebrow">PANEL PERSONAL</div><h1>{section==='overview'?contextualGreeting(rows('birthdays'),greetingNow):current.label}</h1><p className={section==='overview'?'overview-subtitle':undefined}>{section==='overview'?funnyLine||'Aquí tienes lo importante de un vistazo.':section==='notes'?'Ideas, enlaces y detalles para tener a mano.':section==='memory'?'Lo que tu asistente sabe de ti. Lo usa para hablarte con gracia.':section==='finances'?'Tus ingresos, gastos y límites en un mismo lugar.':section==='weather'?'Previsión de los próximos 7 días y avisos de AEMET.':section==='settings'?'Cuentas conectadas, permisos y tus datos.':section==='news'?'Titulares de España y del mundo, por temas.':section==='markets'?'Nasdaq, criptomonedas y divisas. Tú eliges qué seguir.':section==='prices'?'Compara precios en tiendas españolas y vigila los que quieras.':'Organiza y consulta tus cosas sin salir del panel.'}</p></div><span className="today">{new Intl.DateTimeFormat('es-ES',{dateStyle:'full',timeZone:'Europe/Madrid'}).format(new Date())}</span></div>
   {error&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{error}</span>{retry&&<button className="retry" onClick={retry}>Reintentar</button>}<button onClick={()=>{setError('');setRetry(null)}} aria-label="Cerrar error"><X size={16}/></button></div>}{notice&&<div className="notice" role="status"><Check size={17}/>{notice}</div>}
   <DataFreshness updatedAt={updatedAt} loading={loading} problem={refreshProblem} onRefresh={()=>void refresh()}/>
   {section==='overview'&&<div className="overview-layout"><AssistantChat token={token} onChange={()=>refresh()}/>
