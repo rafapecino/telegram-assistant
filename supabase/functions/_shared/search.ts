@@ -68,6 +68,7 @@ async function searchTable(
     ? "id,booking_date,description,amount,category"
     : "id,booking_date,description,amount";
   let query = db.from(kind === "expense" ? "expenses" : "incomes").select(columns);
+  if(kind==='expense')query=query.is('duplicate_of',null);
   if (filters.text) query = query.ilike("description", likePattern(filters.text));
   if (kind === "expense" && filters.category) query = query.eq("category", filters.category);
   if (filters.from) query = query.gte("booking_date", filters.from);

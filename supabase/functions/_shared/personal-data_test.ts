@@ -44,7 +44,7 @@ Deno.test("cuenta los registros de cada categoría sin contar dos veces las tabl
   assertEquals(summary.find((category) => category.id === "finances"), {
     id: "finances",
     label: "Gastos, ingresos y presupuestos",
-    count: 9,
+    count: 15,
   });
   assertEquals(queries.some((query) => query[0] === 'from("habit_checks")'), false);
 });

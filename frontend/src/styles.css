@@ -172,3 +172,14 @@ a.nav-item{text-decoration:none}
 .finance-detail[open]>summary {margin-bottom:8px;}
 .finance-detail .card {box-shadow:none;}
 .finance-connection {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;color:#59687c;margin:4px 0 20px;}
+/* Progressive disclosure for daily workflows. */
+.quick-captures{padding:16px 0 20px;border-bottom:1px solid #dde5ee;margin-bottom:20px}.quick-captures h3{margin:0}
+.quick-grid,.workflow-actions{display:flex;flex-wrap:wrap;gap:8px}.quick-grid button{flex:1 1 145px;text-align:left;min-height:44px}
+.favorite-manager,.task-plan-form,.category-editor{background:#f5f8fc;border:1px solid #dde5ee;border-radius:12px;padding:16px;margin-top:12px}
+.workflow-tabs{margin:18px 0;flex-wrap:wrap}.workflow-tabs button[aria-pressed=true]{background:#e4effc;color:#125da6}
+.planned-task{border-bottom:1px solid #e3e9ef;padding:6px 0 14px}.planned-task .row-main{min-width:0;overflow-wrap:anywhere}
+.task-plan-form .form-row>label{min-width:150px;flex:1}.workflow-actions{margin-top:12px}.expense-review{padding-top:16px}.expense-review h3{margin-top:24px}
+.duplicate-card{padding:16px;border:1px solid #dde5ee;border-radius:12px;margin:12px 0;background:#fff}
+.duplicate-pair{display:grid;grid-template-columns:1fr 1fr auto;gap:16px;align-items:start}.duplicate-pair div{display:grid;gap:6px;min-width:0}.duplicate-pair strong{overflow-wrap:anywhere}.duplicate-pair small{color:#526579}
+.category-rule select{max-width:200px}.category-edit-link{display:inline-flex;align-items:center;gap:5px;text-align:left}
+@media(max-width:600px){.duplicate-pair{grid-template-columns:1fr}.workflow-actions>button{flex:1 1 140px}.category-rule{flex-wrap:wrap}.category-editor{padding:12px}.workflow-tabs button{flex:1}.task-plan-form .form-row{flex-direction:column}}

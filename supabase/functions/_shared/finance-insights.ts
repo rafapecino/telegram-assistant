@@ -5,7 +5,7 @@ export async function loadFinanceInsightExpenses(db:SupabaseClient,today:string)
   const expenses:Record<string,unknown>[]=[],from=addDaysToDate(today,-120);
   let total:number|null=null;
   for(let offset=0;offset<2000;offset+=500){
-    const {data,error,count}=await db.from('expenses').select('id,booking_date,description,amount,category',{count:'exact'})
+    const {data,error,count}=await db.from('expenses').select('id,booking_date,description,amount,category',{count:'exact'}).is('duplicate_of',null)
       .gte('booking_date',from).lte('booking_date',today).order('booking_date',{ascending:false}).order('id',{ascending:false}).range(offset,offset+499);
     if(error)throw error;
     if(typeof count==='number')total=count;

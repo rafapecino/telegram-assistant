@@ -121,7 +121,7 @@ export async function loadBudgetStatuses(db: SupabaseClient, now: Date): Promise
   if (error) throw new Error(`No se pudieron leer los presupuestos: ${error.message}`);
   if (budgets.length === 0) return [];
   const { data: expenses, error: expensesError } = await db.from("expenses")
-    .select("category, amount")
+    .select("category, amount").is('duplicate_of',null)
     .gte("booking_date", madridMonthStart(now));
   if (expensesError) throw new Error(`No se pudieron leer los gastos del mes: ${expensesError.message}`);
   return budgetStatuses(budgets, expenses);

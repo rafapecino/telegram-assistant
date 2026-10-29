@@ -11,6 +11,7 @@ Deno.test("un gasto necesita importe, descripción, categoría conocida y fecha"
     description: "Cena",
     date: TODAY,
     category: "Restaurantes",
+    payment_method: "unknown",
   });
   assertThrows(
     () => parseManualEntry({ amount: 5, description: "x", category: "Inventada", date: TODAY }, "expense", TODAY),
@@ -40,12 +41,12 @@ Deno.test("rechaza importes imposibles y fechas futuras o de hace más de un añ
 Deno.test("se guarda como manual, en euros, sin chocar con los movimientos del banco", async () => {
   const { db, queries } = fakeDb(() => ({}));
   await saveManualEntry(db, "expense", { amount: 3, description: "Café", date: TODAY, category: "Restaurantes" });
-  const inserted = JSON.parse(queries[0][1].slice("insert(".length, -1));
+  const inserted = JSON.parse(queries[0][1].slice("upsert(".length).split('}, {')[0]+'}');
   assertEquals(queries[0][0], 'from("expenses")');
   assertEquals(inserted.account_uid, "manual");
   assertEquals(inserted.transaction_key.startsWith("manual|"), true);
   assertEquals([inserted.amount, inserted.currency, inserted.category], [3, "EUR", "Restaurantes"]);
   await saveManualEntry(db, "income", { amount: 10, description: "Bizum", date: TODAY });
   assertEquals(queries[1][0], 'from("incomes")');
-  assertEquals("category" in JSON.parse(queries[1][1].slice("insert(".length, -1)), false);
+  assertEquals("category" in JSON.parse(queries[1][1].slice("upsert(".length).split('}, {')[0]+'}'), false);
 });

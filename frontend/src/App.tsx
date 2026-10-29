@@ -1,3 +1,4 @@
+import {QuickCaptures,TaskPlanner,CategoryEditor,ExpenseReviewDisclosure,PaymentField} from './WorkflowPanels';
 import { LifePanels, DeliveriesPanel } from './LifePanels';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createClient } from '@supabase/supabase-js';
@@ -424,15 +425,16 @@ const madridDateOf=(v:string)=>new Intl.DateTimeFormat('en-CA',{timeZone:'Europe
 const isoWeekday=(date:string)=>new Date(`${date}T12:00:00Z`).getUTCDay()||7;
 
 function MoneyForm({kind,categories,save}:{kind:'expense'|'income';categories:string[];save:(data:object)=>Promise<boolean>}) {
+  const requestKey=useRef(crypto.randomUUID()),lock=useRef(false);
   const [amount,setAmount]=useState(''),[description,setDescription]=useState(''),[category,setCategory]=useState(''),[date,setDate]=useState(todayInMadrid),[busy,setBusy]=useState(false);
-  async function submit(e:FormEvent){e.preventDefault();setBusy(true);try{await save({amount:amount.replace(',','.'),description,date,...(kind==='expense'?{category}:{})})}finally{setBusy(false)}}
+  async function submit(e:FormEvent){e.preventDefault();if(lock.current)return;lock.current=true;setBusy(true);try{await save({amount:amount.replace(',','.'),description,date,...(kind==='expense'?{category,payment_method:new FormData(e.currentTarget as HTMLFormElement).get('payment_method'),request_key:requestKey.current}:{})})}finally{lock.current=false;setBusy(false)}}
   return <form className="stack-form" onSubmit={submit}><div className="form-row">
     <label>Importe (€)<input inputMode="decimal" value={amount} onChange={e=>setAmount(e.target.value)} required pattern="[0-9]+([.,][0-9]{1,2})?" placeholder="12,50" autoFocus/></label>
     <label>Descripción<input value={description} onChange={e=>setDescription(e.target.value)} required maxLength={200} placeholder={kind==='expense'?'Cena con amigos':'Bizum de Ana'}/></label>
     {kind==='expense'&&<label>Categoría<select value={category} onChange={e=>setCategory(e.target.value)} required><option value="">Elige…</option>{categories.map(c=><option key={c}>{c}</option>)}</select></label>}
     <label>Fecha<input type="date" value={date} max={todayInMadrid()} onChange={e=>setDate(e.target.value)} required/></label>
     <button className="primary" type="submit" disabled={busy}><Plus size={17}/> {busy?'Guardando…':kind==='expense'?'Apuntar gasto':'Apuntar ingreso'}</button>
-  </div></form>;
+  </div>{kind==='expense'&&<PaymentField/>}</form>;
 }
 
 const ALL_DAYS=[1,2,3,4,5,6,7];
@@ -593,7 +595,9 @@ function NewsSection({token}:{token:string}) {
 }
 
 /** Buscar gastos e ingresos por texto, categoría y fechas. Los filtros los aplica el servidor, sin límite de periodo. */
-function MovementSearch({token}:{token:string}) {
+function MovementSearch({token,onChanged}:{token:string;onChanged:()=>Promise<void>}) {
+  const [editingCategory,setEditingCategory]=useState<Row|null>(null);
+  const workflowApi=useCallback((r:string,m?:string,d?:object,p?:Record<string,string>)=>api(r,token,m,d,p),[token]);
   const today=todayInMadrid();
   const [visibleCount,setVisibleCount]=useState(10);
   const [text,setText]=useState(''),[category,setCategory]=useState(''),[from,setFrom]=useState(()=>addDays(todayInMadrid(),-89)),[to,setTo]=useState(today);
@@ -610,6 +614,7 @@ function MovementSearch({token}:{token:string}) {
   const spent=(results??[]).filter(r=>r.kind==='expense').reduce((n,r)=>n+r.amount,0),earned=(results??[]).filter(r=>r.kind==='income').reduce((n,r)=>n+r.amount,0);
   const hasFilters=text||category||from!==addDays(today,-89)||to!==today;
   return <Card title="Movimientos">
+    {editingCategory&&<CategoryEditor key={editingCategory.id} row={editingCategory} api={workflowApi} onClose={()=>setEditingCategory(null)} onSaved={async()=>{await search();await onChanged()}}/>}
     <form className="stack-form" onSubmit={e=>{e.preventDefault();void search()}} role="search" aria-label="Buscar movimientos">
       <div className="form-row"><label>Texto<input value={text} onChange={e=>setText(e.target.value)} maxLength={100} placeholder="Mercadona, Bizum, Netflix…"/></label>
         <label>Categoría<select value={category} onChange={e=>setCategory(e.target.value)}><option value="">Todas</option><option>Ingresos</option>{categories.map(c=><option key={c}>{c}</option>)}</select></label></div>
@@ -620,7 +625,7 @@ function MovementSearch({token}:{token:string}) {
     {problem&&<div className="alert" role="alert"><AlertCircle size={18}/><span>{problem}</span><button className="retry" onClick={()=>void search()}>Reintentar</button></div>}
     {results===null?<Empty>{busy?'Buscando…':'Elige los filtros y pulsa Buscar.'}</Empty>:<>
       <p className="search-summary" role="status"><strong>{results.length===1?'1 movimiento':`${results.length} movimientos`}</strong> · Gastos {euro(spent)} · Ingresos <span className="positive">{euro(earned)}</span> · Balance <span className={earned-spent>=0?'positive':'negative'}>{euro(earned-spent)}</span>{results.length>=300&&' · Se muestran los 300 más recientes: acota las fechas para ver el resto.'}</p>
-      {results.length?<div className="table-wrap" tabIndex={0} role="region" aria-label="Resultados (desliza para ver todas las columnas)"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th>Importe</th></tr></thead><tbody>{results.slice(0,visibleCount).map(r=><tr key={`${r.kind}-${r.id}`}><td>{r.booking_date}</td><td>{r.description}</td><td>{r.category}</td><td className={r.kind==='income'?'positive':''}>{r.kind==='income'?'+':'−'}{euro(r.amount)}</td></tr>)}</tbody></table></div>
+      {results.length?<div className="table-wrap" tabIndex={0} role="region" aria-label="Resultados (desliza para ver todas las columnas)"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th>Importe</th></tr></thead><tbody>{results.slice(0,visibleCount).map(r=><tr key={`${r.kind}-${r.id}`}><td>{r.booking_date}</td><td>{r.description}</td><td>{r.kind==='expense'?<button className="text-link category-edit-link" aria-label={`Editar categoría de ${r.description}`} onClick={()=>setEditingCategory(r)}>{r.category}<Pencil size={13}/></button>:r.category}</td><td className={r.kind==='income'?'positive':''}>{r.kind==='income'?'+':'−'}{euro(r.amount)}</td></tr>)}</tbody></table></div>
       :<Empty>No hay movimientos con esos filtros. Prueba a ampliar las fechas o a quitar la categoría.</Empty>}
       {results.length>visibleCount&&<button className="secondary" onClick={()=>setVisibleCount(n=>n+10)}>Ver más movimientos · {Math.min(visibleCount,results.length)} de {results.length}</button>}
     </>}
@@ -759,6 +764,7 @@ function PricesSection({token}:{token:string}) {
 
 /** Ventana para crear cualquier cosa. Si falla, lo escrito se queda y se puede volver a enviar. */
 function AddDialog({type,setType,token,isCalendarConnected,onClose,onSaved,goToSettings}:{type:AddType;setType:(type:AddType)=>void;token:string;isCalendarConnected:boolean;onClose:()=>void;onSaved:(message:string)=>Promise<void>;goToSettings:()=>void}) {
+  const favoriteApi=useCallback((r:string,m?:string,d?:object,p?:Record<string,string>)=>api(r,token,m,d,p),[token]);
   const dialog=useRef<HTMLDialogElement>(null),[problem,setProblem]=useState(''),[categories,setCategories]=useState<string[]>([]);
   // showModal lleva el foco al botón Cerrar: se pasa al primer campo para empezar a escribir.
   useEffect(()=>{dialog.current?.showModal();dialog.current?.querySelector<HTMLElement>('form input, form select')?.focus()},[]);
@@ -770,6 +776,7 @@ function AddDialog({type,setType,token,isCalendarConnected,onClose,onSaved,goToS
   }
   return <dialog ref={dialog} className="add-dialog" aria-labelledby="add-title" onClose={onClose}>
     <div className="card-heading"><h2 id="add-title">Añadir</h2><button className="icon-button" onClick={onClose} aria-label="Cerrar"><X size={18}/></button></div>
+    <QuickCaptures api={favoriteApi} onSaved={()=>onSaved('Guardado. Puedes verlo en su sección.')}/>
     <div className="segmented add-types" role="group" aria-label="Qué quieres añadir">{ADD_TYPES.map(t=><button key={t.id} className={type===t.id?'selected':''} aria-pressed={type===t.id} onClick={()=>{setProblem('');setType(t.id)}}>{t.label}</button>)}</div>
     {problem&&<p className="error" role="alert">{problem}</p>}
     {type==='reminder'&&<ReminderForm save={payload=>save('reminders',payload)}/>}
@@ -913,7 +920,8 @@ export function App(){
     {totals.reimbursements>0&&<p className="form-hint">Reembolsos conciliados: {euro(totals.reimbursements)}. Separados de los ingresos y conservados en el balance de caja.</p>}
     <Card title="Análisis de gastos"><SpendingChart expenses={expenses} period={period}/></Card>
     <div className="two-cols"><TobaccoCard expenses={expenses} period={period}/><EnergyDrinkCard expenses={expenses} period={period}/></div>
-    <MovementSearch token={token}/>
+    <MovementSearch token={token} onChanged={()=>refresh()}/>
+    <ExpenseReviewDisclosure api={panelApi} onChanged={()=>refresh()}/>
     <details className="finance-detail"><summary>Comparativa y tendencias</summary><FinanceInsights api={panelApi}/></details>
     <details className="finance-detail"><summary>Presupuestos mensuales</summary>
       {budgets.filter((r:Row)=>budgetState(r.spent,Number(r.budget.monthly_limit)).level!=='ok').map((r:Row)=><div key={r.budget.id} className={`budget-warning ${budgetState(r.spent,Number(r.budget.monthly_limit)).level}`} role="status"><AlertTriangle size={17} aria-hidden="true"/><span><strong>{r.budget.category}:</strong> {budgetState(r.spent,Number(r.budget.monthly_limit)).text}</span></div>)}
@@ -925,7 +933,7 @@ export function App(){
     </details>
     <details className="finance-detail"><summary>Deudas y gastos compartidos</summary><LifePanels api={panelApi} view="finances" onChanged={()=>refresh()}/></details>
   </>}
-  {section==='reminders'&&<Card title="Tareas sin hora"><LifePanels api={panelApi} view="tasks"/></Card>}
+  {section==='reminders'&&<Card title="Tareas sin hora"><TaskPlanner api={panelApi} onChanged={()=>refresh()}/></Card>}
   {section==='deliveries'&&<Card title="Pedidos y entregas"><DeliveriesPanel api={panelApi}/></Card>}
   {section==='reminders'&&<Card title="Tus recordatorios" aside={<span className="count">{rows('reminders').length} pendientes</span>}><ReminderForm save={payload=>action('reminders','POST',payload)}/>{rows('reminders').map(r=><div className="list-row" key={r.id}><span className="row-symbol lilac"><Bell size={17}/></span><span className="row-main"><strong>{r.text}</strong><small>{dateTime(r.remind_at)} {r.repeat?`· ${r.repeat}`:''} · Aviso {r.advance_minutes===1440?'un día':'30 min'} antes</small></span><button className="delete icon-button" aria-label={`Eliminar ${r.text}`} onClick={()=>void action('reminders','DELETE',undefined,{id:String(r.id)})}><Trash2 size={17}/></button></div>)}{!rows('reminders').length&&<Empty>Añade tu primer recordatorio arriba.</Empty>}</Card>}
   {section==='shopping_items'&&<Card title="Por comprar" aside={<span className="count">{rows('shopping_items').length} productos</span>}><InlineForm label="Añadir producto" placeholder="Añadir a la lista…" onSubmit={text=>action('shopping_items','POST',{text})}/>{rows('shopping_items').map(r=><div className="list-row" key={r.id}><button className="check-button" aria-label={`Marcar ${r.text} como comprado`} onClick={()=>void action('shopping_items','DELETE',undefined,{id:String(r.id)},'Tachado de la lista.')}><Check size={16}/></button><span className="row-main"><strong>{r.text}</strong></span><button className="delete icon-button" aria-label={`Eliminar ${r.text}`} onClick={()=>void action('shopping_items','DELETE',undefined,{id:String(r.id)})}><Trash2 size={17}/></button></div>)}{!rows('shopping_items').length&&<Empty>Tu lista está vacía. Añade algo que necesites.</Empty>}</Card>}
