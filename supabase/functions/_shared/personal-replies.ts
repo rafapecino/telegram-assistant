@@ -1,5 +1,6 @@
 // Respuestas de las funciones que no dependen del banco: compra, notas, cumpleaños, hábitos, peso y agenda
 // (calendario, recordatorios, hábitos y cumpleaños del día).
+import { applyMealButton, type MealsRequest, replyToMeals } from "./meals.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
 import {
   type BirthdayRequest,
@@ -200,6 +201,7 @@ const BUS_KINDS = new Set(["bus_arrivals", "bus_stop_save", "bus_stop_delete", "
 const CONNECTION_KINDS = new Set(["connection_connect", "connection_disconnect"]);
 const GMAIL_KINDS = new Set(["gmail_search", "gmail_block", "gmail_unblock", "gmail_filters"]);
 const MARKETS_KINDS = new Set(["markets_list", "markets_quote", "markets_follow", "markets_unfollow"]);
+const MEALS_KINDS = new Set(["meals_ideas", "meals_menu"]);
 const PRICES_KINDS = new Set(["prices_search", "prices_watch", "prices_unwatch", "prices_list"]);
 
 /** Responde a una intención de estas funciones, o devuelve null si no es de ninguna. */
@@ -221,6 +223,7 @@ export async function replyToPersonalIntent(
   if (MARKETS_KINDS.has(intent.kind)) return { text: await replyToMarkets(db, intent as MarketsRequest, now) };
   if (PRICES_KINDS.has(intent.kind)) return { text: await replyToPrices(db, intent as PricesRequest) };
   if (intent.kind === "weather") return { text: await replyToWeather(intent, today) };
+  if (MEALS_KINDS.has(intent.kind)) return replyToMeals(db, intent as MealsRequest, today);
   return null;
 }
 
@@ -236,6 +239,8 @@ export async function applyPersonalButton(
   data: string,
   now = new Date(),
 ): Promise<ButtonResult | null> {
+  const mealResult = await applyMealButton(db, data, madridClock(now).localDate);
+  if (mealResult) return mealResult;
   const shoppingItemId = parseShoppingButton(data);
   if (shoppingItemId !== null) {
     await tickShoppingItem(db, shoppingItemId);

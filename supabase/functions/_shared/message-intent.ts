@@ -10,6 +10,7 @@ import { askGroqForJson } from "./groq.ts";
 import { HABIT_INTENT_FORMAT, type HabitRequest, parseHabitRequest } from "./habits.ts";
 import { type MadridClock, madridClock } from "./madrid-time.ts";
 import { MANUAL_EXPENSE_INTENT_FORMAT, type ManualExpenseRequest, parseManualExpense } from "./manual-expenses.ts";
+import { MEALS_INTENT_FORMAT, type MealsRequest, parseMealsRequest } from "./meals.ts";
 import { MARKETS_INTENT_FORMAT, type MarketsRequest, parseMarketsRequest } from "./markets.ts";
 import { parsePricesRequest, PRICES_INTENT_FORMAT, type PricesRequest } from "./prices.ts";
 import { NOTE_INTENT_FORMAT, type NoteRequest, parseNoteRequest } from "./notes.ts";
@@ -37,6 +38,7 @@ export type MessageIntent =
   | MarketsRequest
   | PricesRequest
   | WeatherRequest
+  | MealsRequest
   | { kind: "unknown" };
 
 export function buildIntentPrompt(clock: MadridClock): string {
@@ -61,6 +63,7 @@ export function buildIntentPrompt(clock: MadridClock): string {
     `- ${MARKETS_INTENT_FORMAT}`,
     `- ${PRICES_INTENT_FORMAT}`,
     `- ${WEATHER_INTENT_FORMAT}`,
+    `- ${MEALS_INTENT_FORMAT}`,
     '- Cualquier otra cosa: {"intent": "unknown"}',
   ].join("\n");
 }
@@ -84,6 +87,7 @@ export function parseMessageIntent(raw: unknown, now: Date): MessageIntent {
   if (intent === "markets") return parseMarketsRequest(raw);
   if (intent === "prices") return parsePricesRequest(raw);
   if (intent === "weather") return parseWeatherRequest(raw, madridClock(now).localDate);
+  if (intent === "meals") return parseMealsRequest(raw);
   return { kind: "unknown" };
 }
 

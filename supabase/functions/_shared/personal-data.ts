@@ -33,6 +33,10 @@ export const DATA_CATEGORIES: Record<string, DataCategory> = {
     label: "Memoria del asistente",
     tables: [{ name: "memory", key: "id" }, { name: "memory_suggestions", key: "id" }],
   },
+  meals: {
+    label: "Menú de la semana",
+    tables: [{ name: "meal_plan", key: "id" }, { name: "meal_plan_weeks", key: "week_start" }],
+  },
   chat: { label: "Conversación del chat del panel", tables: [{ name: "chat_messages", key: "id" }] },
   bus_stops: { label: "Paradas de autobús guardadas", tables: [{ name: "bus_stops", key: "id" }] },
   email_filters: { label: "Filtros del correo", tables: [{ name: "email_filters", key: "sender" }] },

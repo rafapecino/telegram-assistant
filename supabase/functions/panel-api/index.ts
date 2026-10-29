@@ -22,6 +22,7 @@ import { fetchQuotes, followAsset, loadWatchlist, type MarketKind, unfollowAsset
 import { addWatch, comparePrices, listWatches, removeWatch } from "../_shared/prices.ts";
 import { parseMovementFilters, searchEverything, searchMovements } from "../_shared/search.ts";
 import { UserFacingError } from "../_shared/errors.ts";
+import { addIngredientsToShopping, chooseDishes, loadMealWeek, type MealWeek, pendingIngredients, proposeDishes, removeDish, setDishCooked, weekStartOf } from "../_shared/meals.ts";
 import { corsHeaders, describeErrorForClient, isOverRateLimit, recordAccessDenied } from "../_shared/panel-security.ts";
 import {
   describeWeatherCode,
@@ -41,6 +42,14 @@ const fields: Record<string, string> = {
   incomes: "id,booking_date,amount,description,currency", weight_entries: "id,date,kg",
 };
 const MAX_BODY = 4096;
+/** El menú de la semana tal como lo pinta el panel: los platos y los ingredientes que quedan por revisar. */
+function mealPlanView(week: MealWeek) {
+  return { week_start: week.weekStart, dishes: week.dishes, pending: pendingIngredients(week) };
+}
+function validIds(value: unknown): number[] {
+  if (!Array.isArray(value) || value.length > 60) throw new UserFacingError("Platos no válidos.");
+  return value.map(validId);
+}
 // El mensaje del chat (1000 caracteres) y la memoria (4000) pueden ocupar varios bytes por carácter.
 const MAX_CHAT_BODY = 32768;
 // Unos 2 minutos de nota de voz comprimida, como el límite del bot de Telegram.
@@ -91,7 +100,7 @@ const NOT_FOUND = Symbol("recurso no encontrado");
 // Lo que el panel carga al abrirse, en una sola petición: con una por recurso, Supabase cortaba con 429.
 const DASHBOARD_RESOURCES = [
   "expenses", "incomes", "budgets", "reminders", "shopping_items", "birthdays", "habits", "habit_checks",
-  "weight_entries", "calendar", "bank_connection", "memory", "weather", "weather_alerts",
+  "weight_entries", "calendar", "bank_connection", "memory", "weather", "weather_alerts", "meal_plan",
 ];
 async function readResource(db: ReturnType<typeof createAdminClient>, resource: string, params: URLSearchParams, now: Date, today: string): Promise<unknown> {
   if (resources.has(resource)) {
@@ -103,6 +112,7 @@ async function readResource(db: ReturnType<typeof createAdminClient>, resource: 
     const { data, error } = await query; if (error) throw error; return data;
   }
   if (resource === "budgets") return await loadBudgetStatuses(db, now);
+  if (resource === "meal_plan") return mealPlanView(await loadMealWeek(db, weekStartOf(today)));
   if (resource === "memory") return { content: await loadMemory(db) };
   if (resource === "chat_messages") return await loadChatMessages(db);
   if (resource === "greeting") return { text: await inventFunnyLine(db) };
@@ -213,6 +223,25 @@ Deno.serve(async (request) => {
       }
       if (resource === "chat") return json(await replyToChat(db, parseChatInput(input), now), 200, cors);
       if (resource === "memory") { await saveMemory(db, input.content); return json({ ok: true }, 200, cors); }
+      if (resource === "meal_ideas") {
+        const hint = input.hint == null || input.hint === "" ? "" : validText(input.hint, 200);
+        return json(mealPlanView(await proposeDishes(db, weekStartOf(today), hint)), 200, cors);
+      }
+      if (resource === "meal_plan") {
+        const weekStart = weekStartOf(today);
+        let added: string[] = [];
+        if (input.action === "choose") await chooseDishes(db, weekStart, validIds(input.ids));
+        else if (input.action === "cook") {
+          if (typeof input.cooked !== "boolean") throw new UserFacingError("Respuesta no válida.");
+          await setDishCooked(db, validId(input.id), input.cooked);
+        } else if (input.action === "add_ingredients") {
+          if (!Array.isArray(input.keys) || input.keys.length > 200 || input.keys.some((key) => typeof key !== "string")) {
+            throw new UserFacingError("Ingredientes no válidos.");
+          }
+          added = await addIngredientsToShopping(db, weekStart, input.keys as string[]);
+        } else throw new UserFacingError("Acción del menú no válida.");
+        return json({ ...mealPlanView(await loadMealWeek(db, weekStart)), added }, 200, cors);
+      }
       if (resource === "shopping_items" || resource === "notes") {
         const text=validText(input.text,resource==='notes'?1000:100);
         const {error}=resource==='notes'&&input.id!=null
@@ -291,6 +320,8 @@ Deno.serve(async (request) => {
         return json({ ok: true, deleted }, 200, cors);
       } else if (resource === "chat_messages") {
         await clearChatMessages(db);
+      } else if (resource === "meal_plan") {
+        await removeDish(db, validId(url.searchParams.get("id")));
       } else if (editable.has(resource)) {
         const id = validId(url.searchParams.get("id")); const { error } = await db.from(resource).delete().eq("id", id); if (error) throw error;
       } else return json({ error: "Recurso no encontrado." }, 404, cors);

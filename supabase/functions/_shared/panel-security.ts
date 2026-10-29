@@ -32,11 +32,12 @@ export function corsHeaders(origin: string | null): Record<string, string> {
 
 // Abrir el panel o guardar algo recarga todo: unas 16 peticiones de golpe. 300 deja margen para usarlo con prisa.
 const GENERAL_LIMIT_PER_MINUTE = 300;
-// Chat, notas de voz y la frase del saludo gastan cuota de Groq; comparar precios, búsquedas de SerpApi.
+// Chat, notas de voz, la frase del saludo y las ideas de platos gastan cuota de Groq; comparar precios, búsquedas de SerpApi.
 const QUOTA_LIMIT_PER_MINUTE = 10;
 
 export function usesExternalQuota(method: string, resource: string): boolean {
-  return (method === "POST" && (resource === "chat" || resource === "chat_draft" || resource === "transcribe")) ||
+  return (method === "POST" && (resource === "chat" || resource === "chat_draft" || resource === "transcribe" ||
+    resource === "meal_ideas")) ||
     (method === "GET" && (resource === "greeting" || resource === "prices"));
 }
 
