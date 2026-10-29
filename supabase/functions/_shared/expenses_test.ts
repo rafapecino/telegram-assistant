@@ -51,12 +51,12 @@ Deno.test("sin acreedor usa el concepto y el importe siempre es positivo", () =>
 
 Deno.test("oculta los números de tarjeta y deja intactos los números cortos", () => {
   assertEquals(
-    maskCardNumbers("RETIRADA EN CAJERO 004917080010 ..PAN:4111111111111111."),
-    "RETIRADA EN CAJERO 004917080010 ..PAN:****1111.",
+    maskCardNumbers("RETIRADA EN CAJERO 000000000000 ..PAN:4111111111111111."),
+    "RETIRADA EN CAJERO 000000000000 ..PAN:****1111.",
   );
   assertEquals(
-    maskCardNumbers("COMPRA BET365, TARJETA 4111111111111111 , COMISION 0,00"),
-    "COMPRA BET365, TARJETA ****1111 , COMISION 0,00",
+    maskCardNumbers("COMPRA COMERCIO, TARJETA 4111111111111111 , COMISION 0,00"),
+    "COMPRA COMERCIO, TARJETA ****1111 , COMISION 0,00",
   );
   assertEquals(maskCardNumbers("PAGO MOVIL EN DIA, TARJ. :*111111"), "PAGO MOVIL EN DIA, TARJ. :*111111");
 });
