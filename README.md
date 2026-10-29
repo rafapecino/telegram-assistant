@@ -328,3 +328,28 @@ de borrados diferidos. No accede a una cuenta ni llama a los servicios reales.
 - Repaso con comparación semanal de gastos, respuestas a hábitos, cumpleaños y calendario de los siguientes siete días, deudas abiertas y bajadas de precio observadas desde esta versión. Si una fuente falla se indica, sin fabricar valores. La reclamación única por semana evita envíos concurrentes duplicados; un envío con estado fallido requiere revisión antes de reintentar para evitar duplicados por respuesta de red incierta.
 - Migración: `20261029122356_daily_life_features.sql`. Tablas con RLS y sin acceso directo de anon/authenticated; `panel-api` sigue verificando la cuenta autorizada. RPC de conciliación SECURITY INVOKER, solo service_role, con bloqueo transaccional y claves únicas. Nuevos datos incluidos en exportación y borrado.
 - Pruebas: `npm --prefix frontend run test:life`, `npm --prefix frontend test`, `npm --prefix frontend run test:ui`, `npm --prefix frontend run build`. Pruebas canónicas de backend en `supabase/functions/_shared/life_test.ts`; el ejecutor Node de pruebas aisladas permite ejecutarlas sin descargar el runtime Deno. Las pruebas de UI usan jsdom y servicios simulados, sin transmitir datos personales.
+
+### Captura fiable, favoritos y planificación
+
+- Los gastos del chat se preparan como propuestas por canal (Telegram o panel), con 20 minutos de vigencia. Admiten importe pendiente, correcciones de cantidad, importe total y efectivo/tarjeta. Confirmar realiza una transacción con bloqueo; repetir la confirmación no duplica el gasto. «Nueva conversación» cancela las propuestas del panel. Las respuestas generales no afirman escrituras que no han realizado.
+- **Añadir → Favoritos** abre plantillas editables de gasto, tarea o nota. Permite crear, editar y eliminar favoritos; no guarda el registro al seleccionar la plantilla. En Telegram, `/rapido` ofrece los mismos favoritos: los de tareas/notas se completan con «texto: …» y se confirman. Las fechas se calculan al abrir, sin conservar fechas antiguas. Las propuestas de gasto web mantienen una clave de operación al reintentar.
+- **Recordatorios → Tareas** permite elegir día previsto, fecha límite independiente y duración (5–480 minutos); completar y reabrir; filtrar Hoy/Semana/Todas/Completadas. Mover el día conserva el plazo. Preparar aviso o reservar en Google Calendar abre una propuesta usando la planificación guardada; debe revisarse y confirmarse por separado, y no crea una sincronización automática con la tarea. Desde el bot se puede pedir mover una tarea indicando su número.
+- **Finanzas → Movimientos** permite corregir la categoría de un gasto, solo para ese movimiento o también como regla exacta para futuras importaciones. Se ignoran mayúsculas, tildes y espacios repetidos; se conservan los números y el resto del concepto para evitar reglas amplias. Las reglas se aplican antes del clasificador, se pueden editar/eliminar y no reclasifican cargos históricos. El bot admite corregir indicando el número del gasto y si la regla debe aplicarse siempre.
+- **Finanzas → Revisión de gastos y reglas de categorías**, plegado, muestra candidatos manual/banco en los últimos 120 días (máximo 1000 movimientos y 60 pares visibles). Coincidencia de importe, divisa y hasta 7 días; efectivo excluido. No se vinculan solos. Confirmar conserva ambos originales y excluye el manual de los totales, presupuestos, comparativas, búsqueda y resumen. Deshacer restaura el manual. Las deudas ya asociadas bloquean el vínculo. Los descartes se conservan para no repetir la sugerencia. El historial de vínculos está limitado a los 500 más recientes.
+- Nuevos favoritos, propuestas, reglas y decisiones de revisión están incluidos en exportación/borrado. Nuevas tablas con RLS y sin acceso de `anon`/`authenticated`; RPC `SECURITY INVOKER`, solo `service_role`. Los endpoints conservan autorización, CORS y límites existentes.
+
+**Orden de publicación:** aplicar `20261029162721_practical_workflows.sql`; desplegar `panel-api`, `telegram-webhook` y `scheduled-jobs` (la clasificación y los cálculos compartidos cambiaron); publicar después el frontend. No publicar el frontend contra el backend anterior. Esta implementación no aplica la migración ni despliega automáticamente.
+
+Validación reproducible, sin servicios ni datos reales:
+
+```bash
+npm --prefix frontend ci
+npm --prefix frontend test
+npm --prefix frontend run test:backend
+npm --prefix frontend run test:ui
+npm --prefix frontend run test:life
+npm --prefix frontend run test:workflows
+npm --prefix frontend run build
+```
+
+`test:backend` ejecuta las pruebas canónicas de Deno con adaptadores de Node y proveedores simulados. `test:workflows` añade integración UI y SQL en Postgres embebido (PGlite): permisos, confirmaciones repetidas, aislamiento por canal, vinculación/deshacer, rechazo de efectivo y reglas atómicas. La prueba SQL utiliza un esquema mínimo, no reemplaza la comprobación de migraciones en un proyecto Supabase de pruebas. No se han probado contra una cuenta real los envíos de Telegram ni la creación de eventos de Google.

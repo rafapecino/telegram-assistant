@@ -22,7 +22,10 @@ export function parseLifeInput(resource:string,input:Record<string,unknown>,toda
   if(resource==='tasks'){
     const scheduled_on=input.scheduled_on??today;
     if(!isCalendarDate(scheduled_on))throw new UserFacingError('Fecha de tarea no válida.');
-    return {text:textValue(input.text,300),scheduled_on};
+    const due_on=input.due_on||null,duration_minutes=input.duration_minutes==null||input.duration_minutes===''?null:Number(input.duration_minutes);
+    if(due_on!==null&&!isCalendarDate(due_on))throw new UserFacingError('Fecha límite no válida.');
+    if(duration_minutes!==null&&(!Number.isInteger(duration_minutes)||duration_minutes<5||duration_minutes>480))throw new UserFacingError('Duración entre 5 y 480 minutos.');
+    return {text:textValue(input.text,300),scheduled_on,...('due_on' in input?{due_on}:{}),...('duration_minutes' in input?{duration_minutes}:{})};
   }
   if(resource==='debts'){
     if(input.direction!=='receivable'&&input.direction!=='payable')throw new UserFacingError('Elige si te deben o debes.');
@@ -48,7 +51,11 @@ export async function lifeWrite(db:SupabaseClient,resource:string,input:Record<s
     if(input.status!=='settled'&&input.status!=='open')throw new UserFacingError('Estado no válido.');
     result=await db.from('debts').update({status:input.status,settled_at:input.status==='settled'?new Date().toISOString():null,income_id:null,expense_id:null}).eq('id',idValue(input.id)).select('id').single();
   }else if(resource==='reconcile_debts')return reconcileDebts(db);
-  else {
+  else if(resource==='task_plan'){
+    const r=await db.from('tasks').select('*').eq('id',idValue(input.id)).single();if(r.error)throw r.error;
+    const payload=parseLifeInput('tasks',{...r.data,...input},today);
+    result=await db.from('tasks').update(payload).eq('id',idValue(input.id)).select('id').single();
+  }else {
     const payload=parseLifeInput(resource,input,today);
     result=resource==='consumption_goals'?await db.from(resource).upsert(payload,{onConflict:'item'}):await db.from(resource).insert(payload);
   }
@@ -61,7 +68,7 @@ async function rows(db:SupabaseClient,table:string){let query=db.from(table).sel
 export async function loadLife(db:SupabaseClient,today:string){
  const [tasks,debts,goals,expenses]=await Promise.all([
    db.from('tasks').select('*').order('completed_at',{ascending:false,nullsFirst:true}).order('scheduled_on',{ascending:true}).limit(500).then(r=>{if(r.error)throw r.error;return r.data??[];}),rows(db,'debts'),db.from('consumption_goals').select('*').then(r=>{if(r.error)throw r.error;return r.data??[];}),
-   db.from('expenses').select('id,booking_date,description,amount').gte('booking_date',today.slice(0,8)+'01').lte('booking_date',today).limit(1000).then(r=>{if(r.error)throw r.error;return r.data??[];})
+   db.from('expenses').select('id,booking_date,description,amount').is('duplicate_of',null).gte('booking_date',today.slice(0,8)+'01').lte('booking_date',today).limit(1000).then(r=>{if(r.error)throw r.error;return r.data??[];})
  ]);
  return {tasks,debts,goals:consumptionProgress(goals,expenses,today)};
 }
@@ -108,7 +115,7 @@ export async function loadDeliveries(db:SupabaseClient,today:string){
 export async function weeklyReview(db:SupabaseClient,now:Date){
  const today=madridClock(now).localDate,from=addDaysToDate(today,-6),before=addDaysToDate(today,-13),next=addDaysToDate(today,7);
  const result=await Promise.allSettled([
-  db.from('expenses').select('booking_date,amount,category').gte('booking_date',before).lte('booking_date',today).limit(1000).then(r=>{if(r.error)throw r.error;return r.data??[];}),
+  db.from('expenses').select('booking_date,amount,category').is('duplicate_of',null).gte('booking_date',before).lte('booking_date',today).limit(1000).then(r=>{if(r.error)throw r.error;return r.data??[];}),
   db.from('habit_checks').select('done').gte('date',from).lte('date',today).then(r=>{if(r.error)throw r.error;return r.data??[];}),
   rows(db,'birthdays'),rows(db,'debts'),
   isCalendarConnected(db).then(connected=>connected?listEvents(db,addDaysToDate(today,1),next):null),
@@ -138,5 +145,5 @@ export async function replyToLife(db:SupabaseClient,input:Record<string,unknown>
   const data=await loadLife(db,today);return ['📌 Pendientes',...data.tasks.filter(t=>!t.completed_at).slice(0,10).map(t=>`• Tarea #${t.id}: ${t.text}`),...data.debts.filter(d=>d.status==='open').slice(0,10).map(d=>`• ${d.person}: ${d.direction==='receivable'?'te debe':'debes'} ${euro(Number(d.amount))}`)].join('\n');
  }
  if(!['tasks','debts','consumption_goals'].includes(resource))throw new UserFacingError('Pídeme crear una tarea, una deuda o un objetivo.');
- await lifeWrite(db,resource,input,today);return resource==='tasks'?'Tarea guardada, sin hora. La verás en Inicio hasta completarla.':resource==='debts'?'Deuda guardada. Solo se salda automáticamente si coinciden nombre bancario, importe y una única deuda pendiente.':'Objetivo semanal guardado. Puedes ver el progreso en Inicio.';
+ await lifeWrite(db,resource,input,today);return resource==='tasks'?'Tarea guardada, sin hora. La verás en Recordatorios hasta completarla.':resource==='debts'?'Deuda guardada. Solo se salda automáticamente si coinciden nombre bancario, importe y una única deuda pendiente.':'Objetivo semanal guardado. Puedes ver el progreso en Inicio.';
 }

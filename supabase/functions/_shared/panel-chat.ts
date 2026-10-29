@@ -1,5 +1,6 @@
 // Chat del panel web: mismas respuestas que el bot de Telegram, con la conversación guardada en la base de datos.
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
+import { replyToWorkflow, workflowButton } from "./workflows.ts";
 import { replyToText } from "./assistant.ts";
 import { answerPendingQuestion, updateMessagesWithButton } from "./chat-questions.ts";
 import { replyToCommand } from "./commands.ts";
@@ -42,6 +43,8 @@ export async function loadChatMessages(db: SupabaseClient, limit = MAX_SHOWN_MES
 }
 
 export async function clearChatMessages(db: SupabaseClient): Promise<void> {
+  const pending=await db.from('pending_captures').update({status:'cancelled'}).eq('channel','panel').eq('status','pending');
+  if(pending.error)throw pending.error;
   // Supabase no deja borrar sin filtro: este abarca todas las filas.
   const { error } = await db.from("chat_messages").delete().gt("id", 0);
   if (error) throw new Error(`No se pudo borrar la conversación: ${error.message}`);
@@ -53,6 +56,8 @@ async function saveTurns(db: SupabaseClient, turns: ChatMessage[]): Promise<void
 }
 
 async function replyToButton(db: SupabaseClient, input: Extract<ChatInput, { kind: "button" }>): Promise<BotReply> {
+  const workflow=await workflowButton(db,input.data,'panel',new Date());
+  if(workflow){await updateMessagesWithButton(db,input.data,workflow);await saveTurns(db,[{role:'assistant',...workflow}]);return workflow;}
   const result = await applyPersonalButton(db, input.data);
   if (!result) return { text: "Este botón ya no funciona." };
   // Como Telegram al editar el mensaje: así, al recargar, no vuelve una pregunta ya contestada.
@@ -69,7 +74,7 @@ async function replyToMessage(db: SupabaseClient, message: string, now: Date): P
 
 export async function replyToChat(db: SupabaseClient, input: ChatInput, now: Date): Promise<BotReply> {
   if (input.kind === "button") return replyToButton(db, input);
-  const botReply = (await answerPendingQuestion(db, input.message, "panel", now))?.message ??
+  const botReply = await replyToWorkflow(db,input.message,'panel',now) ?? (await answerPendingQuestion(db, input.message, "panel", now))?.message ??
     await replyToMessage(db, input.message, now);
   // Se guardan juntos al final: si la respuesta falla, no queda una pregunta sin contestar en el historial.
   const assistantTurn: ChatMessage = { role: "assistant", text: botReply.text };

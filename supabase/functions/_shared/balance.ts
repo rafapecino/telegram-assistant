@@ -27,7 +27,9 @@ export interface Balance {
 }
 
 async function sumAmounts(db: SupabaseClient, table: "incomes" | "expenses", from: string, to: string) {
-  const { data, error } = await db.from(table).select("amount").gte("booking_date", from).lte("booking_date", to);
+  let query=db.from(table).select('amount').gte('booking_date',from).lte('booking_date',to);
+  if(table==='expenses')query=query.is('duplicate_of',null);
+  const {data,error}=await query;
   if (error) {
     throw new Error(`No se pudieron leer los ${table === "incomes" ? "ingresos" : "gastos"}: ${error.message}`);
   }

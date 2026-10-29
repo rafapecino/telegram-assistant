@@ -1,3 +1,4 @@
+import { CATEGORIES,normalizeMerchant } from './workflow-logic.ts';
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
 import { getActiveBankSession, hasBankConnections } from "./bank-connection.ts";
 import { type BankTransaction, fetchTransactions } from "./enable-banking.ts";
@@ -5,17 +6,7 @@ import { askGroqForJson } from "./groq.ts";
 import { madridDateDaysAgo } from "./madrid-time.ts";
 import { sendTelegramMessage } from "./telegram.ts";
 
-export const EXPENSE_CATEGORIES = [
-  "Supermercado",
-  "Restaurantes",
-  "Transporte",
-  "Hogar",
-  "Suscripciones",
-  "Ocio",
-  "Salud",
-  "Compras",
-  "Otros",
-];
+export const EXPENSE_CATEGORIES = CATEGORIES;
 
 // Los bancos tardan varios días en asentar algunos cargos; la ventana se solapa y los duplicados se descartan.
 const IMPORT_WINDOW_DAYS = 7;
@@ -164,7 +155,12 @@ export async function importRecentExpenses(db: SupabaseClient, now: Date): Promi
   const newExpenses = await excludeAlreadyImported(db, expenses);
   if (newExpenses.length === 0) return 0;
 
-  const categories = await categorizeExpenses(newExpenses);
+  const rulesResult=await db.from('expense_category_rules').select('merchant,category');
+  if(rulesResult.error)throw rulesResult.error;
+  const rules=new Map<string,string>((rulesResult.data??[]).map(r=>[r.merchant,r.category]));
+  const unknown=newExpenses.filter(e=>!rules.has(normalizeMerchant(e.description)));
+  const inferred=unknown.length?await categorizeExpenses(unknown):[];let index=0;
+  const categories=newExpenses.map(e=>rules.get(normalizeMerchant(e.description))??inferred[index++]);
   const { error } = await db.from("expenses").upsert(
     newExpenses.map((expense, index) => ({ ...expense, category: categories[index] })),
     { onConflict: "transaction_key", ignoreDuplicates: true },
@@ -213,7 +209,7 @@ export function buildWeeklySummary(expenses: StoredExpense[]): string {
 
 export async function sendWeeklySummary(db: SupabaseClient, now: Date): Promise<void> {
   const { data, error } = await db.from("expenses")
-    .select("booking_date, amount, description, category")
+    .select("booking_date, amount, description, category").is('duplicate_of',null)
     .gte("booking_date", madridDateDaysAgo(now, 6));
   if (error) throw new Error(`No se pudieron leer los gastos de la semana: ${error.message}`);
   await sendTelegramMessage(buildWeeklySummary(data));

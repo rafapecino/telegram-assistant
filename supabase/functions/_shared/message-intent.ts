@@ -21,6 +21,8 @@ import { parseWeightRequest, WEIGHT_INTENT_FORMAT, type WeightRequest } from "./
 
 // Para añadir una funcionalidad: su formato va en buildIntentPrompt y su validación en parseMessageIntent.
 export type MessageIntent =
+  | {kind:"expense_capture";input:Record<string,unknown>}
+  | {kind:"workflow";input:Record<string,unknown>}
   | { kind: "life"; input: Record<string, unknown> }
   | ReminderRequest
   | ExpenseQueryRequest
@@ -47,6 +49,10 @@ export function buildIntentPrompt(clock: MadridClock): string {
     `Ahora en Madrid es ${clock.weekday} ${clock.localDateTime}.`,
     "Responde solo con JSON en uno de estos formatos, según lo que pida el mensaje:",
     `- ${LIFE_INTENT_FORMAT}`,
+    '- Registrar cualquier gasto manual: {"intent":"expense_capture","description":"concepto","amount":número o null,"date":"YYYY-MM-DD","category":"Otros","payment_method":"unknown" o "cash" o "card"}. No inventes importe ausente. Yeti, Energeti y energética significan energética: descripción ENERGÉTICA xN, 1,20 por unidad si no dice importe. Tabaco requiere importe explícito.',
+    '- Planificar una tarea existente: {"intent":"workflow","resource":"task_plan","id":número de tarea,"scheduled_on":"YYYY-MM-DD","due_on":"YYYY-MM-DD" solo si lo cambia,"duration_minutes":número solo si lo cambia}. Necesitas el identificador explícito; si falta, devuelve life resource list.',
+    '- Corregir la categoría de un gasto identificado: {"intent":"workflow","resource":"expense_category","id":número explícito,"category":"Supermercado" o "Restaurantes" o "Transporte" o "Hogar" o "Suscripciones" o "Ocio" o "Salud" o "Compras" o "Otros","always":true solo si pide hacerlo siempre}. Si falta id, pide buscar el movimiento en Finanzas.',
+
     `- ${REMINDER_INTENT_FORMAT}`,
     `- ${EXPENSES_QUERY_INTENT_FORMAT}`,
     `- ${BUDGET_INTENT_FORMAT}`,
@@ -70,6 +76,7 @@ export function buildIntentPrompt(clock: MadridClock): string {
 
 export function parseMessageIntent(raw: unknown, now: Date): MessageIntent {
   const intent = (raw as { intent?: unknown } | null)?.intent;
+  if ((intent==="expense_capture"||intent==="workflow")&&raw&&typeof raw==="object")return {kind:intent,input:raw as Record<string,unknown>};
   if (intent === "life" && raw && typeof raw === "object") return { kind: "life", input: raw as Record<string, unknown> };
   if (intent === "reminder") return parseReminderRequest(raw, now);
   if (intent === "expenses_query") return parseExpenseQuery(raw);

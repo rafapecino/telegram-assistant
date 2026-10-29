@@ -11,6 +11,8 @@ interface DataCategory {
 }
 
 export const DATA_CATEGORIES: Record<string, DataCategory> = {
+  capture_preferences:{label:'Favoritos de captura',tables:[{name:'quick_captures',key:'id'}]},
+  pending_captures:{label:'Propuestas de gasto',tables:[{name:'pending_captures',key:'id'}]},
   tasks: {label:"Tareas sin hora", tables:[{name:"tasks",key:"id"}]},
   debts: {label:"Deudas y conciliaciones", tables:[{name:"debts",key:"id"}]},
   goals: {label:"Objetivos de consumo", tables:[{name:"consumption_goals",key:"item"}]},
@@ -18,6 +20,8 @@ export const DATA_CATEGORIES: Record<string, DataCategory> = {
   finances: {
     label: "Gastos, ingresos y presupuestos",
     tables: [
+      {name:'expense_duplicate_dismissals',key:'manual_id'},
+      {name:'expense_category_rules',key:'id'},
       { name: "expenses", key: "id" },
       { name: "incomes", key: "id" },
       { name: "budgets", key: "id" },

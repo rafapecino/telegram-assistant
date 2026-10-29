@@ -109,7 +109,7 @@ Deno.test("la conversación guardada da contexto al modelo y se guarda con la re
       assertEquals(question >= 0 && question < sent.indexOf("Asistente: No tienes gastos."), true);
     },
   );
-  assertEquals(queries[0], [
+  assertEquals(queries.find(q=>q[0]==='from("chat_messages")'), [
     'from("chat_messages")',
     'select("role,text,buttons")',
     'order("id", {"ascending":false})',
@@ -147,5 +147,6 @@ Deno.test("enseña los últimos mensajes en orden y «Nueva conversación» los 
   assertEquals(await loadChatMessages(db), [{ role: "user", text: "a" }, { role: "assistant", text: "b" }]);
   assertEquals(queries[0].at(-1), `limit(${MAX_SHOWN_MESSAGES})`);
   await clearChatMessages(db);
-  assertEquals(queries[1], ['from("chat_messages")', "delete()", 'gt("id", 0)']);
+  assertEquals(queries.at(-1), ['from("chat_messages")', "delete()", 'gt("id", 0)']);
+  assertEquals(queries.some(q=>q[0]==='from("pending_captures")'&&q[1].startsWith('update')),true);
 });

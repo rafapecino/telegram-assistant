@@ -70,7 +70,7 @@ export function parseExpenseQuery(raw: unknown): ExpenseQueryRequest {
 
 export async function findExpenses(db: SupabaseClient, query: ExpenseQuery): Promise<StoredExpense[]> {
   let request = db.from("expenses")
-    .select("booking_date, amount, description, category")
+    .select("booking_date, amount, description, category").is('duplicate_of',null)
     .gte("booking_date", query.dateFrom)
     .lte("booking_date", query.dateTo)
     .order("booking_date", { ascending: false });

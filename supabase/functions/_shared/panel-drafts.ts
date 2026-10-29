@@ -1,9 +1,10 @@
+import { expenseCapture } from './workflow-logic.ts';
 import { askGroqForJson } from './groq.ts';
 import { madridClock } from './madrid-time.ts';
 
 const DRAFT_FIELDS:Record<string,string[]>={
-  tasks:["text","scheduled_on"], debts:["person","bank_name","amount","description","direction","incurred_on"], consumption_goals:["item","weekly_limit"],
-  expenses:['description','amount','date','category'], incomes:['description','amount','date'],
+  tasks:["text","scheduled_on","due_on","duration_minutes"], debts:["person","bank_name","amount","description","direction","incurred_on"], consumption_goals:["item","weekly_limit"],
+  expenses:['description','amount','date','category','payment_method'], incomes:['description','amount','date'],
   reminders:['text','local_datetime','repeat','advance_minutes'], calendar:['title','date','local_datetime','duration_minutes'],
   notes:['text'], habits:['name','scheduled_days'], price_watches:['query','max_price'], budgets:['category','monthly_limit'],
   weight_entries:['date','kg'], shopping_items:['text'],
@@ -23,6 +24,7 @@ export function parsePanelDraft(raw:unknown){
 }
 export async function preparePanelDraft(message:string,now:Date){
   const today=madridClock(now);
+  if(expenseCapture(message,today.localDate))return null;
   return parsePanelDraft(await askGroqForJson([
     'Preparas formularios editables en español. NO ejecutas acciones.',
     `Fecha y hora actuales en Madrid: ${today.localDateTime}.`,

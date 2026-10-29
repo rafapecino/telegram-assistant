@@ -9,6 +9,7 @@ import {
 
 export const HELP_TEXT = [
   "Esto es lo que sé hacer:",
+  "• /rapido: tus favoritos de captura; siempre revisas antes de guardar.",
   '• Recordatorios: "recuérdame llamar a Juan el jueves a las 17:00" o "cada lunes a las 9 sacar la basura".',
   '• Consultar tus gastos: "¿cuánto he gastado esta semana?" o "gastos de ayer en restaurantes".',
   '• Presupuestos: "pon un límite de 200 € al mes en restaurantes" o "¿cómo voy con los presupuestos?".',

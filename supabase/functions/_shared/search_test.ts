@@ -38,6 +38,7 @@ Deno.test("filtra gastos e ingresos en la base de datos y los mezcla por fecha",
   assertEquals(queries[0], [
     'from("expenses")',
     'select("id,booking_date,description,amount,category")',
+    'is("duplicate_of", null)',
     'ilike("description", "%café%")',
     'gte("booking_date", "2026-10-01")',
     'lte("booking_date", "2026-10-28")',

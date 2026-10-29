@@ -1,3 +1,4 @@
+import { listQuickCaptures,writeQuickCapture,loadExpenseReview,reviewWrite } from '../_shared/workflows.ts';
 import { loadLife, loadDeliveries, lifeWrite, weeklyReview } from "../_shared/life.ts";
 import { loadFinanceInsightExpenses } from '../_shared/finance-insights.ts';
 import { preparePanelDraft } from '../_shared/panel-drafts.ts';
@@ -95,8 +96,11 @@ const DASHBOARD_RESOURCES = [
   "weight_entries", "calendar", "bank_connection", "memory", "weather", "weather_alerts", "debt_settlements",
 ];
 async function readResource(db: ReturnType<typeof createAdminClient>, resource: string, params: URLSearchParams, now: Date, today: string): Promise<unknown> {
+  if(resource==='quick_captures')return listQuickCaptures(db);
+  if(resource==='expense_review')return loadExpenseReview(db,today);
   if (resources.has(resource)) {
     let query = db.from(resource).select(fields[resource]).limit(150);
+    if(resource==='expenses')query=query.is('duplicate_of',null);
     if (resource === "reminders") query = query.is("sent_at", null).order("remind_at");
     else if (resource === "weight_entries") query = query.order("date", { ascending: false });
     else if (resource === "expenses" || resource === "incomes") query = query.gte("booking_date", params.get("from") ?? madridMonthStart(now)).order("booking_date", { ascending: false });
@@ -211,7 +215,9 @@ Deno.serve(async (request) => {
     if (request.method === "POST" && resource === "transcribe") return json({ text: await transcribeUpload(request) }, 200, cors);
     if (request.method === "POST") {
       const input = await body(request, resource === "chat" || resource === "memory" ? MAX_CHAT_BODY : MAX_BODY);
-      if (["tasks","task_status","debts","debt_status","consumption_goals","reconcile_debts"].includes(resource)) return json(await lifeWrite(db, resource, input, today), 200, cors);
+      if (["tasks","task_plan","task_status","debts","debt_status","consumption_goals","reconcile_debts"].includes(resource)) return json(await lifeWrite(db, resource, input, today), 200, cors);
+      if(resource==='quick_captures')return json(await writeQuickCapture(db,input),200,cors);
+      if(['expense_duplicate','expense_category','category_rule'].includes(resource))return json(await reviewWrite(db,resource,input),200,cors);
       if (resource === "chat_draft") {
         const parsed=parseChatInput(input);
         if(parsed.kind!=='message')throw new UserFacingError('Escribe lo que quieres preparar.');

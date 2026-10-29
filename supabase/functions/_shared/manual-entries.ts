@@ -15,6 +15,8 @@ export interface ManualEntry {
   date: string;
   // Solo en los gastos.
   category?: string;
+  payment_method?: "unknown" | "cash" | "card";
+  request_key?: string;
 }
 
 function validAmount(raw: unknown): number {
@@ -26,7 +28,7 @@ function validAmount(raw: unknown): number {
 }
 
 function validDate(raw: unknown, today: string): string {
-  if (typeof raw !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(raw) || Number.isNaN(Date.parse(`${raw}T12:00:00Z`))) {
+  if (typeof raw !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(raw) || (Number.isNaN(Date.parse(`${raw}T12:00:00Z`)) || new Date(`${raw}T12:00:00Z`).toISOString().slice(0,10)!==raw)) {
     throw new UserFacingError("Fecha no válida.");
   }
   if (raw > today) throw new UserFacingError("La fecha no puede ser futura.");
@@ -44,7 +46,9 @@ export function parseManualEntry(raw: Record<string, unknown>, kind: "expense" |
   if (typeof raw.category !== "string" || !EXPENSE_CATEGORIES.includes(raw.category)) {
     throw new UserFacingError("Elige una categoría.");
   }
-  return { ...entry, category: raw.category };
+  if(raw.payment_method!==undefined&&!['unknown','cash','card'].includes(String(raw.payment_method)))throw new UserFacingError('Método de pago no válido.');
+  if(raw.request_key!==undefined&&!/^[a-f0-9-]{36}$/.test(String(raw.request_key)))throw new UserFacingError('Identificador de operación no válido.');
+  return { ...entry, category: raw.category,payment_method:(raw.payment_method??'unknown') as 'unknown'|'cash'|'card',...(raw.request_key?{request_key:String(raw.request_key)}:{}) };
 }
 
 export async function saveManualEntry(
@@ -52,15 +56,15 @@ export async function saveManualEntry(
   kind: "expense" | "income",
   entry: ManualEntry,
 ): Promise<void> {
-  const { error } = await db.from(kind === "expense" ? "expenses" : "incomes").insert({
+  const { error } = await db.from(kind === "expense" ? "expenses" : "incomes").upsert({
     // Sin cuenta del banco: la clave solo tiene que ser única para no chocar con los movimientos importados.
     account_uid: "manual",
-    transaction_key: `manual|${crypto.randomUUID()}`,
+    transaction_key: `manual|${entry.request_key??crypto.randomUUID()}`,
     booking_date: entry.date,
     amount: entry.amount,
     currency: "EUR",
     description: entry.description,
-    ...(entry.category ? { category: entry.category } : {}),
-  });
+    ...(entry.category ? { category: entry.category, payment_method:entry.payment_method??'unknown' } : {}),
+  },{onConflict:'transaction_key',ignoreDuplicates:true});
   if (error) throw new Error(`No se pudo apuntar el ${kind === "expense" ? "gasto" : "ingreso"}: ${error.message}`);
 }

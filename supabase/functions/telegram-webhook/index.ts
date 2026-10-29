@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
+import { replyToWorkflow, workflowButton } from "../_shared/workflows.ts";
 import { replyToText } from "../_shared/assistant.ts";
 import { answerPendingQuestion, updateMessagesWithButton } from "../_shared/chat-questions.ts";
 import { replyToCommand } from "../_shared/commands.ts";
@@ -34,10 +35,11 @@ interface TelegramCallbackQuery {
 }
 
 async function buildReply(db: SupabaseClient, text: string, now: Date): Promise<string | BotReply> {
+  const workflow=await replyToWorkflow(db,text,'telegram',now);if(workflow)return workflow;
   // Un «sí» o un «no» suelto contesta a la última pregunta de hábitos, como si se pulsara su botón.
   const answer = await answerPendingQuestion(db, text, "telegram", now);
   if (answer) return answer.message;
-  return await replyToCommand(db, text, now) ?? replyToText(db, text, now);
+  return await replyToCommand(db, text, now) ?? replyToText(db, text, now, [], 'telegram');
 }
 
 function toBotReply(reply: string | BotReply): BotReply {
@@ -73,6 +75,8 @@ async function handleButton(db: SupabaseClient, callback: TelegramCallbackQuery)
     await answerTelegramButton(callback.id, "Este botón ya no funciona.");
     return;
   }
+  const workflow=await workflowButton(db,data,'telegram',new Date());
+  if(workflow){await editTelegramMessage(callback.message.message_id,workflow.text,workflow.buttons);await answerTelegramButton(callback.id,'Propuesta actualizada');return;}
   const reminderButton = parseReminderButton(data);
   if (reminderButton) {
     await editTelegramMessage(callback.message.message_id, await applyReminderButton(db, reminderButton, new Date()));

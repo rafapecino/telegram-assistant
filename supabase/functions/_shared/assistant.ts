@@ -1,4 +1,5 @@
-import { replyToLife } from "./life.ts";
+import { startCapture, reviewWrite, type Channel } from "./workflows.ts";
+import { lifeWrite,replyToLife } from "./life.ts";
 // Responde a un mensaje escrito con lenguaje natural. Lo usan el bot de Telegram y el chat del panel.
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
 import { findBalance, formatBalance } from "./balance.ts";
@@ -12,7 +13,7 @@ import {
 } from "./budgets.ts";
 import { findExpenses, formatExpenseReport } from "./expense-queries.ts";
 import { askGroqForJson } from "./groq.ts";
-import { formatMadridDateTime } from "./madrid-time.ts";
+import { madridClock,formatMadridDateTime } from "./madrid-time.ts";
 import { describeSavedManualExpense, saveManualExpense } from "./manual-expenses.ts";
 import { loadMemory, memoryContext, nicknameGuide, parseMemorySuggestion, suggestMemory } from "./memory.ts";
 import { type ConversationTurn, interpretMessage, withConversation } from "./message-intent.ts";
@@ -77,6 +78,7 @@ export async function answerGeneralQuestion(
       "Si pregunta por algo que depende de información de última hora (noticias, resultados, precios), di que no " +
       "tienes acceso a internet.",
       // Esta respuesta no lee la base de datos: sin esta regla, el modelo dice que la ha consultado y se inventa datos.
+      "No ejecutas acciones desde esta respuesta. Nunca afirmes que has guardado, creado, cambiado o borrado nada. Si falta un importe, pide el dato sin afirmar una escritura. " +
       "Aquí no ves sus datos (recordatorios, gastos, calendario, notas…): nunca digas que los has consultado ni te " +
       'inventes ninguno. Si los pide, dile que lo pregunte directamente, por ejemplo "¿qué tengo hoy?".',
       "Si en su mensaje actual Rafa cuenta algo nuevo y duradero sobre sí mismo (trabajo, estudios, gustos, gente " +
@@ -87,6 +89,7 @@ export async function answerGeneralQuestion(
     withConversation(message, history),
   );
   const answer = parseGeneralAnswer(raw);
+  if(/\b(?:he (?:guardado|creado|a[nñ]adido|registrado|borrado|actualizado)|(?:gasto|tarea|evento|recordatorio) (?:guardad[oa]|cread[oa]|registrad[oa]))\b/i.test(answer))return 'No he realizado ningún cambio desde esta respuesta. Dime qué quieres registrar y sus datos para prepararlo correctamente.';
   const suggestion = parseMemorySuggestion(raw, savedMemory);
   return suggestion ? suggestMemory(db, answer, suggestion) : answer;
 }
@@ -97,9 +100,19 @@ export async function replyToText(
   text: string,
   now: Date,
   history: ConversationTurn[] = [],
+  channel: Channel = "panel",
 ): Promise<string | BotReply> {
   const intent = await interpretMessage(text, now, history);
   switch (intent.kind) {
+    case "expense_capture": {
+      const v=intent.input;
+      return startCapture(db,{description:String(v.description??''),date:String(v.date??madridClock(now).localDate),category:String(v.category??'Otros'),payment_method:['cash','card'].includes(String(v.payment_method))?v.payment_method as 'cash'|'card':'unknown',...(v.amount!=null?{amount:Number(String(v.amount).replace(',','.'))}:{})},channel,now);
+    }
+    case "workflow": {
+      if(intent.input.resource==='task_plan'){await lifeWrite(db,'task_plan',intent.input,madridClock(now).localDate);return 'Planificación guardada. La fecha límite se conserva salvo que hayas pedido cambiarla.';}
+      if(intent.input.resource==='expense_category'){await reviewWrite(db,'expense_category',intent.input);return 'Categoría guardada'+(intent.input.always?' y regla creada para futuros cargos con el mismo concepto.':'.');}
+      return 'Busca la tarea en Recordatorios o el gasto en Finanzas para indicar su identificador.';
+    }
     case "life": return replyToLife(db, intent.input, now);
     case "unknown":
       return answerGeneralQuestion(db, text, history);
@@ -119,8 +132,7 @@ export async function replyToText(
     case "budget_list":
       return formatBudgetList(await loadBudgetStatuses(db, now));
     case "manual_expense":
-      await saveManualExpense(db, intent);
-      return describeSavedManualExpense(intent);
+      return startCapture(db,{description:intent.item==='energy'?`ENERGÉTICA x${intent.quantity} (apuntado a mano)`:'TABACO (apuntado a mano)',amount:intent.amount,date:intent.date,category:'Otros',payment_method:'unknown'},channel,now);
     case "balance_query":
       return formatBalance(await findBalance(db, intent.dateFrom, intent.dateTo), intent.dateFrom, intent.dateTo);
     default:

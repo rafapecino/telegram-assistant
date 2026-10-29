@@ -96,3 +96,12 @@ Deno.test("si cuenta algo nuevo de sí mismo, la respuesta pregunta si apuntarlo
     'insert({"text":"Corre una maratón en abril","answer":"¡Buen plan, Petzi!"})',
   ]);
 });
+
+Deno.test('la respuesta general no afirma una escritura que no ha ejecutado',async()=>{
+ const {db,queries}=fakeDb(()=>({data:{content:''}}));
+ await withFakeFetch({GROQ_API_KEY:'g'},groqAnswering({intent:'unknown'},{answer:'He añadido el gasto, pero falta el importe.'}),async()=>{
+  const reply=await replyToText(db,'eso significa que lo añadas a finanzas',NOW);
+  assertEquals(typeof reply==='string'&&reply.startsWith('No he realizado ningún cambio'),true);
+ });
+ assertEquals(queries.some(q=>q.some(s=>s.startsWith('insert('))),false);
+});
