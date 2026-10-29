@@ -2,6 +2,7 @@ import { askGroqForJson } from './groq.ts';
 import { madridClock } from './madrid-time.ts';
 
 const DRAFT_FIELDS:Record<string,string[]>={
+  tasks:["text","scheduled_on"], debts:["person","bank_name","amount","description","direction","incurred_on"], consumption_goals:["item","weekly_limit"],
   expenses:['description','amount','date','category'], incomes:['description','amount','date'],
   reminders:['text','local_datetime','repeat','advance_minutes'], calendar:['title','date','local_datetime','duration_minutes'],
   notes:['text'], habits:['name','scheduled_days'], price_watches:['query','max_price'], budgets:['category','monthly_limit'],
@@ -26,6 +27,7 @@ export async function preparePanelDraft(message:string,now:Date){
     'Preparas formularios editables en español. NO ejecutas acciones.',
     `Fecha y hora actuales en Madrid: ${today.localDateTime}.`,
     'Solo si pide CREAR o apuntar algo, devuelve {"resource":"...","values":{...}}. Si pregunta, consulta, contesta sí/no, borra o cambia algo existente: {"resource":null}.',
+    'Para tareas sin hora usa tasks(text,scheduled_on). Para deudas usa debts(person,bank_name opcional,amount,description,direction: receivable si me deben o payable si debo,incurred_on). Para objetivos usa consumption_goals(item: tobacco o energy,weekly_limit). No conviertas una deuda en un ingreso ni una tarea en un recordatorio.',
     'Recursos y campos: expenses(description,amount,date,category), incomes(description,amount,date), reminders(text,local_datetime,repeat,advance_minutes), calendar(title,date,local_datetime,duration_minutes), notes(text), habits(name,scheduled_days), price_watches(query,max_price), budgets(category,monthly_limit), weight_entries(date,kg), shopping_items(text).',
     'Fechas YYYY-MM-DD, horas locales YYYY-MM-DDTHH:mm. Importes numéricos en euros. No inventes datos ausentes: déjalos vacíos para que se completen.',
     'Para gastos sin fecha usa hoy y categoría Otros. Categorías: Supermercado, Restaurantes, Transporte, Hogar, Suscripciones, Ocio, Salud, Compras, Otros.',

@@ -172,12 +172,13 @@ async function replyToSenderFilter(db: SupabaseClient, request: SenderFilterRequ
 export async function searchEmails(
   db: SupabaseClient,
   query: string,
+  maxResults = MAX_LISTED_EMAILS,
 ): Promise<{ emails: EmailSummary[]; total: number }> {
   const accessToken = await getAccessToken(db);
   const q = withoutNoise(query, await loadBlockedSenders(db));
   const list = await callGmail(
     accessToken,
-    `${MESSAGES_URL}?${new URLSearchParams({ q, maxResults: String(MAX_LISTED_EMAILS) })}`,
+    `${MESSAGES_URL}?${new URLSearchParams({ q, maxResults: String(Math.min(50, Math.max(1, maxResults))) })}`,
   );
   const ids = ((list.messages ?? []) as { id: string }[]).map((message) => message.id);
   const metadata = new URLSearchParams({ format: "metadata" });

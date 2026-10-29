@@ -1,3 +1,4 @@
+import { replyToLife } from "./life.ts";
 // Responde a un mensaje escrito con lenguaje natural. Lo usan el bot de Telegram y el chat del panel.
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
 import { findBalance, formatBalance } from "./balance.ts";
@@ -99,6 +100,7 @@ export async function replyToText(
 ): Promise<string | BotReply> {
   const intent = await interpretMessage(text, now, history);
   switch (intent.kind) {
+    case "life": return replyToLife(db, intent.input, now);
     case "unknown":
       return answerGeneralQuestion(db, text, history);
     case "invalid":

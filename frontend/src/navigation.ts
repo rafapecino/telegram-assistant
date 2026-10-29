@@ -1,7 +1,7 @@
 /** La URL identifica la sección sin incluir datos del panel. */
 export const SECTION_ROUTES = {
   overview: 'inicio', finances: 'finanzas', reminders: 'recordatorios',
-  shopping_items: 'compra', birthdays: 'cumpleanos', habits: 'habitos',
+  shopping_items: 'compra', deliveries: 'pedidos', birthdays: 'cumpleanos', habits: 'habitos',
   weight: 'peso', calendar: 'agenda', weather: 'tiempo', memory: 'memoria',
   notes: 'notas', settings: 'ajustes', news: 'noticias', markets: 'mercados', prices: 'precios',
 } as const;

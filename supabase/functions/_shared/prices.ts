@@ -264,6 +264,10 @@ export async function checkPriceWatches(db: SupabaseClient, now: Date): Promise<
   for (const watch of await listWatches(db)) {
     const best = (await fetchOffers(watch.query)).offers[0];
     if (!best) continue;
+    if (watch.best_price !== null && best.price < watch.best_price) {
+      const { error } = await db.from("price_drops").insert({ watch_id: watch.id, query: watch.query, old_price: watch.best_price, new_price: best.price, observed_at: now.toISOString() });
+      if (error) throw error;
+    }
     const alert = priceAlert(watch, best);
     if (alert) {
       await sendTelegramMessage(alert);

@@ -1,9 +1,10 @@
+import { reconcileDebts, sendLifeWeeklyReview } from "../_shared/life.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
 import { notifyNewWeatherAlerts } from "../_shared/aemet.ts";
 import { checkBudgetAlerts } from "../_shared/budgets.ts";
 import { createAdminClient, functionUrl, getInternalSecret } from "../_shared/database.ts";
 import { errorMessage } from "../_shared/env.ts";
-import { importRecentExpenses, sendWeeklySummary } from "../_shared/expenses.ts";
+import { importRecentExpenses } from "../_shared/expenses.ts";
 import { askHabits, HABIT_QUESTION_HOUR } from "../_shared/habits.ts";
 import { madridClock } from "../_shared/madrid-time.ts";
 import { MORNING_SUMMARY_HOUR, sendMorningSummary } from "../_shared/morning.ts";
@@ -17,13 +18,15 @@ const WEEKLY_SUMMARY_HOUR = 20;
 /** Tras cada importación se revisan los presupuestos, porque es cuando cambia lo gastado. */
 async function importAndCheckBudgets(db: SupabaseClient, now: Date): Promise<string> {
   const importedCount = await importRecentExpenses(db, now);
+  await reconcileDebts(db);
   const alertCount = await checkBudgetAlerts(db, now);
   return `Importados ${importedCount} gastos y enviados ${alertCount} avisos de presupuesto`;
 }
 
 async function importAndSummarize(db: SupabaseClient, now: Date): Promise<string> {
-  const result = await importAndCheckBudgets(db, now);
-  await sendWeeklySummary(db, now);
+  let result = "Banco no actualizado";
+  try { result = await importAndCheckBudgets(db, now); } catch (error) { console.error("Importación para repaso", error); }
+  await sendLifeWeeklyReview(db, now);
   return `${result}, y enviado el resumen`;
 }
 

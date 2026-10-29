@@ -1,3 +1,4 @@
+import { LIFE_INTENT_FORMAT } from "./life.ts";
 import { BALANCE_QUERY_INTENT_FORMAT, type BalanceRequest, parseBalanceQuery } from "./balance.ts";
 import { BIRTHDAY_INTENT_FORMAT, type BirthdayRequest, parseBirthdayRequest } from "./birthdays.ts";
 import { BUDGET_INTENT_FORMAT, type BudgetRequest, parseBudgetRequest } from "./budgets.ts";
@@ -21,6 +22,7 @@ import { parseWeightRequest, WEIGHT_INTENT_FORMAT, type WeightRequest } from "./
 
 // Para añadir una funcionalidad: su formato va en buildIntentPrompt y su validación en parseMessageIntent.
 export type MessageIntent =
+  | { kind: "life"; input: Record<string, unknown> }
   | ReminderRequest
   | ExpenseQueryRequest
   | BudgetRequest
@@ -46,6 +48,7 @@ export function buildIntentPrompt(clock: MadridClock): string {
     "Interpretas los mensajes en español que recibe un bot personal.",
     `Ahora en Madrid es ${clock.weekday} ${clock.localDateTime}.`,
     "Responde solo con JSON en uno de estos formatos, según lo que pida el mensaje:",
+    `- ${LIFE_INTENT_FORMAT}`,
     `- ${REMINDER_INTENT_FORMAT}`,
     `- ${EXPENSES_QUERY_INTENT_FORMAT}`,
     `- ${BUDGET_INTENT_FORMAT}`,
@@ -70,6 +73,7 @@ export function buildIntentPrompt(clock: MadridClock): string {
 
 export function parseMessageIntent(raw: unknown, now: Date): MessageIntent {
   const intent = (raw as { intent?: unknown } | null)?.intent;
+  if (intent === "life" && raw && typeof raw === "object") return { kind: "life", input: raw as Record<string, unknown> };
   if (intent === "reminder") return parseReminderRequest(raw, now);
   if (intent === "expenses_query") return parseExpenseQuery(raw);
   if (intent === "budget") return parseBudgetRequest(raw);
