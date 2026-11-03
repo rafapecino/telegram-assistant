@@ -13,7 +13,8 @@ import { askGroqForJson } from "./groq.ts";
 export const EXPENSES_QUERY_INTENT_FORMAT =
   'Pregunta por sus gastos: {"intent": "expenses_query", "date_from": "YYYY-MM-DD", "date_to": "YYYY-MM-DD", ' +
   `"category": una de ${JSON.stringify(EXPENSE_CATEGORIES)} o null, "place": "<sitio>" o null}. ` +
-  'Sin periodo indicado, los últimos 7 días hasta hoy; "esta semana" empieza el lunes; "este mes", el día 1. ' +
+  "Sin periodo indicado, los últimos 7 días hasta hoy, salvo si pregunta por un sitio concreto (place): entonces " +
+  'desde el día 1 de este mes hasta hoy. "Esta semana" empieza el lunes; "este mes", el día 1. ' +
   "category es null si no pregunta por una categoría concreta. place es el nombre del comercio o sitio si pregunta " +
   'por uno concreto ("¿cuánto he gastado en Mercadona?" → "Mercadona"; tabaco o estancos → "tabaco"), con ' +
   "category null; si no, null.";
