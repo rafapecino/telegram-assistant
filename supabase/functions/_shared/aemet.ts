@@ -7,7 +7,8 @@ import { sendTelegramMessage } from "./telegram.ts";
 
 // Área 72: Comunidad de Madrid. Incluye sus tres zonas (Sierra, Metropolitana y Henares, Sur, Vegas y Oeste).
 const WARNINGS_URL = "https://opendata.aemet.es/opendata/api/avisos_cap/ultimoelaborado/area/72";
-// AEMET falla a ratos con 5xx o 429 (límite de peticiones): se reintenta antes de rendirse.
+// AEMET falla a ratos con 5xx, 429 (límite de peticiones) o cortando la conexión sin responder: se reintenta antes
+// de rendirse.
 export const RETRY_DELAYS_MS = [2_000, 5_000];
 const TAR_BLOCK = 512;
 const LEVEL_EMOJI: Record<string, string> = { amarillo: "🟡", naranja: "🟠", rojo: "🔴" };
@@ -23,7 +24,15 @@ export interface WeatherAlert {
 
 async function fetchWithRetry(url: string, init: RequestInit, retryDelaysMs: number[]): Promise<Response> {
   for (let attempt = 0;; attempt++) {
-    const response = await fetch(url, init);
+    let response: Response;
+    try {
+      response = await fetch(url, init);
+    } catch (error) {
+      // fetch lanza TypeError cuando falla la red; cualquier otro error no es pasajero.
+      if (!(error instanceof TypeError) || attempt >= retryDelaysMs.length) throw error;
+      await new Promise((resolve) => setTimeout(resolve, retryDelaysMs[attempt]));
+      continue;
+    }
     const isTransient = response.status >= 500 || response.status === 429;
     if (!isTransient || attempt >= retryDelaysMs.length) return response;
     await response.body?.cancel();

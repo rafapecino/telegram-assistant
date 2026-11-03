@@ -147,6 +147,26 @@ Deno.test("reintenta cuando AEMET está saturada", async () => {
   });
 });
 
+Deno.test("reintenta cuando AEMET corta la conexión sin responder", async () => {
+  let calls = 0;
+  const cut = (request: Request) => {
+    if (calls++ === 0) throw new TypeError("connection closed before message completed");
+    return aemet(buildTar({ "a.xml": RAIN }))(request);
+  };
+  await withFakeFetch(ENV, cut, async () => {
+    assertEquals((await fetchWeatherAlerts([0])).length, 1);
+  });
+});
+
+Deno.test("si la conexión sigue fallando tras los reintentos, falla con el error de red", async () => {
+  const alwaysCut = () => {
+    throw new TypeError("connection closed before message completed");
+  };
+  await withFakeFetch(ENV, alwaysCut, async () => {
+    await assertRejects(() => fetchWeatherAlerts([0]), TypeError, "connection closed");
+  });
+});
+
 Deno.test("el resumen de la mañana solo enseña los avisos de hoy que no han terminado", () => {
   const rain = parseCapAlert(RAIN)!;
   const over = parseCapAlert(OVER)!;
