@@ -171,4 +171,4 @@ a.nav-item{text-decoration:none}
 .finance-detail>summary {cursor:pointer;font-weight:700;padding:17px 0;color:#243348;}
 .finance-detail[open]>summary {margin-bottom:8px;}
 .finance-detail .card {box-shadow:none;}
-.finance-connection {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;color:#59687c;margin:4px 0 20px;}
+.finance-connection {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;color:#59687c;margin:4px 0 20px;}.connected.needs-reconnect{background:#fff1df;color:#8a4b00}.reconnect-button{margin:0 10px 10px 0}

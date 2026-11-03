@@ -118,7 +118,7 @@ async function postGoogleForm(url: string, form: Record<string, string>): Promis
   const result = parseJsonOrEmpty(text);
   if (!response.ok) {
     if (result.error === "invalid_grant") {
-      throw new UserFacingError("Google ha retirado el acceso al calendario. Vuelve a conectarlo con /conectar_calendario.");
+      throw new UserFacingError("Google ha retirado el acceso al calendario. Vuelve a conectarlo desde Ajustes, en el panel, o con /conectar_calendario.");
     }
     throw new Error(`Google respondió ${response.status} (${result.error ?? text})`);
   }
