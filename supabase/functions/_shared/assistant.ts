@@ -10,7 +10,7 @@ import {
   loadBudgetStatuses,
   saveBudget,
 } from "./budgets.ts";
-import { findExpenses, formatExpenseReport } from "./expense-queries.ts";
+import { formatExpenseReport, searchExpenses } from "./expense-queries.ts";
 import { askGroqForJson } from "./groq.ts";
 import { formatMadridDateTime } from "./madrid-time.ts";
 import { describeSavedManualExpense, saveManualExpense } from "./manual-expenses.ts";
@@ -110,8 +110,10 @@ export async function replyToText(
       return `Te recordaré "${intent.text}" el ${formatMadridDateTime(intent.remindAt)}${
         describeRepeat(intent.repeat)
       }.`;
-    case "expenses_query":
-      return formatExpenseReport(await findExpenses(db, intent.query), intent.query);
+    case "expenses_query": {
+      const { expenses, bankNames } = await searchExpenses(db, intent.query);
+      return formatExpenseReport(expenses, intent.query, bankNames);
+    }
     case "budget_set":
       return describeSavedBudget(await saveBudget(db, intent.category, intent.monthlyLimit, now));
     case "budget_delete":

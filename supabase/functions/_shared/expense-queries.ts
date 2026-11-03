@@ -7,6 +7,7 @@ import {
   type StoredExpense,
   totalAmount,
 } from "./expenses.ts";
+import { askGroqForJson } from "./groq.ts";
 
 /** Formato que el modelo debe devolver cuando el mensaje pregunta por los gastos (ver message-intent.ts). */
 export const EXPENSES_QUERY_INTENT_FORMAT =
@@ -98,11 +99,52 @@ export function describePeriod(query: ExpenseQuery): string {
   return where ? `${period} en ${where}` : period;
 }
 
+// Basta para los comercios distintos de varios meses, y así la petición a Groq no crece sin límite.
+const MAX_BANK_NAMES = 200;
+
+/** Índices válidos de la respuesta de Groq; lo demás se ignora. */
+export function parseBankNameMatches(raw: unknown, count: number): number[] {
+  const matches = (raw as { matches?: unknown } | null)?.matches;
+  if (!Array.isArray(matches)) throw new Error("Groq no devolvió qué comercios son.");
+  return matches.filter((index): index is number => Number.isInteger(index) && index >= 0 && index < count);
+}
+
+/** Groq relaciona el sitio que nombra Rafa con cómo lo escribe el banco. */
+async function matchBankNames(place: string, bankNames: string[]): Promise<string[]> {
+  const raw = await askGroqForJson(
+    "Relacionas el sitio que nombra una persona con las descripciones de los movimientos de su banco. Cuentan los " +
+      'diminutivos ("cabañita" → "LA CABAÑA"), los apodos y abreviaturas ("el Merca" → "MERCADONA") y el nombre ' +
+      "comercial frente a la razón social. No elijas otros comercios solo porque se parezcan las letras o sean del " +
+      'mismo tipo. Responde solo con JSON {"matches": [números de las descripciones que son ese sitio]}, o ' +
+      '{"matches": []} si ninguna lo es.',
+    `Sitio: ${place}\nDescripciones:\n${bankNames.map((name, index) => `${index}. ${name}`).join("\n")}`,
+  );
+  return parseBankNameMatches(raw, bankNames.length).map((index) => bankNames[index]);
+}
+
+/**
+ * Los gastos del sitio por el que pregunta. Primero se busca tal cual; si no aparece («cabañita» frente a
+ * «LA CABAÑA»), Groq elige entre los comercios del periodo. `bankNames` dice cuáles eligió, para enseñarlo.
+ */
+export async function searchExpenses(
+  db: SupabaseClient,
+  query: ExpenseQuery,
+): Promise<{ expenses: StoredExpense[]; bankNames: string[] }> {
+  const exact = await findExpenses(db, query);
+  if (exact.length > 0 || !query.place || isTobacco(query.place)) return { expenses: exact, bankNames: [] };
+  const period = await findExpenses(db, { ...query, place: undefined });
+  const candidates = [...new Set(period.map((expense) => expense.description))].slice(0, MAX_BANK_NAMES);
+  if (candidates.length === 0) return { expenses: [], bankNames: [] };
+  const bankNames = await matchBankNames(query.place, candidates);
+  return { expenses: period.filter((expense) => bankNames.includes(expense.description)), bankNames };
+}
+
 /** Recibe los gastos ordenados del más reciente al más antiguo, como los devuelve findExpenses. */
-export function formatExpenseReport(expenses: StoredExpense[], query: ExpenseQuery): string {
+export function formatExpenseReport(expenses: StoredExpense[], query: ExpenseQuery, bankNames: string[] = []): string {
   const period = describePeriod(query);
   if (expenses.length === 0) return `No tienes gastos ${period}.`;
   const lines = [`Gastos ${period}: ${euros.format(totalAmount(expenses))} en ${expenses.length} gastos.`];
+  if (bankNames.length > 0) lines.push(`En el banco aparece como ${bankNames.map((name) => `«${name}»`).join(", ")}.`);
   if (!query.category && !query.place) lines.push("", "Por categoría:", ...categoryTotalLines(expenses));
   lines.push("", "Detalle:", ...expenses.slice(0, MAX_LISTED_EXPENSES).map(expenseLine));
   if (expenses.length > MAX_LISTED_EXPENSES) lines.push(`… y ${expenses.length - MAX_LISTED_EXPENSES} más.`);
