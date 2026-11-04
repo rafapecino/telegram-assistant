@@ -44,19 +44,67 @@ export function FinanceInsights({api}:{api:PanelApi}){
   const summary=data?financeSummary(data.expenses,today()):null;
   return <section className="card finance-insights"><div className="card-heading"><h2>Tu gasto, con perspectiva</h2><span className="experience-kicker">ESTE MES</span></div>{error?<p className="error" role="alert">{error} <button className="text-link" onClick={load}>Reintentar</button></p>:!summary?<p className="form-hint">Preparando comparativa…</p>:<><div className="insight-comparison"><div><span>Gastado hasta hoy</span><strong>{euro(summary.spent)}</strong></div><div><span>Mismo tramo del mes anterior</span><strong>{euro(summary.before)}</strong></div><span className={`insight-change ${summary.difference<=0?'lower':'higher'}`}>{summary.difference<=0?<ArrowDownRight size={18}/>:<ArrowUpRight size={18}/>} {summary.percent===null?'Sin base para comparar':`${Math.abs(summary.percent)} % ${summary.difference<=0?'menos':'más'}`}</span></div>{data.truncated&&<p className="form-hint">Comparativa parcial: se han podido cargar {data.expenses.length} movimientos del periodo.</p>}<details className="insight-recurring"><summary>Posibles cargos recurrentes {summary.recurring.length>0&&`· ${summary.recurring.length}`}</summary><p className="form-hint">Estimación: al menos tres meses, intervalos mensuales e importes similares. Revisa antes de considerarlos suscripciones.</p>{summary.recurring.length?summary.recurring.map((r,i)=><div className="list-row" key={i}><span className="row-main"><strong>{r.name}</strong><small>{r.count} cargos parecidos detectados</small></span><strong>{euro(r.amount)}</strong></div>):<p className="empty">Aún no hay un patrón mensual suficientemente claro.</p>}</details></>}</section>;
 }
-const fields:Record<string,{title:string;items:[string,string,string,boolean][]}>={
- tasks:{title:'Revisar tarea sin hora',items:[['text','Tarea','text',true],['scheduled_on','Día (sin hora)','date',true]]},
- debts:{title:'Revisar deuda',items:[['person','Persona','text',true],['amount','Importe (€)','number',true],['description','Concepto','text',true],['direction','Situación','debt_direction',true],['incurred_on','Fecha del gasto','date',true]]},
- consumption_goals:{title:'Revisar objetivo semanal',items:[['item','Objetivo','goal_item',true],['weekly_limit','Máximo semanal','integer',true]]},
- expenses:{title:'Revisar gasto',items:[['description','Descripción','text',true],['amount','Importe (€)','number',true],['category','Categoría','category',true],['date','Fecha','date',true]]},
- incomes:{title:'Revisar ingreso',items:[['description','Descripción','text',true],['amount','Importe (€)','number',true],['date','Fecha','date',true]]},
- reminders:{title:'Revisar recordatorio',items:[['text','Qué recordar','text',true],['local_datetime','Fecha y hora de Madrid','datetime-local',true],['repeat','Repetición','repeat',false],['advance_minutes','Aviso previo','advance',false]]},
- calendar:{title:'Revisar evento',items:[['title','Evento','text',true]]}, notes:{title:'Revisar nota',items:[['text','Nota','textarea',true]]},
- habits:{title:'Revisar hábito',items:[['name','Hábito','text',true]]}, shopping_items:{title:'Revisar producto',items:[['text','Producto','text',true]]},
- price_watches:{title:'Revisar aviso de precio',items:[['query','Producto','text',true],['max_price','Precio objetivo (€), opcional','number',false]]},
- budgets:{title:'Revisar presupuesto',items:[['category','Categoría','category',true],['monthly_limit','Límite mensual (€)','number',true]]},
- weight_entries:{title:'Revisar peso',items:[['date','Fecha','date',true],['kg','Peso (kg)','number',true]]},
+const fields:Record<string,{title:string;question:string;items:[string,string,string,boolean][]}>={
+ tasks:{title:'Revisar tarea sin hora',question:'¿Apunto esta tarea?',items:[['text','Tarea','text',true],['scheduled_on','Día (sin hora)','date',true]]},
+ debts:{title:'Revisar deuda',question:'¿Guardo esta deuda?',items:[['person','Persona','text',true],['amount','Importe (€)','number',true],['description','Concepto','text',true],['direction','Situación','debt_direction',true],['incurred_on','Fecha del gasto','date',true]]},
+ consumption_goals:{title:'Revisar objetivo semanal',question:'¿Guardo este objetivo?',items:[['item','Objetivo','goal_item',true],['weekly_limit','Máximo semanal','integer',true]]},
+ expenses:{title:'Revisar gasto',question:'¿Apunto este gasto?',items:[['description','Descripción','text',true],['amount','Importe (€)','number',true],['category','Categoría','category',true],['date','Fecha','date',true]]},
+ incomes:{title:'Revisar ingreso',question:'¿Apunto este ingreso?',items:[['description','Descripción','text',true],['amount','Importe (€)','number',true],['date','Fecha','date',true]]},
+ reminders:{title:'Revisar recordatorio',question:'¿Guardo este recordatorio?',items:[['text','Qué recordar','text',true],['local_datetime','Fecha y hora de Madrid','datetime-local',true],['repeat','Repetición','repeat',false],['advance_minutes','Aviso previo','advance',false]]},
+ calendar:{title:'Revisar evento',question:'¿Creo este evento?',items:[['title','Evento','text',true]]}, notes:{title:'Revisar nota',question:'¿Guardo esta nota?',items:[['text','Nota','textarea',true]]},
+ habits:{title:'Revisar hábito',question:'¿Empiezo a seguir este hábito?',items:[['name','Hábito','text',true]]}, shopping_items:{title:'Revisar producto',question:'¿Lo añado a la compra?',items:[['text','Producto','text',true]]},
+ price_watches:{title:'Revisar aviso de precio',question:'¿Vigilo este precio?',items:[['query','Producto','text',true],['max_price','Precio objetivo (€), opcional','number',false]]},
+ budgets:{title:'Revisar presupuesto',question:'¿Guardo este presupuesto?',items:[['category','Categoría','category',true],['monthly_limit','Límite mensual (€)','number',true]]},
+ weight_entries:{title:'Revisar peso',question:'¿Apunto este peso?',items:[['date','Fecha','date',true],['kg','Peso (kg)','number',true]]},
 };
+const OPTION_LABELS:Record<string,string>={receivable:'Me debe',payable:'Debo',tobacco:'Compras de tabaco',energy:'Latas de energética','':'Sin especificar',daily:'Cada día',weekdays:'Lunes a viernes',weekly:'Cada semana',monthly:'Cada mes','30':'30 minutos antes','1440':'Un día antes'};
+const WEEKDAYS=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+const NUMERIC_FIELDS=['amount','monthly_limit','kg','max_price','advance_minutes','duration_minutes','weekly_limit'];
+const SELECT_TYPES=['category','repeat','advance','debt_direction','goal_item'];
+/** El valor con que arranca cada campo: lo que propuso el modelo o, si falta, el mismo valor por defecto que el formulario. */
+function initialValue(draft:Draft,name:string){return draft.values[name]??(['date','scheduled_on','incurred_on'].includes(name)?today():name==='duration_minutes'?60:'')}
+/** Los campos que se guardan: los de la propuesta y, en eventos, fecha o fecha y hora según venga con hora. */
+function proposalItems(draft:Draft):[string,string,string,boolean][]{
+  const items=fields[draft.resource]?.items??[];
+  if(draft.resource!=='calendar')return items;
+  return [...items,...(draft.values.local_datetime?[['local_datetime','Fecha y hora','datetime-local',true],['duration_minutes','Duración (minutos)','integer',true]]:[['date','Fecha','date',true]]) as [string,string,string,boolean][]];
+}
+/** Lo mismo que mandaría el formulario si se confirmara sin tocar nada. */
+function proposalPayload(draft:Draft){
+  const payload:Record<string,any>={};
+  for(const [name,,type] of proposalItems(draft)){const value=initialValue(draft,name);payload[name]=value===''&&type==='category'?'Otros':value}
+  for(const key of NUMERIC_FIELDS)if(key in payload)payload[key]=payload[key]===''?null:Number(payload[key]);
+  if(payload.repeat==='')payload.repeat=null;
+  if(draft.resource==='habits')payload.scheduled_days=String(draft.values.scheduled_days??'1,2,3,4,5,6,7').split(',').map(Number);
+  return payload;
+}
+/** «2026-11-05T09:30» → «jueves, 5 de noviembre, 09:30». La hora ya es de Madrid: se formatea sin convertir. */
+function localDateText(value:string,withTime:boolean){
+  const [date,time]=value.split('T'),[y,m,d]=date.split('-').map(Number);
+  const day=new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'long',timeZone:'UTC'}).format(new Date(Date.UTC(y,m-1,d)));
+  return withTime&&time?`${day}, ${time.slice(0,5)}`:day;
+}
+function displayValue(type:string,name:string,value:string|number){
+  if(value==='')return '';
+  if(SELECT_TYPES.includes(type))return OPTION_LABELS[String(value)]??String(value);
+  if(type==='datetime-local')return localDateText(String(value),true);
+  if(type==='date')return localDateText(String(value),false);
+  if(['amount','monthly_limit','max_price'].includes(name))return euro(Number(value));
+  if(name==='kg')return `${value} kg`;
+  return String(value);
+}
+/** La propuesta del chat como pregunta de sí o no, dentro de la conversación. «Corregir» abre el formulario completo. */
+export function ProposalConfirm({draft,api,onEdit,onSaved,onDismiss}:{draft:Draft;api:PanelApi;onEdit:()=>void;onSaved:()=>Promise<void>;onDismiss:()=>void}){
+  const [busy,setBusy]=useState(false),[error,setError]=useState('');
+  const config=fields[draft.resource];if(!config)return null;
+  const rows=proposalItems(draft).map(([name,label,type,required])=>({name,label,required,text:displayValue(type,name,initialValue(draft,name))}));
+  if(draft.resource==='habits')rows.push({name:'scheduled_days',label:'Días',required:true,text:String(draft.values.scheduled_days??'1,2,3,4,5,6,7').split(',').map(n=>WEEKDAYS[Number(n)-1]).filter(Boolean).join(', ')});
+  const missing=rows.filter(r=>r.required&&!r.text).map(r=>r.label);
+  async function confirm(){setBusy(true);setError('');try{await api(draft.resource,'POST',proposalPayload(draft));await onSaved()}catch(e){setError(e instanceof Error?e.message:'No se pudo guardar.')}finally{setBusy(false)}}
+  return <div className="proposal-confirm" role="group" aria-labelledby="proposal-question"><p id="proposal-question" className="proposal-question">{config.question}</p><dl>{rows.filter(r=>r.text||r.required).map(r=><div key={r.name}><dt>{r.label}</dt><dd className={r.text?'':'is-missing'}>{r.text||'Falta'}</dd></div>)}</dl>
+    {missing.length>0&&<p className="form-hint">Falta {missing.join(' y ').toLowerCase()}: complétalo para poder guardarlo.</p>}{error&&<p className="error" role="alert">{error}</p>}
+    <div className="proposal-confirm-actions">{missing.length?<button className="primary" onClick={onEdit} disabled={busy}><Pencil size={16}/> Completar</button>:<button className="primary" onClick={()=>void confirm()} disabled={busy}><Check size={16}/>{busy?'Guardando…':'Sí, guárdalo'}</button>}<button className="secondary" onClick={onDismiss} disabled={busy}>No</button>{!missing.length&&<button className="text-link" onClick={onEdit} disabled={busy}>Corregir</button>}</div></div>;
+}
 export function ProposalEditor({draft,api,onClose,onSaved}:{draft:Draft;api:PanelApi;onClose:()=>void;onSaved:()=>Promise<void>}){
   const ref=useRef<HTMLDialogElement>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[allDay,setAllDay]=useState(!draft.values.local_datetime);
   const config=fields[draft.resource];
@@ -64,7 +112,6 @@ export function ProposalEditor({draft,api,onClose,onSaved}:{draft:Draft;api:Pane
   if(!config)return null;
   async function save(e:FormEvent<HTMLFormElement>){e.preventDefault();setError('');const formData=new FormData(e.currentTarget),payload:Record<string,any>=Object.fromEntries(formData);if(draft.resource==='habits'){payload.scheduled_days=formData.getAll('scheduled_days').map(Number);if(!payload.scheduled_days.length){setError('Elige al menos un día.');return}}setBusy(true);for(const k of ['amount','monthly_limit','kg','max_price','advance_minutes','duration_minutes','weekly_limit'])if(k in payload)payload[k]=payload[k]===''?null:Number(payload[k]);if(payload.repeat==='')payload.repeat=null;
     try{await api(draft.resource,'POST',payload);await onSaved();onClose()}catch(e){setError(e instanceof Error?e.message:'No se pudo guardar.')}finally{setBusy(false)}}
-  const input=(name:string,label:string,type:string,required:boolean)=>{const value=draft.values[name]??(['date','scheduled_on','incurred_on'].includes(name)?today():name==='duration_minutes'?60:'');const options=type==='debt_direction'?['receivable','payable']:type==='goal_item'?['tobacco','energy']:type==='category'?[...(draft.resource==='budgets'?['Total']:[]),'Supermercado','Restaurantes','Transporte','Hogar','Suscripciones','Ocio','Salud','Compras','Otros']:type==='repeat'?['','daily','weekdays','weekly','monthly']:['','30','1440'];const labels:Record<string,string>={receivable:'Me debe',payable:'Debo',tobacco:'Compras de tabaco',energy:'Latas de energética','':'Sin especificar',daily:'Cada día',weekdays:'Lunes a viernes',weekly:'Cada semana',monthly:'Cada mes','30':'30 minutos antes','1440':'Un día antes'};
-    return <label key={name}>{label}{['category','repeat','advance','debt_direction','goal_item'].includes(type)?<select name={name} defaultValue={value|| (type==='category'?'Otros':'')} required={required}>{options.map(o=><option key={o} value={o}>{labels[o]??o}</option>)}</select>:type==='textarea'?<textarea name={name} defaultValue={value} required={required} maxLength={1000}/>:<input name={name} type={type==='integer'?'number':type} defaultValue={value} required={required} step={type==='number'?'0.01':type==='integer'?'1':undefined} min={type==='number'?'0.01':type==='integer'?'0':undefined} maxLength={name==='text'?500:200} inputMode={type==='number'?'decimal':undefined}/>}</label>};
+  const input=(name:string,label:string,type:string,required:boolean)=>{const value=initialValue(draft,name);const options=type==='debt_direction'?['receivable','payable']:type==='goal_item'?['tobacco','energy']:type==='category'?[...(draft.resource==='budgets'?['Total']:[]),'Supermercado','Restaurantes','Transporte','Hogar','Suscripciones','Ocio','Salud','Compras','Otros']:type==='repeat'?['','daily','weekdays','weekly','monthly']:['','30','1440'];    return <label key={name}>{label}{['category','repeat','advance','debt_direction','goal_item'].includes(type)?<select name={name} defaultValue={value|| (type==='category'?'Otros':'')} required={required}>{options.map(o=><option key={o} value={o}>{OPTION_LABELS[o]??o}</option>)}</select>:type==='textarea'?<textarea name={name} defaultValue={value} required={required} maxLength={1000}/>:<input name={name} type={type==='integer'?'number':type} defaultValue={value} required={required} step={type==='number'?'0.01':type==='integer'?'1':undefined} min={type==='number'?'0.01':type==='integer'?'0':undefined} maxLength={name==='text'?500:200} inputMode={type==='number'?'decimal':undefined}/>}</label>};
   return <dialog ref={ref} className="add-dialog proposal-dialog" onCancel={e=>{if(busy)e.preventDefault()}} onClose={onClose} aria-labelledby="proposal-title"><div className="card-heading"><h2 id="proposal-title">{config.title}</h2><button className="icon-button" disabled={busy} onClick={onClose} aria-label="Cerrar propuesta"><X size={18}/></button></div><p className="proposal-intro">Es una propuesta. Puedes corregirla; todavía no se ha guardado nada.</p><form onSubmit={save} className="proposal-fields">{config.items.map(([n,l,t,r])=>input(n,l,t,r))}{draft.resource==='habits'&&<fieldset className="proposal-weekdays"><legend>Días del hábito</legend>{['L','M','X','J','V','S','D'].map((label,index)=><label key={index}><input type="checkbox" name="scheduled_days" value={index+1} defaultChecked={String(draft.values.scheduled_days??'1,2,3,4,5,6,7').split(',').map(Number).includes(index+1)} aria-label={['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'][index]}/><span>{label}</span></label>)}</fieldset>}{draft.resource==='calendar'&&<><label className="optional-time"><input type="checkbox" checked={allDay} onChange={e=>setAllDay(e.target.checked)}/> Todo el día</label>{allDay?input('date','Fecha','date',true):<>{input('local_datetime','Fecha y hora de Madrid','datetime-local',true)}{input('duration_minutes','Duración (minutos)','number',true)}</>}</>}{error&&<p className="error" role="alert">{error}</p>}<div className="proposal-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancelar</button><button className="primary" disabled={busy}><Check size={16}/>{busy?'Guardando…':'Confirmar y guardar'}</button></div></form></dialog>;
 }

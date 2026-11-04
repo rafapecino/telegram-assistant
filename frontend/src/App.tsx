@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { LayoutDashboard, Wallet, Bell, ShoppingBasket, Cake, Flame, CalendarDays, LogOut, Plus, Trash2, RefreshCw, ArrowUpRight, ArrowDownRight, Menu, X, Check, AlertCircle, Send, Scale, Cigarette, CupSoda, Mic, Square, Brain, CloudSun, AlertTriangle, Settings, Download, ChevronLeft, ChevronRight, Newspaper, Search, TrendingUp, Lightbulb, Tag, FileText, Pencil } from 'lucide-react';
 import { sectionFromSearch, sectionSearch, initialSection, readLastSection, rememberSection, type Section } from './navigation';
 import { madridNow, nextHourInMadrid } from './form-time';
-import {DataFreshness,FinanceInsights,NotesPanel,ProposalEditor,UndoTray,useUndoQueue} from './ExperiencePanels';
+import {DataFreshness,FinanceInsights,NotesPanel,ProposalConfirm,ProposalEditor,UndoTray,useUndoQueue} from './ExperiencePanels';
 import {dayFocus,isDraftCandidate,type Draft} from './experience';
 import {contextualGreeting} from './greetings';
 import { selectHomeWeather } from './home-weather';
@@ -150,10 +150,10 @@ async function transcribe(audio:Blob, token:string):Promise<string>{
 }
 
 function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>}) {
-  const [messages,setMessages]=useState<ChatMessage[]>([]),[draft,setDraft]=useState(''),[busy,setBusy]=useState(false),[chatError,setChatError]=useState(''),[proposal,setProposal]=useState<Draft|null>(null),[proposalNotice,setProposalNotice]=useState('');
+  const [messages,setMessages]=useState<ChatMessage[]>([]),[draft,setDraft]=useState(''),[busy,setBusy]=useState(false),[chatError,setChatError]=useState(''),[proposal,setProposal]=useState<{draft:Draft;message:string}|null>(null),[isEditingProposal,setIsEditingProposal]=useState(false),[proposalNotice,setProposalNotice]=useState('');
   const chatLog=useRef<HTMLDivElement>(null),recorder=useRef<MediaRecorder|null>(null),[recording,setRecording]=useState(false);
   // Desplaza solo el historial: scrollIntoView también arrastraba la página de Inicio.
-  useEffect(()=>{const log=chatLog.current;if(log)log.scrollTop=log.scrollHeight},[messages,busy]);
+  useEffect(()=>{const log=chatLog.current;if(log)log.scrollTop=log.scrollHeight},[messages,busy,proposal]);
   // La conversación se guarda en el servidor: al volver al panel sigue donde se dejó.
   useEffect(()=>{api('chat_messages',token).then(setMessages).catch(e=>setChatError(e instanceof Error?e.message:'No se pudo cargar la conversación.'))},[token]);
   // Tras cada respuesta se relee la conversación: un «sí» escrito o un botón también cambian la pregunta que contestan.
@@ -165,9 +165,9 @@ function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>
   }
   async function send(text:string){
     const message=text.trim();if(!message||busy)return;
-    setBusy(true);setChatError('');setProposalNotice('');
+    setBusy(true);setChatError('');setProposalNotice('');setProposal(null);
     try{if(isDraftCandidate(message)){const prepared=await api('chat_draft',token,'POST',{message});
-      if(prepared.proposal){setProposal(prepared.proposal);setDraft('');return}}
+      if(prepared.proposal){setProposal({draft:prepared.proposal,message});setIsEditingProposal(false);setDraft('');return}}
       setDraft('');setMessages(m=>[...m,{role:'user',text:message}]);await ask({message});
     }catch(e){setChatError(e instanceof Error?e.message:'No se pudo preparar el mensaje. No se ha enviado.')}finally{setBusy(false)}
   }
@@ -185,23 +185,25 @@ function AssistantChat({token,onChange}:{token:string;onChange:()=>Promise<void>
     try{setChatError('');recorder.current=await startRecording(audio=>void sendAudio(audio));setRecording(true)}
     catch{setChatError('No puedo usar el micrófono. Revisa el permiso del navegador.')}
   }
+  async function proposalSaved(){setProposal(null);setIsEditingProposal(false);setProposalNotice('Guardado. Puedes verlo en su sección.');await onChange()}
   // Como en Telegram, pulsar un botón actualiza el mensaje que lo contenía (por ejemplo, tachar de la compra).
   async function press(data:string){await ask({button:data})}
   async function clear(){
     setChatError('');
-    try{await api('chat_messages',token,'DELETE');setMessages([])}
+    try{await api('chat_messages',token,'DELETE');setMessages([]);setProposal(null)}
     catch(e){setChatError(e instanceof Error?e.message:'No se pudo borrar la conversación.')}
   }
   return <><Card title="Pregúntale a tu asistente" aside={messages.length?<button className="text-link" onClick={()=>void clear()} disabled={busy}>Nueva conversación</button>:undefined} className="chat-card">
     <div ref={chatLog} className="chat-log" aria-live="polite">
       {!messages.length&&<div className="chat-welcome"><img className="chat-avatar large" src={chatbotLogo} alt=""/><p>Dime, que para eso estoy.</p></div>}
       {messages.map((m,i)=><div key={i} className={`chat-row ${m.role}`}>{m.role==='assistant'&&<img className="chat-avatar" src={chatbotLogo} alt=""/>}<div className={`chat-message ${m.role}`}><p>{linkify(m.text)}</p>{m.buttons&&<div className="chat-buttons">{m.buttons.flat().map(b=><button key={b.callback_data} className="secondary" onClick={()=>void press(b.callback_data)} disabled={busy}>{b.text}</button>)}</div>}</div></div>)}
+      {proposal&&<><div className="chat-row user"><div className="chat-message user"><p>{proposal.message}</p></div></div><div className="chat-row assistant"><img className="chat-avatar" src={chatbotLogo} alt=""/><div className="chat-message assistant"><ProposalConfirm draft={proposal.draft} api={(r,m,d,p)=>api(r,token,m,d,p)} onEdit={()=>setIsEditingProposal(true)} onSaved={proposalSaved} onDismiss={()=>{setProposal(null);setProposalNotice('Vale, no guardo nada.')}}/></div></div></>}
       {busy&&<div className="chat-row assistant"><img className="chat-avatar" src={chatbotLogo} alt=""/><div className="chat-message assistant typing"><p>Pensando…</p></div></div>}
     </div>
     {proposalNotice&&<p className="inline-success" role="status">{proposalNotice}</p>}
     {chatError&&<p className="error" role="alert">{chatError}</p>}
     <form className="inline-form chat-form" onSubmit={e=>{e.preventDefault();void send(draft)}}><label className="sr-only" htmlFor="chat-input">Mensaje para el asistente</label><input id="chat-input" value={draft} maxLength={1000} placeholder={recording?'Grabando… pulsa ■ para enviar':'Escribe un mensaje…'} disabled={recording} onChange={e=>setDraft(e.target.value)} autoComplete="off"/><button className={`icon-button ${recording?'primary recording':'secondary'}`} type="button" onClick={()=>void toggleRecording()} disabled={busy} aria-label={recording?'Parar y enviar la nota de voz':'Grabar una nota de voz'}>{recording?<Square size={16}/>:<Mic size={18}/>}</button><button className="primary icon-button" type="submit" disabled={busy||recording||!draft.trim()} aria-label="Enviar mensaje"><Send size={18}/></button></form>
-  </Card>{proposal&&<ProposalEditor draft={proposal} api={(r,m,d,p)=>api(r,token,m,d,p)} onClose={()=>setProposal(null)} onSaved={async()=>{setProposalNotice('Guardado. Puedes verlo en su sección.');await onChange()}}/>}</>;
+  </Card>{proposal&&isEditingProposal&&<ProposalEditor draft={proposal.draft} api={(r,m,d,p)=>api(r,token,m,d,p)} onClose={()=>setIsEditingProposal(false)} onSaved={proposalSaved}/>}</>;
 }
 
 const ALERT_LEVEL_EMOJI:Record<string,string>={amarillo:'🟡',naranja:'🟠',rojo:'🔴'};

@@ -15,8 +15,9 @@ import { askGroqForJson } from "./groq.ts";
 import { formatMadridDateTime } from "./madrid-time.ts";
 import { describeSavedManualExpense, saveManualExpense } from "./manual-expenses.ts";
 import { loadMemory, memoryContext, nicknameGuide, parseMemorySuggestion, suggestMemory } from "./memory.ts";
-import { type ConversationTurn, interpretMessage, withConversation } from "./message-intent.ts";
+import { type ConversationTurn, interpretMessage, type MessageIntent, withConversation } from "./message-intent.ts";
 import { replyToPersonalIntent } from "./personal-replies.ts";
+import { withPersonalTone } from "./personal-tone.ts";
 import { describeRepeat, saveReminder } from "./reminders.ts";
 import type { BotReply } from "./telegram.ts";
 
@@ -99,6 +100,18 @@ export async function replyToText(
   history: ConversationTurn[] = [],
 ): Promise<string | BotReply> {
   const intent = await interpretMessage(text, now, history);
+  const reply = await replyToIntent(db, intent, text, now, history);
+  // La conversación general ya sale con su tono; las respuestas con botones se dejan como están.
+  return intent.kind === "unknown" || typeof reply !== "string" ? reply : withPersonalTone(reply);
+}
+
+async function replyToIntent(
+  db: SupabaseClient,
+  intent: MessageIntent,
+  text: string,
+  now: Date,
+  history: ConversationTurn[],
+): Promise<string | BotReply> {
   switch (intent.kind) {
     case "life": return replyToLife(db, intent.input, now);
     case "unknown":
