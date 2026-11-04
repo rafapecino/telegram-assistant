@@ -149,3 +149,15 @@ Deno.test("el aviso previo llega antes de la hora y sin botones", async () => {
     assertEquals(sent[0].reply_markup, undefined);
   });
 });
+
+Deno.test("si se repite y la hora de hoy ya ha pasado, empieza la próxima vez", () => {
+  // Miércoles 21 de octubre a las 12:00 en Madrid; pide «de lunes a viernes a las 9:30» desde hoy.
+  const request = parseReminderRequest({
+    text: "grabar las clases",
+    local_datetime: "2026-10-21T09:30",
+    repeat: "weekdays",
+  }, NOW);
+  assertEquals(request.kind === "reminder" && request.remindAt, new Date("2026-10-22T07:30:00Z"));
+  const once = parseReminderRequest({ text: "grabar las clases", local_datetime: "2026-10-21T09:30" }, NOW);
+  assertEquals(once.kind, "invalid");
+});
