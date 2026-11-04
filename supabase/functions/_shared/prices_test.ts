@@ -1,10 +1,12 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import {
   addWatch,
+  bestOfEach,
   checkPriceWatches,
   comparePrices,
   extractOffers,
   formatOffers,
+  isAlertDue,
   MAX_WATCHES,
   type Offer,
   parsePricesRequest,
@@ -13,6 +15,7 @@ import {
   rankOffers,
   refineQuery,
   selectMatching,
+  storeLink,
   withoutCheapExtras,
 } from "./prices.ts";
 import { fakeDb, TELEGRAM_ENV, withFakeFetch } from "./testing.ts";
@@ -28,6 +31,7 @@ const CONSOLE: Offer = {
   rating: null,
   delivery: null,
   isSecondHand: false,
+  pageToken: null,
 };
 /** Groq de prueba: la primera llamada precisa la búsqueda y la segunda elige las ofertas. */
 const groq = (content: unknown) => Response.json({ choices: [{ message: { content: JSON.stringify(content) } }] });
@@ -132,18 +136,20 @@ Deno.test("busca en Google Shopping de España con la búsqueda precisada y mira
 });
 
 Deno.test("avisa al bajar del precio objetivo, y no repite hasta que baje más", () => {
-  const best = CONSOLE;
-  assertEquals(priceAlert(watch({ max_price: 400 }), best)?.startsWith("🏷️ «PS5» está a 399,00\u00a0€"), true);
-  assertEquals(priceAlert(watch({ max_price: 400, notified_price: 399 }), best), null);
-  assertEquals(priceAlert(watch({ max_price: 350 }), best), null);
+  assertEquals(isAlertDue(watch({ max_price: 400 }), 399), true);
+  assertEquals(isAlertDue(watch({ max_price: 400, notified_price: 399 }), 399), false);
+  assertEquals(isAlertDue(watch({ max_price: 350 }), 399), false);
+  assertEquals(priceAlert(watch({ max_price: 400 }), [CONSOLE]).startsWith("🏷️ «PS5» está a 399,00\u00a0€"), true);
 });
 
 Deno.test("sin precio objetivo, avisa si baja un 5 % o más", () => {
-  const best = CONSOLE;
-  const alert = priceAlert(watch({ best_price: 449 }), best);
-  assertEquals(alert?.includes("ha bajado de 449,00\u00a0€ a 399,00\u00a0€"), true);
-  assertEquals(priceAlert(watch({ best_price: 410 }), best), null);
-  assertEquals(priceAlert(watch({}), best), null);
+  assertEquals(isAlertDue(watch({ best_price: 449 }), 399), true);
+  assertEquals(isAlertDue(watch({ best_price: 410 }), 399), false);
+  assertEquals(isAlertDue(watch({}), 399), false);
+  assertEquals(
+    priceAlert(watch({ best_price: 449 }), [CONSOLE]).includes("ha bajado de 449,00\u00a0€ a 399,00\u00a0€"),
+    true,
+  );
 });
 
 Deno.test("la revisión diaria avisa por Telegram y guarda el mejor precio", async () => {
@@ -195,5 +201,60 @@ Deno.test("sin resultados lo dice", () => {
 Deno.test("las de segunda mano salen marcadas en la lista y en los avisos", () => {
   const used = { ...CONSOLE, source: "Wallapop", price: 300, isSecondHand: true };
   assertEquals(formatOffers("PS5", [used]).includes("300,00\u00a0€ en Wallapop (2ª mano)"), true);
-  assertEquals(priceAlert(watch({ max_price: 350 }), used)?.includes("Wallapop (2ª mano):"), true);
+  assertEquals(formatOffers("PS5", [used]).includes("Wallapop (2ª mano):"), true);
+});
+
+Deno.test("descarta los alquileres: su precio es la cuota de un mes", () => {
+  const offers = extractOffers({
+    shopping_results: [
+      result("PlayStation 5 Slim Digital", 28.9, "Rentik"),
+      result("Alquiler PS5 Slim", 19.9, "Consolas Ya"),
+      result("PlayStation 5 Slim Digital", 399, "PcComponentes"),
+    ],
+  });
+  assertEquals(offers.map((offer) => offer.source), ["PcComponentes"]);
+});
+
+Deno.test("sin enlace directo, enlaza a la búsqueda del producto en Google Shopping", () => {
+  const [offer] = extractOffers({
+    shopping_results: [{
+      title: "PlayStation 5 Slim",
+      extracted_price: 449,
+      source: "MediaMarkt",
+      product_link: "https://www.google.es/search?ibp=oshop&prds=productid:1",
+      immersive_product_page_token: "token-1",
+    }],
+  });
+  assertEquals(offer.url, "https://www.google.es/search?tbm=shop&q=PlayStation+5+Slim");
+  assertEquals(offer.pageToken, "token-1");
+});
+
+Deno.test("el aviso da la mejor opción nueva y la mejor de segunda mano", () => {
+  const used = { ...CONSOLE, title: "PS5 usada", source: "Wallapop", price: 300, isSecondHand: true };
+  const pricier = { ...CONSOLE, source: "MediaMarkt", price: 449 };
+  const choices = bestOfEach([used, CONSOLE, pricier]);
+  assertEquals(choices.map((offer) => offer.source), ["Wallapop", "PcComponentes"]);
+  const alert = priceAlert(watch({ max_price: 400 }), choices);
+  assertEquals(alert.includes("2ª mano: 300,00\u00a0€ en Wallapop, PS5 usada"), true);
+  assertEquals(alert.includes("Nueva: 399,00\u00a0€ en PcComponentes, PlayStation 5 Slim Digital"), true);
+});
+
+Deno.test("pide a SerpApi el enlace directo de la tienda; si falla, deja el de la búsqueda", async () => {
+  const offer = { ...CONSOLE, pageToken: "token-1", url: "https://www.google.es/search?tbm=shop&q=PS5" };
+  const stores = {
+    product_results: {
+      stores: [{ name: "Amazon", link: "https://amazon.es/ps5" }, {
+        name: "PcComponentes",
+        link: "https://pccomponentes.com/ps5",
+      }],
+    },
+  };
+  await withFakeFetch(ENV, () => Response.json(stores), async (requests) => {
+    assertEquals(await storeLink(offer), "https://pccomponentes.com/ps5");
+    assertEquals(new URL(requests[0].url).searchParams.get("engine"), "google_immersive_product");
+  });
+  await withFakeFetch(ENV, () => new Response("", { status: 500 }), async () => {
+    assertEquals(await storeLink(offer), offer.url);
+  });
+  assertEquals(await storeLink(CONSOLE), CONSOLE.url);
 });
