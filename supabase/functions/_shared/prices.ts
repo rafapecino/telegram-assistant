@@ -26,6 +26,8 @@ export interface Offer {
   delivery: string | null;
   // Wallapop, Vinted, usados o reacondicionados: se enseñan, pero marcados.
   isSecondHand: boolean;
+  // Para pedir a SerpApi el enlace directo a la tienda (gasta una búsqueda).
+  pageToken: string | null;
 }
 
 export interface PriceWatch {
@@ -58,16 +60,26 @@ function httpsUrl(raw: unknown): string | null {
 // Mercados de segunda mano y productos usados o reacondicionados: entran en la comparación, marcados como «2ª mano».
 const SECOND_HAND =
   /wallapop|vinted|milanuncios|segunda mano|reacondicionad|usad[oa]s?\b|seminuev|refurbish|back ?market/i;
+// Alquileres (Rentik, Grover…): su precio es la cuota de un mes, no lo que cuesta comprarlo.
+const RENTAL = /alquil|renting|rentik|grover|\/ ?mes\b|al mes\b|mensual/i;
 // Las que se mandan a Groq para elegir: más no mejoran el resultado y alargan la respuesta.
 const MAX_CANDIDATES = 40;
 
-/** Las ofertas con precio y enlace https, marcando las de segunda mano. Aún sin filtrar por si son el producto. */
+/** La ficha de Google Shopping (product_link) se abre vacía en el móvil: se enlaza a la búsqueda del título. */
+function shoppingSearchUrl(title: string): string {
+  return `https://www.google.es/search?${new URLSearchParams({ tbm: "shop", q: title })}`;
+}
+
+/** Las ofertas con precio y enlace https, sin alquileres y marcando las de segunda mano. Aún sin filtrar por si son el producto. */
 export function extractOffers(raw: unknown): Offer[] {
   const results = (raw as { shopping_results?: Record<string, unknown>[] } | null)?.shopping_results ?? [];
   return results.flatMap((result): Offer[] => {
-    const price = Number(result.extracted_price), url = httpsUrl(result.link ?? result.product_link);
-    if (!Number.isFinite(price) || price <= 0 || !url || typeof result.title !== "string") return [];
+    if (typeof result.title !== "string") return [];
+    const price = Number(result.extracted_price);
+    const url = result.link === undefined ? shoppingSearchUrl(result.title) : httpsUrl(result.link);
+    if (!Number.isFinite(price) || price <= 0 || !url) return [];
     const source = typeof result.source === "string" ? result.source.slice(0, 80) : "Tienda";
+    if (RENTAL.test(source) || RENTAL.test(result.title)) return [];
     return [{
       title: result.title.slice(0, 200),
       price,
@@ -77,6 +89,7 @@ export function extractOffers(raw: unknown): Offer[] {
       rating: Number.isFinite(Number(result.rating)) ? Number(result.rating) : null,
       delivery: typeof result.delivery === "string" ? result.delivery.slice(0, 80) : null,
       isSecondHand: SECOND_HAND.test(source) || SECOND_HAND.test(result.title),
+      pageToken: typeof result.immersive_product_page_token === "string" ? result.immersive_product_page_token : null,
     }];
   }).slice(0, MAX_CANDIDATES);
 }
@@ -135,7 +148,7 @@ export async function selectMatching(query: string, offers: Offer[]): Promise<Of
       [
         "Decides qué ofertas de tiendas son el producto que alguien quiere comprar.",
         "Quédate solo con el producto en sí, nuevo o de segunda mano. Descarta accesorios, juegos, fundas,",
-        "mandos sueltos, recambios,",
+        "mandos sueltos, recambios, alquileres o cuotas mensuales,",
         "piezas, productos de otra marca o de otro modelo, y cosas que solo lo mencionan («para PS5»).",
         "Los packs del producto con algo de regalo sí valen. Si el nombre es genérico («PS5»), cualquier versión",
         "del producto principal vale (Slim, Digital, Pro).",
@@ -237,49 +250,87 @@ export async function removeWatch(db: SupabaseClient, id: number): Promise<void>
 
 const euros = new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" });
 
-/** Si toca avisar con este mejor precio, el texto del aviso; si no, null. */
 const secondHandLabel = (offer: Offer) => offer.isSecondHand ? " (2ª mano)" : "";
 
-/** Si toca avisar con este mejor precio, el texto del aviso; si no, null. */
-export function priceAlert(watch: PriceWatch, best: Offer): string | null {
-  const shop = `${best.source}${secondHandLabel(best)}: ${best.title}\n${best.url}`;
+/** Si el mejor precio de hoy merece un aviso. */
+export function isAlertDue(watch: PriceWatch, bestPrice: number): boolean {
   if (watch.max_price !== null) {
-    const isUnderTarget = best.price <= watch.max_price;
-    const isNewLow = watch.notified_price === null || best.price < watch.notified_price;
-    return isUnderTarget && isNewLow
-      ? `🏷️ «${watch.query}» está a ${euros.format(best.price)}, por debajo de ${
-        euros.format(watch.max_price)
-      }.\n${shop}`
-      : null;
+    return bestPrice <= watch.max_price && (watch.notified_price === null || bestPrice < watch.notified_price);
   }
-  if (watch.best_price !== null && best.price <= watch.best_price * MEANINGFUL_DROP) {
-    return `🏷️ «${watch.query}» ha bajado de ${euros.format(watch.best_price)} a ${euros.format(best.price)}.\n${shop}`;
+  return watch.best_price !== null && bestPrice <= watch.best_price * MEANINGFUL_DROP;
+}
+
+/** La más barata nueva y la más barata de segunda mano, de más barata a más cara. `offers` ya va ordenada. */
+export function bestOfEach(offers: Offer[]): Offer[] {
+  return [offers.find((offer) => !offer.isSecondHand), offers.find((offer) => offer.isSecondHand)]
+    .filter((offer): offer is Offer => offer !== undefined)
+    .sort((a, b) => a.price - b.price);
+}
+
+/** El aviso con las dos opciones; `choices` sale de bestOfEach, así que la primera es la más barata. */
+export function priceAlert(watch: PriceWatch, choices: Offer[]): string {
+  const best = choices[0];
+  const headline = watch.max_price !== null
+    ? `está a ${euros.format(best.price)}, por debajo de ${euros.format(watch.max_price)}.`
+    : `ha bajado de ${euros.format(watch.best_price ?? best.price)} a ${euros.format(best.price)}.`;
+  const lines = choices.map((offer) =>
+    `${offer.isSecondHand ? "2ª mano" : "Nueva"}: ${
+      euros.format(offer.price)
+    } en ${offer.source}, ${offer.title}\n${offer.url}`
+  );
+  return [`🏷️ «${watch.query}» ${headline}`, ...lines].join("\n");
+}
+
+/** El enlace directo a la tienda. Gasta una búsqueda de SerpApi, por eso solo se pide para los avisos. */
+export async function storeLink(offer: Offer): Promise<string> {
+  if (!offer.pageToken) return offer.url;
+  try {
+    const params = new URLSearchParams({
+      engine: "google_immersive_product",
+      page_token: offer.pageToken,
+      api_key: requireEnv("SERPAPI_API_KEY"),
+    });
+    const response = await fetch(`${SERPAPI}/search.json?${params}`, { signal: AbortSignal.timeout(20_000) });
+    if (!response.ok) throw new Error(`SerpApi respondió ${response.status}`);
+    const stores = ((await response.json()).product_results?.stores ?? []) as { name?: unknown; link?: unknown }[];
+    const store = stores.find((candidate) => String(candidate.name).toLowerCase() === offer.source.toLowerCase()) ??
+      stores[0];
+    return httpsUrl(store?.link) ?? offer.url;
+  } catch (error) {
+    // Sin enlace directo el aviso sigue sirviendo: lleva a la búsqueda de ese producto en Google Shopping.
+    console.error(`Precios: no se pudo pedir el enlace de ${offer.source}, se enlaza la búsqueda:`, error);
+    return offer.url;
   }
-  return null;
 }
 
 /** Revisa cada producto vigilado y avisa por Telegram si ha bajado. Devuelve cuántos avisos ha mandado. */
 export async function checkPriceWatches(db: SupabaseClient, now: Date): Promise<number> {
   let alerts = 0;
   for (const watch of await listWatches(db)) {
-    const best = (await fetchOffers(watch.query)).offers[0];
+    const { offers } = await fetchOffers(watch.query);
+    const best = offers[0];
     if (!best) continue;
     if (watch.best_price !== null && best.price < watch.best_price) {
       const { error } = await db.from("price_drops").insert({ watch_id: watch.id, query: watch.query, old_price: watch.best_price, new_price: best.price, observed_at: now.toISOString() });
       if (error) throw error;
     }
-    const alert = priceAlert(watch, best);
-    if (alert) {
-      await sendTelegramMessage(alert);
+    const isDue = isAlertDue(watch, best.price);
+    let bestLink = best.url;
+    if (isDue) {
+      const choices = await Promise.all(
+        bestOfEach(offers).map(async (offer) => ({ ...offer, url: await storeLink(offer) })),
+      );
+      bestLink = choices[0].url;
+      await sendTelegramMessage(priceAlert(watch, choices));
       alerts++;
     }
     const { error } = await db.from("price_watches").update({
       best_price: best.price,
       best_source: best.source,
       best_title: best.title,
-      best_link: best.url,
+      best_link: bestLink,
       checked_at: now.toISOString(),
-      ...(alert ? { notified_price: best.price } : {}),
+      ...(isDue ? { notified_price: best.price } : {}),
     }).eq("id", watch.id);
     if (error) throw new Error(`No se pudo guardar el precio de «${watch.query}»: ${error.message}`);
   }
