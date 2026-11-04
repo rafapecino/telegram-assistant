@@ -122,7 +122,7 @@ botones necesitan `callback_query`), repite también el paso 6.
 ## Datos que salen de Supabase
 
 A Groq van el texto de tus mensajes, las notas de voz para transcribirlas, las descripciones de los gastos para
-clasificarlas (y, si preguntas por un sitio que no aparece tal cual, las de ese periodo para reconocerlo) y tus notas cuando les haces una pregunta o pides borrar una. Los números de tarjeta se ocultan antes
+clasificarlas (y, si preguntas por un sitio que no aparece tal cual, las de ese periodo para reconocerlo) tus notas cuando les haces una pregunta o pides borrar una, y las confirmaciones cortas del bot (lo que se ha apuntado, con sus fechas e importes) para darles un tono más cercano. Los números de tarjeta se ocultan antes
 (`****1234`). A Google van los eventos que creas, las fechas que consultas y las búsquedas de Gmail; el contenido
 de los correos no se lee y a Groq solo llega tu pregunta. A Open-Meteo, solo el nombre de la ciudad; a la EMT, el
 número de parada.

@@ -62,6 +62,8 @@ export function parseReminderRequest(raw: unknown, now: Date): ReminderRequest {
     while (isWeekend(date)) date = addDaysToDate(date, 1);
     remindAt = atSameLocalTime(remindAt, date);
   }
+  // «De lunes a viernes a las 9:30» dicho a las 10: si se repite, empieza la próxima vez en vez de rechazarlo.
+  if (repeat !== null && remindAt <= now) remindAt = nextOccurrenceAfter(remindAt, repeat, null, now);
   if (remindAt <= now) return invalidReminder("la fecha que he entendido ya ha pasado");
   return { kind: "reminder", text: candidate.text.trim(), remindAt, repeat,
     ...(advance === null ? {} : { advanceMinutes: advance as 30 | 1440 }) };

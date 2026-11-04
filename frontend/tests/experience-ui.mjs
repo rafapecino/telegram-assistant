@@ -13,7 +13,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT=true;window.scrollTo=()=>{};HTMLElement.prot
 HTMLDialogElement.prototype.showModal=function(){this.open=true;};
 const {createRoot}=await import(`${project}/node_modules/react-dom/client.js`);
 const {act,createElement:h}=await import(`${project}/node_modules/react/index.js`);
-const {NotesPanel,ProposalEditor,DataFreshness,useUndoQueue,UndoTray,FinanceInsights}=await import(`${project}/node_modules/.cache/qa/experience.mjs`);
+const {NotesPanel,ProposalConfirm,ProposalEditor,DataFreshness,useUndoQueue,UndoTray,FinanceInsights}=await import(`${project}/node_modules/.cache/qa/experience.mjs`);
 let root=createRoot(document.getElementById('root'));const tick=()=>new Promise(r=>setTimeout(r,25));
 async function render(component,props){await act(async()=>{root.render(h(component,props));await tick()});await act(tick)}
 async function input(el,value){await act(async()=>{const proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value').set.call(el,value);el.dispatchEvent(new Event('input',{bubbles:true}));await tick()})}
@@ -31,6 +31,13 @@ console.log('PASS: notas, búsqueda, edición y Deshacer sin borrar');await clea
 const start=writes.length;let closed=false,saved=false;
 await render(ProposalEditor,{draft:{resource:'expenses',values:{description:'Café de prueba',amount:2.4,date:'2026-10-29',category:'Otros'}},api,onClose:()=>{closed=true},onSaved:async()=>{saved=true}});assert.equal(writes.length,start);assert.equal(document.activeElement.name,'description');await input(document.querySelector('input[name=description]'),'Café corregido');await submit(document.querySelector('dialog form'));assert.equal(writes.at(-1).data.amount,2.4);assert.equal(writes.at(-1).data.description,'Café corregido');assert.equal(saved,true);assert.equal(closed,true);
 console.log('PASS: propuesta editable sin escritura hasta confirmar');await clear();
+{const before=writes.length;let saved=false,edited=false;
+await render(ProposalConfirm,{draft:{resource:'reminders',values:{text:'Grabar las clases',local_datetime:'2026-11-05T09:30',repeat:'weekdays'}},api,onEdit:()=>{edited=true},onSaved:async()=>{saved=true},onDismiss:()=>{}});
+assert.equal(writes.length,before);assert.equal(document.querySelector('.proposal-question').textContent,'¿Guardo este recordatorio?');assert.ok(document.querySelector('dl').textContent.includes('jueves, 5 de noviembre, 09:30'));assert.ok(document.querySelector('dl').textContent.includes('Lunes a viernes'));assert.equal(document.querySelector('select'),null);
+await click([...document.querySelectorAll('button')].find(b=>b.textContent.includes('Sí, guárdalo')));assert.deepEqual(writes.at(-1).data,{text:'Grabar las clases',local_datetime:'2026-11-05T09:30',repeat:'weekdays',advance_minutes:null});assert.equal(saved,true);await clear();
+await render(ProposalConfirm,{draft:{resource:'expenses',values:{amount:12,category:'Ocio'}},api,onEdit:()=>{edited=true},onSaved:async()=>{},onDismiss:()=>{}});
+assert.equal([...document.querySelectorAll('button')].some(b=>b.textContent.includes('Sí, guárdalo')),false);await click([...document.querySelectorAll('button')].find(b=>b.textContent.includes('Completar')));assert.equal(edited,true);
+console.log('PASS: confirmación de sí o no en el chat, sin desplegables');await clear();}
 await render(DataFreshness,{updatedAt:Date.now()-20*60000,loading:false,problem:false,onRefresh:()=>{}});assert.ok(document.querySelector('.freshness.is-stale'));console.log('PASS: estado de datos antiguos');await clear();
 await render(FinanceInsights,{api});assert.ok(document.querySelector('.insight-comparison'));assert.match(document.querySelector('.insight-change').textContent,/Sin base/);console.log('PASS: comparativa sin división entre cero');await clear();
 let hook,committed=0;function QueueTest(){hook=useUndoQueue(message=>{throw new Error(message)});return h(UndoTray,{queue:hook})}
