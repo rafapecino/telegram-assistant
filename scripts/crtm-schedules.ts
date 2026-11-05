@@ -28,10 +28,23 @@ const routeLine = new Map<string, string>();
 for await (const route of rows("routes.txt")) {
   if (lines.includes(route.route_short_name)) routeLine.set(route.route_id, route.route_short_name);
 }
-const tripInfo = new Map<string, { line: string; service: string; headsign: string }>();
+// El calendario del CRTM marca casi todos los viajes como diarios; el tipo de día va al principio de
+// trip_short_name: «lv» (lunes a viernes) o «sdf» (sábados, domingos y festivos). Sin prefijo, manda el calendario.
+type DayType = "lv" | "sdf" | null;
+const dayTypeOf = (shortName: string): DayType => {
+  const prefix = shortName.split(" ")[0];
+  return prefix === "lv" || prefix === "sdf" ? prefix : null;
+};
+const tripInfo = new Map<string, { line: string; service: string; headsign: string; dayType: DayType }>();
 for await (const trip of rows("trips.txt")) {
   const line = routeLine.get(trip.route_id);
-  if (line) tripInfo.set(trip.trip_id, { line, service: trip.service_id, headsign: trip.trip_headsign });
+  if (!line) continue;
+  tripInfo.set(trip.trip_id, {
+    line,
+    service: trip.service_id,
+    headsign: trip.trip_headsign,
+    dayType: dayTypeOf(trip.trip_short_name),
+  });
 }
 const services = new Map<string, { days: number[]; start: string; end: string; added: string[]; removed: string[] }>();
 const usedServices = new Set([...tripInfo.values()].map((trip) => trip.service));
@@ -52,7 +65,10 @@ for await (const row of rows("calendar_dates.txt")) {
   const service = services.get(row.service_id);
   if (service) (row.exception_type === "1" ? service.added : service.removed).push(isoDate(row.date));
 }
-const trips = new Map<string, { line: string; service: string; headsign: string; times: Record<string, string> }>();
+const trips = new Map<
+  string,
+  { line: string; service: string; headsign: string; dayType: DayType; times: Record<string, string> }
+>();
 const usedStops = new Set<string>();
 for await (const row of rows("stop_times.txt")) {
   const info = tripInfo.get(row.trip_id);
@@ -73,7 +89,7 @@ const output = {
   generatedOn: new Date().toISOString().slice(0, 10),
   stops,
   services: Object.fromEntries(services),
-  trips: [...trips.values()].map(({ line, service, headsign, times }) => ({ line, service, headsign, times })),
+  trips: [...trips.values()],
 };
 await Deno.writeTextFile("supabase/functions/_shared/crtm-schedules.json", JSON.stringify(output) + "\n");
 console.log(`${output.trips.length} viajes, ${Object.keys(stops).length} paradas, ${services.size} calendarios.`);
