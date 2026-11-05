@@ -167,6 +167,7 @@ Algunos ficheros ya no cumplen `deno fmt` (`calendar.ts`); no los reformatees en
 | Open-Meteo | Previsión del tiempo | Da 503 a las horas en punto; hay reintentos |
 | AEMET | Avisos meteorológicos de Madrid | Clave gratuita |
 | EMT Madrid | Autobuses | Usuario y contraseña de MobilityLabs |
+| CRTM | Interurbanos 627 y N907 (`crtm.ts`) | Tiempo real con el servicio de los widgets de crtm.es: no es API pública, puede cambiar. Si falla, horario de `crtm-schedules.json`, que se regenera con `scripts/crtm-schedules.ts` cuando el CRTM publique otro GTFS |
 | SerpApi | Comparador y vigilancia de precios | 250 búsquedas al mes; se reservan 15 para la vigilancia. Cada aviso pide además el enlace directo de cada opción (`google_immersive_product`, una búsqueda por opción) |
 | Yahoo Finance | Índices y acciones | Sin API oficial; usar `range=1d` para el cambio diario |
 | CoinGecko | Criptomonedas | Da 429 a menudo; se usa la última cotización buena (menos de 60 min) |

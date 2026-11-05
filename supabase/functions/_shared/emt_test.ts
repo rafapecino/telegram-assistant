@@ -1,10 +1,10 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert@1.0.19";
-import { fetchArrivals, formatArrivals, parseBusRequest, replyToBus, resolveStop } from "./emt.ts";
+import { type BusStop, fetchArrivals, formatArrivals, parseBusRequest, replyToBus, resolveStop } from "./emt.ts";
 import { fakeDb, withFakeFetch } from "./testing.ts";
 
 const EMT_ENV = { EMT_EMAIL: "rafa@x.com", EMT_PASSWORD: "clave" };
 const NOW = new Date("2026-10-22T10:00:00Z");
-const STOPS = [{ id: 1, name: "Casa", stop_id: "62" }];
+const STOPS: BusStop[] = [{ id: 1, name: "Casa", stop_id: "62", network: "emt" }];
 
 // Respuestas con la forma de los ejemplos de la documentación oficial (apidocs.emtmadrid.es).
 const LOGIN = { code: "00", description: "Register user", data: [{ accessToken: "token-emt" }] };
@@ -30,11 +30,13 @@ Deno.test("entiende consultar, guardar, olvidar y listar paradas", () => {
     kind: "bus_arrivals",
     stop: "casa",
     line: "27",
+    network: null,
   });
   assertEquals(parseBusRequest({ action: "save", name: "casa", stop_id: 1234 }), {
     kind: "bus_stop_save",
     name: "Casa",
     stopId: "1234",
+    network: "emt",
   });
   assertEquals(parseBusRequest({ action: "save", name: "casa", stop_id: "calle mayor" }).kind, "invalid");
   assertEquals(parseBusRequest({ action: "delete", name: "casa" }), { kind: "bus_stop_delete", name: "Casa" });
@@ -43,9 +45,9 @@ Deno.test("entiende consultar, guardar, olvidar y listar paradas", () => {
 });
 
 Deno.test("la parada se busca por número o por el nombre guardado", () => {
-  assertEquals(resolveStop(STOPS, "62"), { stopId: "62", label: "Casa (62)" });
-  assertEquals(resolveStop(STOPS, "1234"), { stopId: "1234", label: "Parada 1234" });
-  assertEquals(resolveStop(STOPS, "la parada de casa"), { stopId: "62", label: "Casa (62)" });
+  assertEquals(resolveStop(STOPS, "62"), { stopIds: ["62"], label: "Casa (62)", network: "emt" });
+  assertEquals(resolveStop(STOPS, "1234"), { stopIds: ["1234"], label: "Parada 1234", network: "emt" });
+  assertEquals(resolveStop(STOPS, "la parada de casa"), { stopIds: ["62"], label: "Casa (62)", network: "emt" });
   assertEquals(resolveStop(STOPS, "trabajo"), null);
 });
 
@@ -81,7 +83,7 @@ Deno.test("una parada sin guardar no llama a la EMT; un error de la EMT se expli
   const { db } = fakeDb(() => ({ data: STOPS }));
   await withFakeFetch(EMT_ENV, emt(), async (requests) => {
     assertStringIncludes(
-      await replyToBus(db, { kind: "bus_arrivals", stop: "trabajo", line: null }, NOW),
+      await replyToBus(db, { kind: "bus_arrivals", stop: "trabajo", line: null, network: null }, NOW),
       "No tengo guardada la parada «trabajo»",
     );
     assertEquals(requests.length, 0);
@@ -100,9 +102,66 @@ Deno.test("si la EMT no deja iniciar sesión, lo dice", async () => {
 
 Deno.test("guardar una parada sustituye a la que tuviera el mismo nombre", async () => {
   const { db, queries } = fakeDb(() => ({}));
-  assertStringIncludes(await replyToBus(db, { kind: "bus_stop_save", name: "Casa", stopId: "62" }, NOW), "es la 62");
+  assertStringIncludes(
+    await replyToBus(db, { kind: "bus_stop_save", name: "Casa", stopId: "62", network: "emt" }, NOW),
+    "es la 62",
+  );
   assertEquals(queries[0], [
     'from("bus_stops")',
-    'upsert({"name":"Casa","stop_id":"62"}, {"onConflict":"name"})',
+    'upsert({"name":"Casa","stop_id":"62","network":"emt"}, {"onConflict":"name"})',
   ]);
+});
+
+Deno.test("entiende interurbanos y los busca por código o por el nombre de la marquesina", () => {
+  assertEquals(parseBusRequest({ action: "arrivals", stop: "Universidad", line: "627", network: "interurbano" }), {
+    kind: "bus_arrivals",
+    stop: "Universidad",
+    line: "627",
+    network: "interurbano",
+  });
+  assertEquals(parseBusRequest({ action: "save", name: "trabajo", stop_id: "10590", network: "interurbano" }), {
+    kind: "bus_stop_save",
+    name: "Trabajo",
+    stopId: "10590",
+    network: "interurbano",
+  });
+  assertEquals(resolveStop(STOPS, "10590", "interurbano"), {
+    stopIds: ["10590"],
+    label: "CASTILLO ANTEQUERA-UNIVERSIDAD (10590)",
+    network: "interurbano",
+  });
+  // Por nombre salen las dos marquesinas, una por sentido.
+  assertEquals(resolveStop(STOPS, "Antequera-Universidad", "interurbano"), {
+    stopIds: ["10589", "10590"],
+    label: "CASTILLO ANTEQUERA-UNIVERSIDAD (10589 y 10590)",
+    network: "interurbano",
+  });
+  const work: BusStop = { id: 2, name: "Trabajo", stop_id: "10590", network: "interurbano" };
+  assertEquals(resolveStop([work], "trabajo"), {
+    stopIds: ["10590"],
+    label: "Trabajo (10590)",
+    network: "interurbano",
+  });
+});
+
+Deno.test("sin parada, enseña las interurbanas guardadas; una guardada puede juntar varios códigos", async () => {
+  assertEquals(parseBusRequest({ action: "arrivals", stop: null, line: "627", network: "interurbano" }), {
+    kind: "bus_arrivals",
+    stop: "",
+    line: "627",
+    network: "interurbano",
+  });
+  const saved: BusStop[] = [
+    { id: 1, name: "Casa", stop_id: "62", network: "emt" },
+    { id: 2, name: "Moncloa", stop_id: "06002,2419", network: "interurbano" },
+    { id: 3, name: "Villanueva", stop_id: "11162", network: "interurbano" },
+  ];
+  const { db } = fakeDb(() => ({ data: saved }));
+  await withFakeFetch({}, () => Response.json({}), async () => {
+    const reply = await replyToBus(db, { kind: "bus_arrivals", stop: "", line: "627", network: "interurbano" }, NOW);
+    assertStringIncludes(reply, "🚌 Moncloa (06002 y 2419):\n• 627 → ");
+    assertStringIncludes(reply, "🚌 Villanueva (11162):\n• 627 → INTERCAMBIADOR MONCLOA");
+    assertEquals(reply.split("Datos: CRTM").length, 2);
+    assertEquals(reply.includes("Casa"), false);
+  });
 });
