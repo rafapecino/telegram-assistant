@@ -59,6 +59,12 @@ frontend/              React 19 + Vite + TypeScript; casi toda la interfaz está
    ve datos del usuario.
 4. El chat del panel (`panel-chat.ts`) guarda la conversación en `chat_messages`; Telegram no la guarda.
 5. Un «sí» o un «no» sueltos contestan la última pregunta de sí o no pendiente (`chat-questions.ts`), sin llamar a Groq.
+6. Las respuestas cortas de una línea a las acciones pasan por `withPersonalTone` (`personal-tone.ts`), que les da el
+   tono del asistente. Si la reescritura pierde algún dato (texto entre comillas, números, días, meses o enlaces), se
+   manda la original. La conversación general, los informes de varias líneas y las respuestas con botones no pasan.
+7. En el panel, si `isDraftCandidate` (`experience.ts`) ve que el mensaje crea algo, primero se pide `chat_draft`. La
+   propuesta se muestra en la conversación como pregunta de sí o no (`ProposalConfirm`) y solo se guarda al confirmar,
+   con el mismo endpoint que los formularios. «Corregir» abre `ProposalEditor`.
 
 **Para añadir una funcionalidad:** crea `_shared/<nombre>.ts` con su `…_INTENT_FORMAT`, su tipo de petición, su
 `parse…` y su `replyTo…`. Regístrala en `message-intent.ts` (tipo, prompt y parse) y en `personal-replies.ts`, añade
@@ -115,7 +121,10 @@ Algunos ficheros ya no cumplen `deno fmt` (`calendar.ts`); no los reformatees en
 - **Web:** fusionar en `main` despliega Vercel solo. Para comprobarlo, compila `main` en local y compara el nombre de
   `assets/index-*.js` y `assets/index-*.css` con el HTML publicado.
 - **Edge Functions:** `supabase functions deploy <función>` o, desde Claude, la herramienta MCP de despliegue con
-  `verify_jwt: false`, desplegando desde el commit ya fusionado. Despliega `panel-api` antes que la interfaz que lo
+  `verify_jwt: false`, desplegando desde el commit ya fusionado. Por MCP se sube un `index.ts` que solo importa el
+  código de ese commit (`import "https://raw.githubusercontent.com/rafapecino/telegram-assistant/<SHA>/supabase/functions/<función>/index.ts";`),
+  junto con un `deno.json` (`{"compilerOptions":{"strict":true},"imports":{}}`) e `import_map_path: "deno.json"`. Sin
+  ellos, Supabase falla con «import map path does not exist». Despliega `panel-api` antes que la interfaz que lo
   usa. Tras desplegar, una petición sin credenciales a cada función debe responder 401; los callbacks sin parámetros,
   400.
 - **Migraciones:** fichero nuevo en `supabase/migrations/` y `supabase db push`, o `apply_migration` por MCP. Toda tabla
@@ -158,7 +167,7 @@ Algunos ficheros ya no cumplen `deno fmt` (`calendar.ts`); no los reformatees en
 | Open-Meteo | Previsión del tiempo | Da 503 a las horas en punto; hay reintentos |
 | AEMET | Avisos meteorológicos de Madrid | Clave gratuita |
 | EMT Madrid | Autobuses | Usuario y contraseña de MobilityLabs |
-| SerpApi | Comparador y vigilancia de precios | 250 búsquedas al mes; se reservan 15 para la vigilancia |
+| SerpApi | Comparador y vigilancia de precios | 250 búsquedas al mes; se reservan 15 para la vigilancia. Cada aviso pide además el enlace directo de cada opción (`google_immersive_product`, una búsqueda por opción) |
 | Yahoo Finance | Índices y acciones | Sin API oficial; usar `range=1d` para el cambio diario |
 | CoinGecko | Criptomonedas | Da 429 a menudo; se usa la última cotización buena (menos de 60 min) |
 | Frankfurter | Divisas | La URL buena es `api.frankfurter.dev/v1` (la antigua redirige) |
@@ -182,6 +191,14 @@ Algunos ficheros ya no cumplen `deno fmt` (`calendar.ts`); no los reformatees en
   blanco.
 - En un recurso nuevo del panel, piensa si debe ir en `dashboard` o pedirse al abrir su sección (Ajustes consulta a
   Google, por eso va aparte).
+- Precios: Google Shopping mezcla alquileres (Rentik, Grover) cuyo precio es la cuota de un mes. Se descartan con
+  `RENTAL` en `prices.ts`. La ficha de Google Shopping (`product_link`) se abre vacía en el móvil: se enlaza a la
+  búsqueda del producto. El aviso diario da la mejor opción nueva y la mejor de segunda mano.
+- Un recordatorio que se repite y cuya primera vez ya ha pasado hoy empieza la siguiente vez que toca. Uno sin
+  repetición con fecha pasada se rechaza.
+- En las sesiones remotas de Claude, `git fetch origin main` puede no actualizar `origin/main`: usa
+  `git fetch origin +main:refs/remotes/origin/main`. La API de GitHub da a veces 502 o «Merge already in progress»:
+  comprueba el estado del PR y reintenta, no abras otro.
 
 ## Pendiente
 
