@@ -198,6 +198,9 @@ Algunos ficheros ya no cumplen `deno fmt` (`calendar.ts`); no los reformatees en
 - GTFS del CRTM: `calendar.txt` marca casi todos los viajes como diarios. El tipo de día real va al principio de
   `trip_short_name` («lv» laborables, «sdf» sábados, domingos y festivos); `scripts/crtm-schedules.ts` lo guarda como
   `dayType`. En Moncloa el 627 sale del intercambiador (06002) y el N907 de la calle Princesa (2419).
+  El GTFS junta las dos noches del N907: `NIGHT_DEPARTURES` en `crtm.ts` las separa según el horario oficial. El GTFS
+  no trae el horario de verano (16 de julio a 31 de agosto). En el panel se enseñan las imágenes oficiales
+  (`frontend/public/horarios/`); si el CRTM cambia el horario, hay que sustituirlas.
 - Un recordatorio que se repite y cuya primera vez ya ha pasado hoy empieza la siguiente vez que toca. Uno sin
   repetición con fecha pasada se rechaza.
 - En las sesiones remotas de Claude, `git fetch origin main` puede no actualizar `origin/main`: usa

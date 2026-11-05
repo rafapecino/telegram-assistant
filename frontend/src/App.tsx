@@ -691,26 +691,28 @@ function MarketChange({value}:{value:number|null}){
 }
 
 type Departure={line:string;destination:string;at:string;isScheduled:boolean};
-type TransitStop={name:string;label:string;departures:Departure[];timetables:{label:string;date:string;departures:{time:string;line:string;destination:string}[]}[]};
+type TransitStop={name:string;label:string;departures:Departure[]};
+// Horarios oficiales del CRTM (copiados de redtransporte.com): distinguen días y épocas mejor que el GTFS.
+const OFFICIAL_TIMETABLES:Record<string,{src:string;alt:string}[]>={
+  '627':[{src:'/horarios/627-desde-moncloa.jpg',alt:'Horario oficial del 627 desde Moncloa hacia Villanueva de la Cañada y Brunete'},{src:'/horarios/627-desde-brunete.jpg',alt:'Horario oficial del 627 desde Brunete hacia Moncloa'}],
+  N907:[{src:'/horarios/n907-desde-moncloa.jpg',alt:'Horario oficial del N907 desde Moncloa (calle Princesa) hacia Brunete'},{src:'/horarios/n907-desde-brunete.jpg',alt:'Horario oficial del N907 desde Brunete hacia Moncloa'}],
+};
 const busTime=(iso:string)=>new Intl.DateTimeFormat('es-ES',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Madrid'}).format(new Date(iso));
-/** Agrupa las salidas por hora en el orden del horario (la madrugada del N907 primero), como las tablas del CRTM. */
-function byHour(departures:{time:string;line:string}[]){const hours:[string,{minute:string;line:string}[]][]=[];for(const d of departures){const hour=d.time.slice(0,2),last=hours.at(-1);if(last?.[0]===hour)last[1].push({minute:d.time.slice(3),line:d.line});else hours.push([hour,[{minute:d.time.slice(3),line:d.line}]])}return hours}
 function TransitSection({token}:{token:string}) {
-  const [data,setData]=useState<{stops:TransitStop[];schedulesUpdatedOn:string}|null>(null),[problem,setProblem]=useState(''),[loading,setLoading]=useState(false),[dayIndex,setDayIndex]=useState(0);
+  const [data,setData]=useState<{stops:TransitStop[]}|null>(null),[problem,setProblem]=useState(''),[loading,setLoading]=useState(false),[line,setLine]=useState('627');
   const load=useCallback(async()=>{setLoading(true);setProblem('');try{setData(await api('transit',token))}catch(e){setProblem(e instanceof Error?e.message:'No se pudieron cargar los autobuses.')}finally{setLoading(false)}},[token]);
   useEffect(()=>{void load()},[load]);
   if(problem)return <div className="alert" role="alert"><AlertCircle size={18}/><span>{problem}</span><button className="retry" onClick={()=>void load()}>Reintentar</button></div>;
   if(!data)return <Card title="Próximos buses"><Empty>Cargando…</Empty></Card>;
   if(!data.stops.length)return <Card title="Próximos buses"><Empty>No tienes paradas de interurbanos guardadas. Díselo al chat, por ejemplo «la de Moncloa es la 06002 del interurbano».</Empty></Card>;
   const minutesLeft=(iso:string)=>Math.round((Date.parse(iso)-Date.now())/60000);
-  const days=data.stops[0].timetables;
   return <>
     <Card title="Próximos buses" aside={<button className="icon-button" onClick={()=>void load()} disabled={loading} aria-label="Actualizar próximos buses"><RefreshCw size={17} className={loading?'spin':''}/></button>}>
       <div className="transit-stops">{data.stops.map(stop=><div key={stop.name} className="transit-stop"><h3>{stop.label}</h3>{stop.departures.length?stop.departures.map((d,i)=><div className="list-row" key={i}><span className={`line-badge ${d.line.startsWith('N')?'night':''}`}>{d.line}</span><span className="row-main"><strong>{busTime(d.at)}{minutesLeft(d.at)<60&&<> · {minutesLeft(d.at)<1?'llegando':`en ${minutesLeft(d.at)} min`}</>}</strong><small>→ {d.destination}</small></span><span className={`transit-source ${d.isScheduled?'':'live'}`}>{d.isScheduled?'Horario':'Tiempo real'}</span></div>):<Empty>No hay próximos pasos.</Empty>}</div>)}</div>
     </Card>
-    <Card title="Horarios" aside={<div className="segmented transit-days" role="group" aria-label="Tipo de día">{days.map((day,i)=><button key={day.label} className={i===dayIndex?'active':''} aria-pressed={i===dayIndex} onClick={()=>setDayIndex(i)}>{day.label}</button>)}</div>}>
-      <div className="transit-timetables">{data.stops.map(stop=>{const day=stop.timetables[dayIndex];return <div key={stop.name} className="table-wrap" tabIndex={0}><table className="timetable"><caption>Salidas desde {stop.label} · {day.label.toLowerCase()} ({new Intl.DateTimeFormat('es-ES',{day:'numeric',month:'short',timeZone:'UTC'}).format(new Date(`${day.date}T12:00:00Z`))})</caption><thead><tr><th scope="col">Hora</th><th scope="col">Minutos</th></tr></thead><tbody>{byHour(day.departures).map(([hour,minutes])=><tr key={hour}><th scope="row">{hour}</th><td>{minutes.map((m,i)=><span key={i} className={`timetable-minute ${m.line.startsWith('N')?'night':''}`} title={m.line}>{m.minute}{m.line.startsWith('N')&&<small> {m.line}</small>}</span>)}</td></tr>)}</tbody></table>{!day.departures.length&&<Empty>Ese día no hay salidas.</Empty>}</div>})}</div>
-      <p className="form-hint">Datos: CRTM · horarios copiados del CRTM el {new Intl.DateTimeFormat('es-ES',{dateStyle:'long',timeZone:'UTC'}).format(new Date(`${data.schedulesUpdatedOn}T12:00:00Z`))}. Un festivo entre semana puede llevar el horario de domingo.</p>
+    <Card title="Horarios oficiales" aside={<div className="segmented transit-days" role="group" aria-label="Línea">{Object.keys(OFFICIAL_TIMETABLES).map(name=><button key={name} className={name===line?'active':''} aria-pressed={name===line} onClick={()=>setLine(name)}>{name}</button>)}</div>}>
+      <div className="timetable-images">{OFFICIAL_TIMETABLES[line].map(image=><a key={image.src} href={image.src} target="_blank" rel="noopener noreferrer"><img src={image.src} alt={image.alt} loading="lazy"/></a>)}</div>
+      <p className="form-hint">Horarios oficiales del Consorcio Regional de Transportes de Madrid (vía redtransporte.com). Pulsa una imagen para verla a tamaño completo.</p>
     </Card>
   </>;
 }
