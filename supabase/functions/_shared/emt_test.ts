@@ -143,3 +143,25 @@ Deno.test("entiende interurbanos y los busca por código o por el nombre de la m
     network: "interurbano",
   });
 });
+
+Deno.test("sin parada, enseña las interurbanas guardadas; una guardada puede juntar varios códigos", async () => {
+  assertEquals(parseBusRequest({ action: "arrivals", stop: null, line: "627", network: "interurbano" }), {
+    kind: "bus_arrivals",
+    stop: "",
+    line: "627",
+    network: "interurbano",
+  });
+  const saved: BusStop[] = [
+    { id: 1, name: "Casa", stop_id: "62", network: "emt" },
+    { id: 2, name: "Moncloa", stop_id: "06002,2419", network: "interurbano" },
+    { id: 3, name: "Villanueva", stop_id: "11162", network: "interurbano" },
+  ];
+  const { db } = fakeDb(() => ({ data: saved }));
+  await withFakeFetch({}, () => Response.json({}), async () => {
+    const reply = await replyToBus(db, { kind: "bus_arrivals", stop: "", line: "627", network: "interurbano" }, NOW);
+    assertStringIncludes(reply, "🚌 Moncloa (06002 y 2419):\n• 627 → ");
+    assertStringIncludes(reply, "🚌 Villanueva (11162):\n• 627 → INTERCAMBIADOR MONCLOA");
+    assertEquals(reply.split("Datos: CRTM").length, 2);
+    assertEquals(reply.includes("Casa"), false);
+  });
+});

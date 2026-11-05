@@ -18,7 +18,7 @@ export const BUS_INTENT_FORMAT =
   'Autobuses de Madrid, de la EMT o interurbanos: {"intent": "bus", "action": "arrivals", "stop": "<nombre guardado, ' +
   'número o nombre de la parada>", "line": "<línea>" o null, "network": "emt", "interurbano" o null} para saber ' +
   'cuándo pasa ("¿cuándo pasa el bus de casa?", "¿cuánto le queda al 27 en la parada 1234?", "¿cuándo pasa el 627 ' +
-  'por la parada 10590?"); {"intent": "bus", "action": "save", "name": "<nombre>", "stop_id": "<número>", "network": ' +
+  'por la parada 10590?"; stop es null si no dice parada); {"intent": "bus", "action": "save", "name": "<nombre>", "stop_id": "<número>", "network": ' +
   '"emt" o "interurbano"} para guardar una parada ("la parada de casa es la 1234"); {"intent": "bus", "action": ' +
   '"delete", "name": "<nombre>"} para olvidarla; {"intent": "bus", "action": "list"} para ver las guardadas. ' +
   'network es "interurbano" si habla de un interurbano del CRTM (líneas verdes que salen de Madrid, como 627 o el ' +
@@ -45,7 +45,10 @@ export function parseBusRequest(raw: unknown): BusRequest {
     case "arrivals": {
       const stop = cleanText(candidate.stop, 50);
       const line = cleanText(candidate.line, 4).toUpperCase();
-      if (!stop) return { kind: "invalid", message: "¿De qué parada? Dime su número o el nombre que le diste." };
+      // «¿Cuándo pasa el 627?» sin parada: se enseñan las paradas interurbanas guardadas.
+      if (!stop && network !== "interurbano") {
+        return { kind: "invalid", message: "¿De qué parada? Dime su número o el nombre que le diste." };
+      }
       return { kind: "bus_arrivals", stop, line: LINE.test(line) ? line : null, network };
     }
     case "save": {
@@ -94,6 +97,12 @@ export async function deleteBusStop(db: SupabaseClient, id: number): Promise<voi
   if (error) throw new Error(`No se pudo borrar la parada: ${error.message}`);
 }
 
+/** Una parada interurbana guardada puede juntar varios códigos («06002,2419»: en Moncloa cada línea sale de una). */
+function savedStop(saved: BusStop): ResolvedStop {
+  const stopIds = saved.stop_id.split(",");
+  return { stopIds, label: `${saved.name} (${stopIds.join(" y ")})`, network: saved.network };
+}
+
 interface ResolvedStop {
   // Varias solo en interurbanos buscados por nombre: la marquesina de cada sentido tiene su código.
   stopIds: string[];
@@ -109,7 +118,7 @@ interface ResolvedStop {
 export function resolveStop(stops: BusStop[], stop: string, network: BusNetwork | null = null): ResolvedStop | null {
   if (STOP_NUMBER.test(stop)) {
     const saved = stops.find((candidate) => candidate.stop_id === stop && (!network || candidate.network === network));
-    if (saved) return { stopIds: [stop], label: `${saved.name} (${stop})`, network: saved.network };
+    if (saved) return savedStop(saved);
     const scheduledName = network === "interurbano" ? scheduledStopName(stop) : null;
     return {
       stopIds: [stop],
@@ -119,7 +128,7 @@ export function resolveStop(stops: BusStop[], stop: string, network: BusNetwork 
   }
   const name = stop.replace(/^(la )?parada (de |del )?/i, "");
   const saved = matchByName(stops, name);
-  if (saved) return { stopIds: [saved.stop_id], label: `${saved.name} (${saved.stop_id})`, network: saved.network };
+  if (saved) return savedStop(saved);
   const scheduled = network === "interurbano" ? findScheduledStop(name) : null;
   return scheduled
     ? { stopIds: scheduled.codes, label: `${scheduled.name} (${scheduled.codes.join(" y ")})`, network: "interurbano" }
@@ -217,6 +226,7 @@ async function replyToArrivals(
   now: Date,
 ): Promise<string> {
   const { stop, line } = request;
+  if (!stop) return await replyToSavedInterurbanStops(db, line, now);
   const resolved = resolveStop(await listBusStops(db), stop, request.network);
   if (!resolved && request.network === "interurbano") {
     return `No encuentro una sola parada «${stop}» en el 627 ni en el N907. Dime su número (5 cifras, en la ` +
@@ -234,6 +244,19 @@ async function replyToArrivals(
     );
   }
   return formatArrivals(resolved.label, await fetchArrivals(resolved.stopIds[0], now), line);
+}
+
+async function replyToSavedInterurbanStops(db: SupabaseClient, line: string | null, now: Date): Promise<string> {
+  const saved = (await listBusStops(db)).filter((stop) => stop.network === "interurbano");
+  if (saved.length === 0) return "¿De qué parada? Dime su número (5 cifras, en la marquesina) o guárdala.";
+  const replies = [];
+  for (const stop of saved.map(savedStop)) {
+    replies.push(
+      formatInterurbanDepartures(stop.label, await interurbanDepartures(stop.stopIds, line, now), line, now),
+    );
+  }
+  // Una sola atribución al final, no una por parada.
+  return replies.map((reply) => reply.replace(/\nDatos: CRTM$/, "")).join("\n\n") + "\nDatos: CRTM";
 }
 
 export async function replyToBus(db: SupabaseClient, request: BusRequest, now: Date): Promise<string> {

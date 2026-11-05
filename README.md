@@ -24,8 +24,9 @@ Bot personal de Telegram que:
   correos de X" y "vuelve a enseñarme los de X".
 - Dice cuándo pasa el autobús de la EMT por una parada, por número o con paradas guardadas por nombre ("la parada
   de casa es la 1234" y luego "¿cuándo pasa el bus de casa?").
-- Lo mismo con los interurbanos 627 y N907 ("¿cuándo pasa el 627 por la parada 10590?"): tiempo real del CRTM y, si no
-  lo hay (el N907 de día o el servicio caído), el horario. Los horarios salen del GTFS del CRTM y están en
+- Lo mismo con los interurbanos 627 y N907 ("¿cuándo pasa el 627 por la parada 10590?"; sin parada, enseña las
+  interurbanas guardadas): tiempo real del CRTM y, si no lo hay (el N907 de día o el servicio caído), el horario. En
+  la cabecera (Moncloa) se usa directamente el horario de salida. Los horarios salen del GTFS del CRTM y están en
   `supabase/functions/_shared/crtm-schedules.json`. Para actualizarlos o añadir líneas, ver
   `scripts/crtm-schedules.ts`. Datos: CRTM (https://www.crtm.es/licencia-de-uso).
 - Avisa por Telegram cuando AEMET publica un aviso meteorológico (amarillo, naranja o rojo) en la Comunidad de

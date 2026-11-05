@@ -1,5 +1,11 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.19";
-import { formatInterurbanDepartures, interurbanDepartures, parseStopTimes, scheduledDepartures } from "./crtm.ts";
+import {
+  formatInterurbanDepartures,
+  interurbanDepartures,
+  isLineOrigin,
+  parseStopTimes,
+  scheduledDepartures,
+} from "./crtm.ts";
 import { withFakeFetch } from "./testing.ts";
 
 // Jueves 5 de noviembre de 2026, 10:00 en Madrid.
@@ -64,7 +70,18 @@ Deno.test("la respuesta da hora, espera y si es según horario, con la atribuci�
   );
   assertEquals(
     text,
-    "🚌 Trabajo (10590):\n• 627 → MADRID: 10:36 (en 36 min)\n• N907 → MONCLOA: 01:15 de mañana, según horario\nDatos: CRTM",
+    "🚌 Trabajo (10590):\n• 627 → MADRID: 10:36 (en 36 min)\n• N907 → MONCLOA: 01:15 de mañana, horario\nDatos: CRTM",
   );
   assertStringIncludes(formatInterurbanDepartures("Parada 1", [], "627", NOW), "no encuentro próximos pasos del 627");
+});
+
+Deno.test("en la cabecera de Moncloa usa directamente el horario de salida, sin preguntar al CRTM", async () => {
+  assertEquals(isLineOrigin("06002"), true);
+  assertEquals(isLineOrigin(UNIVERSIDAD), false);
+  await withFakeFetch({}, () => Response.json({}), async (requests) => {
+    const departures = await interurbanDepartures(["06002"], "627", NOW);
+    assertEquals(departures.length, 3);
+    assertEquals(departures.every((departure) => departure.isScheduled && departure.at > NOW), true);
+    assertEquals(requests.length, 0);
+  });
 });

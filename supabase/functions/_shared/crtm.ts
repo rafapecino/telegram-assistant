@@ -40,6 +40,23 @@ export function scheduledStopName(code: string): string | null {
   return SCHEDULES.stops[code] ?? null;
 }
 
+type Trip = Schedules["trips"][number];
+
+/** Los viajes desde los que se puede subir en la parada: no cuentan los que terminan en ella. */
+function boardingTrips(stopCode: string): Trip[] {
+  return SCHEDULES.trips.filter((trip) => {
+    const time = trip.times[stopCode];
+    return time !== undefined && Object.values(trip.times).some((other) => other > time);
+  });
+}
+
+/** Si todos los viajes que se cogen en la parada salen de ella (Intercambiador de Moncloa): ahí manda el horario. */
+export function isLineOrigin(stopCode: string): boolean {
+  const trips = boardingTrips(stopCode);
+  return trips.length > 0 &&
+    trips.every((trip) => Object.values(trip.times).every((time) => time >= trip.times[stopCode]));
+}
+
 function runsOn(serviceId: string, date: string): boolean {
   const service = SCHEDULES.services[serviceId];
   if (!service || service.removed.includes(date)) return false;
@@ -53,7 +70,7 @@ export function scheduledDepartures(stopCode: string, line: string | null, now: 
   const today = madridClock(now).localDate;
   const departures: Departure[] = [];
   for (const serviceDate of [addDaysToDate(today, -1), today, addDaysToDate(today, 1)]) {
-    for (const trip of SCHEDULES.trips) {
+    for (const trip of boardingTrips(stopCode)) {
       const time = trip.times[stopCode];
       if (!time || (line && trip.line !== line) || !runsOn(trip.service, serviceDate)) continue;
       const [hours, minutes] = time.split(":").map(Number);
@@ -108,6 +125,11 @@ export async function interurbanDepartures(
   line: string | null,
   now: Date,
 ): Promise<Departure[]> {
+  // En la cabecera el bus sale a su hora: el horario es exacto y no hace falta preguntar al CRTM.
+  if (stopCodes.every(isLineOrigin)) {
+    return stopCodes.flatMap((code) => scheduledDepartures(code, line, now))
+      .sort((a, b) => a.at.getTime() - b.at.getTime()).slice(0, DEPARTURES_SHOWN);
+  }
   let realtime: Departure[] = [];
   try {
     realtime = (await Promise.all(stopCodes.map((code) => fetchRealtimeDepartures(code, now)))).flat()
@@ -124,7 +146,7 @@ function describeDeparture(departure: Departure, now: Date): string {
   const minutes = Math.round((departure.at.getTime() - now.getTime()) / 60_000);
   const wait = minutes < 1 ? "llegando" : minutes < 60 ? `en ${minutes} min` : null;
   const day = madridClock(departure.at).localDate === madridClock(now).localDate ? "" : " de mañana";
-  return `${time}${day}${wait ? ` (${wait})` : ""}${departure.isScheduled ? ", según horario" : ""}`;
+  return `${time}${day}${wait ? ` (${wait})` : ""}${departure.isScheduled ? ", horario" : ""}`;
 }
 
 export function formatInterurbanDepartures(label: string, departures: Departure[], line: string | null, now: Date) {
