@@ -7,8 +7,6 @@ import {
   formatLastOfDay,
   interurbanDepartures,
   scheduledStopName,
-  SCHEDULES_GENERATED_ON,
-  weekTimetables,
 } from "./crtm.ts";
 import { requireEnv } from "./env.ts";
 import { madridClock } from "./madrid-time.ts";
@@ -284,7 +282,7 @@ async function replyToSavedInterurbanStops(db: SupabaseClient, line: string | nu
   return replies.map((reply) => reply.replace(/\nDatos: CRTM$/, "")).join("\n\n") + "\nDatos: CRTM";
 }
 
-/** La sección Transporte del panel: próximos pasos y horario semanal de cada parada interurbana guardada. */
+/** La sección Transporte del panel: próximos pasos de cada parada interurbana guardada. */
 export async function loadTransit(db: SupabaseClient, now: Date) {
   const saved = (await listBusStops(db)).filter((stop) => stop.network === "interurbano");
   const stops = await Promise.all(saved.map(async (stop) => {
@@ -293,10 +291,9 @@ export async function loadTransit(db: SupabaseClient, now: Date) {
       name: stop.name,
       label,
       departures: await interurbanDepartures(stopIds, null, now),
-      timetables: weekTimetables(stopIds, now),
     };
   }));
-  return { stops, schedulesUpdatedOn: SCHEDULES_GENERATED_ON };
+  return { stops };
 }
 
 export async function replyToBus(db: SupabaseClient, request: BusRequest, now: Date): Promise<string> {

@@ -72,9 +72,27 @@ export const KNOWN_LINES = [...new Set(SCHEDULES.trips.map((trip) => trip.line))
 const isWanted = (line: string | null) => (departure: { line: string }) =>
   line ? departure.line === line : KNOWN_LINES.includes(departure.line);
 
+/**
+ * El GTFS junta las dos noches del N907; el horario oficial (181225) las separa. Se reconoce cada viaje por la hora a
+ * la que sale de su cabecera (Princesa o Brunete). Las vísperas de festivo no se distinguen: llevan el de diario.
+ */
+const NIGHT_DEPARTURES = {
+  weekday: ["02:30", "05:30", "01:00", "04:00"], // noches de domingo a jueves
+  weekend: ["00:30", "03:00", "05:30", "23:15", "01:45", "04:15"], // noches de viernes y sábado
+};
+
+function runsTonight(trip: Trip, date: string): boolean {
+  const origin = Object.values(trip.times).sort()[0];
+  // Lo que sale de madrugada es de la noche que empezó el día anterior.
+  const nightStart = origin < "12:00" ? addDaysToDate(date, -1) : date;
+  const isWeekendNight = [5, 6].includes(weekdayOf(nightStart));
+  return NIGHT_DEPARTURES[isWeekendNight ? "weekend" : "weekday"].includes(origin);
+}
+
 function runsOn(trip: Trip, date: string): boolean {
   const service = SCHEDULES.services[trip.service];
   if (!service || service.removed.includes(date)) return false;
+  if (trip.line === NIGHT_LINE && !runsTonight(trip, date)) return false;
   const weekday = weekdayOf(date);
   // Los festivos entre semana no se distinguen: ese día se enseña el horario de laborables.
   if (trip.dayType === "lv" && (weekday === 0 || weekday === 6)) return false;
@@ -142,8 +160,11 @@ const NIGHT_ENDS = "06:00";
  */
 export function formatLastOfDay(label: string, stopCodes: string[], line: string | null, now: Date): string {
   const clock = madridClock(now), nowTime = clock.localDateTime.slice(11, 16);
-  const tonight = dayTimetable(stopCodes, addDaysToDate(clock.localDate, 1))
-    .filter((entry) => entry.line === NIGHT_LINE && entry.time < NIGHT_ENDS);
+  // Esta noche: lo que sale hoy a última hora (el de las 23:15 desde Brunete) y lo de la madrugada de mañana.
+  const tonight = [
+    ...dayTimetable(stopCodes, clock.localDate).filter((entry) => entry.time >= NIGHT_ENDS),
+    ...dayTimetable(stopCodes, addDaysToDate(clock.localDate, 1)).filter((entry) => entry.time < NIGHT_ENDS),
+  ].filter((entry) => entry.line === NIGHT_LINE);
   const nightText = tonight.length
     ? `el ${NIGHT_LINE} esta noche a las ${tonight.map((entry) => entry.time).join(", ")}`
     : `ningún ${NIGHT_LINE} esta noche`;
@@ -157,25 +178,6 @@ export function formatLastOfDay(label: string, stopCodes: string[], line: string
   return `🚌 ${label}: el último ${wanted} de hoy ${verb} a las ${last.time} hacia ${last.destination}.${after}\n` +
     "Datos: CRTM (horario)";
 }
-
-const DAY_TYPES = [
-  { label: "Laborables", matches: (weekday: number) => weekday >= 1 && weekday <= 5 },
-  { label: "Sábados", matches: (weekday: number) => weekday === 6 },
-  { label: "Domingos", matches: (weekday: number) => weekday === 0 },
-];
-
-/** El horario del próximo laborable, sábado y domingo desde hoy (festivos aparte: ese día manda el del CRTM). */
-export function weekTimetables(stopCodes: string[], now: Date) {
-  const today = madridClock(now).localDate;
-  return DAY_TYPES.map(({ label, matches }) => {
-    let date = today;
-    while (!matches(weekdayOf(date))) date = addDaysToDate(date, 1);
-    return { label, date, departures: dayTimetable(stopCodes, date) };
-  });
-}
-
-/** Fecha en que se sacaron los horarios del GTFS del CRTM. */
-export const SCHEDULES_GENERATED_ON = (schedules as { generatedOn: string }).generatedOn;
 
 interface CrtmTime {
   line?: { shortDescription?: unknown };

@@ -7,7 +7,6 @@ import {
   isLineOrigin,
   parseStopTimes,
   scheduledDepartures,
-  weekTimetables,
 } from "./crtm.ts";
 import { withFakeFetch } from "./testing.ts";
 
@@ -89,27 +88,31 @@ Deno.test("en la cabecera de Moncloa usa directamente el horario de salida, sin 
   });
 });
 
-Deno.test("el horario del día sale ordenado y con los nocturnos de madrugada al final", () => {
+Deno.test("el horario del día distingue laborables y fines de semana", () => {
   const thursday = dayTimetable(["06002", "2419"], "2026-11-05");
   assertEquals(thursday.filter((entry) => entry.line === "627").length, 92);
-  // Los de madrugada de ese día; sin el viaje repetido de las 05:30.
-  const night = thursday.filter((entry) => entry.line === "N907");
-  assertEquals(night.map((entry) => entry.time), ["00:30", "02:30", "03:00", "05:30"]);
-  // Los fines de semana hay menos: los viajes «lv» no salen.
+  // Los viajes «lv» no salen en fin de semana.
   assertEquals(dayTimetable(["06002", "2419"], "2026-11-07").filter((entry) => entry.line === "627").length, 57);
-  const week = weekTimetables(["06002", "2419"], NOW);
-  assertEquals(week.map((day) => [day.label, day.date]), [
-    ["Laborables", "2026-11-05"],
-    ["Sábados", "2026-11-07"],
-    ["Domingos", "2026-11-08"],
-  ]);
+});
+
+Deno.test("el N907 sigue el horario oficial: noches de domingo a jueves y noches de viernes y sábado", () => {
+  const night = (stops: string[], date: string) =>
+    dayTimetable(stops, date).filter((entry) => entry.line === "N907").map((entry) => entry.time);
+  // Madrugada del viernes 6 (noche del jueves) y del sábado 7 (noche del viernes), desde Princesa.
+  assertEquals(night(["06002", "2419"], "2026-11-06"), ["02:30", "05:30"]);
+  assertEquals(night(["06002", "2419"], "2026-11-07"), ["00:30", "03:00", "05:30"]);
+  // Desde Villanueva hacia Moncloa: el de las 23:15 de Brunete solo sale viernes y sábado.
+  assertEquals(night(["11162"], "2026-11-05"), ["01:10", "04:10"]);
+  assertEquals(night(["11162"], "2026-11-06"), ["01:10", "04:10", "23:25"]);
 });
 
 Deno.test("el último de hoy: el 627 por defecto y, después, los nocturnos de esta noche", () => {
   const text = formatLastOfDay("Moncloa (06002 y 2419)", ["06002", "2419"], null, NOW);
   assertStringIncludes(text, "el último 627 de hoy sale a las 23:");
-  assertStringIncludes(text, "Después, el N907 esta noche a las 00:30");
-  assertStringIncludes(formatLastOfDay("Moncloa", ["06002", "2419"], "N907", NOW), "tienes el N907 esta noche");
+  // Jueves: noche de diario.
+  assertStringIncludes(text, "Después, el N907 esta noche a las 02:30, 05:30.");
+  const friday = new Date("2026-11-06T09:00:00Z");
+  assertStringIncludes(formatLastOfDay("Villanueva", ["11162"], "N907", friday), "a las 23:25, 01:55, 04:25");
 });
 
 Deno.test("sin línea pedida, del tiempo real solo enseña el 627 y el N907", async () => {
