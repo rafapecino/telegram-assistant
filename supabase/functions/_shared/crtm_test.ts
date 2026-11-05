@@ -1,10 +1,13 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.19";
 import {
+  dayTimetable,
   formatInterurbanDepartures,
+  formatLastOfDay,
   interurbanDepartures,
   isLineOrigin,
   parseStopTimes,
   scheduledDepartures,
+  weekTimetables,
 } from "./crtm.ts";
 import { withFakeFetch } from "./testing.ts";
 
@@ -83,5 +86,40 @@ Deno.test("en la cabecera de Moncloa usa directamente el horario de salida, sin 
     assertEquals(departures.length, 3);
     assertEquals(departures.every((departure) => departure.isScheduled && departure.at > NOW), true);
     assertEquals(requests.length, 0);
+  });
+});
+
+Deno.test("el horario del día sale ordenado y con los nocturnos de madrugada al final", () => {
+  const thursday = dayTimetable(["06002", "2419"], "2026-11-05");
+  assertEquals(thursday.filter((entry) => entry.line === "627").length, 92);
+  // Los de madrugada de ese día; sin el viaje repetido de las 05:30.
+  const night = thursday.filter((entry) => entry.line === "N907");
+  assertEquals(night.map((entry) => entry.time), ["00:30", "02:30", "03:00", "05:30"]);
+  // Los fines de semana hay menos: los viajes «lv» no salen.
+  assertEquals(dayTimetable(["06002", "2419"], "2026-11-07").filter((entry) => entry.line === "627").length, 57);
+  const week = weekTimetables(["06002", "2419"], NOW);
+  assertEquals(week.map((day) => [day.label, day.date]), [
+    ["Laborables", "2026-11-05"],
+    ["Sábados", "2026-11-07"],
+    ["Domingos", "2026-11-08"],
+  ]);
+});
+
+Deno.test("el último de hoy: el 627 por defecto y, después, los nocturnos de esta noche", () => {
+  const text = formatLastOfDay("Moncloa (06002 y 2419)", ["06002", "2419"], null, NOW);
+  assertStringIncludes(text, "el último 627 de hoy sale a las 23:");
+  assertStringIncludes(text, "Después, el N907 esta noche a las 00:30");
+  assertStringIncludes(formatLastOfDay("Moncloa", ["06002", "2419"], "N907", NOW), "tienes el N907 esta noche");
+});
+
+Deno.test("sin línea pedida, del tiempo real solo enseña el 627 y el N907", async () => {
+  const realtime = {
+    stopTimes: {
+      times: { Time: [time("629", "2026-11-05T10:20:00+01:00"), time("627", "2026-11-05T10:36:01+01:00")] },
+    },
+  };
+  await withFakeFetch({}, () => Response.json(realtime), async () => {
+    const departures = await interurbanDepartures(["10586"], null, NOW);
+    assertEquals(departures.map((departure) => departure.line), ["627"]);
   });
 });

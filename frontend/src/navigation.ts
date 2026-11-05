@@ -4,6 +4,7 @@ export const SECTION_ROUTES = {
   shopping_items: 'compra', deliveries: 'pedidos', birthdays: 'cumpleanos', habits: 'habitos',
   weight: 'peso', calendar: 'agenda', weather: 'tiempo', memory: 'memoria',
   notes: 'notas', settings: 'ajustes', news: 'noticias', markets: 'mercados', prices: 'precios',
+  transit: 'transporte',
 } as const;
 export type Section = keyof typeof SECTION_ROUTES;
 

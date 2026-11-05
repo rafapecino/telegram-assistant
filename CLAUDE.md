@@ -195,6 +195,9 @@ Algunos ficheros ya no cumplen `deno fmt` (`calendar.ts`); no los reformatees en
 - Precios: Google Shopping mezcla alquileres (Rentik, Grover) cuyo precio es la cuota de un mes. Se descartan con
   `RENTAL` en `prices.ts`. La ficha de Google Shopping (`product_link`) se abre vacía en el móvil: se enlaza a la
   búsqueda del producto. El aviso diario da la mejor opción nueva y la mejor de segunda mano.
+- GTFS del CRTM: `calendar.txt` marca casi todos los viajes como diarios. El tipo de día real va al principio de
+  `trip_short_name` («lv» laborables, «sdf» sábados, domingos y festivos); `scripts/crtm-schedules.ts` lo guarda como
+  `dayType`. En Moncloa el 627 sale del intercambiador (06002) y el N907 de la calle Princesa (2419).
 - Un recordatorio que se repite y cuya primera vez ya ha pasado hoy empieza la siguiente vez que toca. Uno sin
   repetición con fecha pasada se rechaza.
 - En las sesiones remotas de Claude, `git fetch origin main` puede no actualizar `origin/main`: usa

@@ -165,3 +165,15 @@ Deno.test("sin parada, enseña las interurbanas guardadas; una guardada puede ju
     assertEquals(reply.includes("Casa"), false);
   });
 });
+
+Deno.test("«el último para Villanueva» pide el último de hoy en un interurbano", () => {
+  const raw = { action: "arrivals", stop: "Moncloa", line: null, network: "interurbano", which: "last" };
+  assertEquals(parseBusRequest(raw), {
+    kind: "bus_arrivals",
+    stop: "Moncloa",
+    line: null,
+    network: "interurbano",
+    isLastOfDay: true,
+  });
+  assertEquals("isLastOfDay" in parseBusRequest({ ...raw, network: "emt" }), false);
+});

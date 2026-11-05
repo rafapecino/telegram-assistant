@@ -1,7 +1,15 @@
 // Autobuses de la EMT de Madrid (MobilityLabs): cuánto le queda al bus en una parada, guardada o por número.
 // Los interurbanos del CRTM (627, N907…) comparten intención y paradas guardadas; su consulta está en crtm.ts.
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
-import { findScheduledStop, formatInterurbanDepartures, interurbanDepartures, scheduledStopName } from "./crtm.ts";
+import {
+  findScheduledStop,
+  formatInterurbanDepartures,
+  formatLastOfDay,
+  interurbanDepartures,
+  scheduledStopName,
+  SCHEDULES_GENERATED_ON,
+  weekTimetables,
+} from "./crtm.ts";
 import { requireEnv } from "./env.ts";
 import { madridClock } from "./madrid-time.ts";
 import { matchByName, tidyName } from "./text.ts";
@@ -22,12 +30,16 @@ export const BUS_INTENT_FORMAT =
   '"emt" o "interurbano"} para guardar una parada ("la parada de casa es la 1234"); {"intent": "bus", "action": ' +
   '"delete", "name": "<nombre>"} para olvidarla; {"intent": "bus", "action": "list"} para ver las guardadas. ' +
   'network es "interurbano" si habla de un interurbano del CRTM (líneas verdes que salen de Madrid, como 627 o el ' +
-  'nocturno N907), "emt" si es un bus urbano de Madrid y null si no se sabe.';
+  'nocturno N907), "emt" si es un bus urbano de Madrid y null si no se sabe. Si habla de ir a Villanueva de la ' +
+  "Cañada, Brunete o «a casa» en autobús, o de volver a Moncloa o a Madrid, es interurbano aunque no diga la línea. " +
+  "Si dice adónde va en vez de la parada, stop es la del otro extremo: «para Villanueva» o «para Brunete» → " +
+  '"Moncloa"; «para Moncloa» o «para Madrid» → "Villanueva". En arrivals, "which" es "last" si pregunta por el ' +
+  'último de hoy y "next" en los demás casos.';
 
 export type BusNetwork = "emt" | "interurbano";
 
 export type BusRequest =
-  | { kind: "bus_arrivals"; stop: string; line: string | null; network: BusNetwork | null }
+  | { kind: "bus_arrivals"; stop: string; line: string | null; network: BusNetwork | null; isLastOfDay?: boolean }
   | { kind: "bus_stop_save"; name: string; stopId: string; network: BusNetwork }
   | { kind: "bus_stop_delete"; name: string }
   | { kind: "bus_stop_list" }
@@ -40,7 +52,9 @@ function cleanText(value: unknown, maxLength: number): string {
 export function parseBusRequest(raw: unknown): BusRequest {
   const candidate = raw as Record<string, unknown> | null;
   const name = tidyName(cleanText(candidate?.name, 50));
-  const network = candidate?.network === "emt" || candidate?.network === "interurbano" ? candidate.network : null;
+  const network: BusNetwork | null = candidate?.network === "emt" || candidate?.network === "interurbano"
+    ? candidate.network
+    : null;
   switch (candidate?.action) {
     case "arrivals": {
       const stop = cleanText(candidate.stop, 50);
@@ -49,7 +63,15 @@ export function parseBusRequest(raw: unknown): BusRequest {
       if (!stop && network !== "interurbano") {
         return { kind: "invalid", message: "¿De qué parada? Dime su número o el nombre que le diste." };
       }
-      return { kind: "bus_arrivals", stop, line: LINE.test(line) ? line : null, network };
+      // El último del día sale del horario, que solo tienen los interurbanos.
+      const isLastOfDay = candidate.which === "last" && network === "interurbano";
+      return {
+        kind: "bus_arrivals",
+        stop,
+        line: LINE.test(line) ? line : null,
+        network,
+        ...(isLastOfDay ? { isLastOfDay } : {}),
+      };
     }
     case "save": {
       const stopId = cleanText(String(candidate.stop_id ?? ""), 5);
@@ -235,6 +257,9 @@ async function replyToArrivals(
   if (!resolved) {
     return `No tengo guardada la parada «${stop}». Dime su número o guárdala: «la de ${stop} es la 1234».`;
   }
+  if (resolved.network === "interurbano" && request.isLastOfDay) {
+    return formatLastOfDay(resolved.label, resolved.stopIds, line, now);
+  }
   if (resolved.network === "interurbano") {
     return formatInterurbanDepartures(
       resolved.label,
@@ -257,6 +282,21 @@ async function replyToSavedInterurbanStops(db: SupabaseClient, line: string | nu
   }
   // Una sola atribución al final, no una por parada.
   return replies.map((reply) => reply.replace(/\nDatos: CRTM$/, "")).join("\n\n") + "\nDatos: CRTM";
+}
+
+/** La sección Transporte del panel: próximos pasos y horario semanal de cada parada interurbana guardada. */
+export async function loadTransit(db: SupabaseClient, now: Date) {
+  const saved = (await listBusStops(db)).filter((stop) => stop.network === "interurbano");
+  const stops = await Promise.all(saved.map(async (stop) => {
+    const { stopIds, label } = savedStop(stop);
+    return {
+      name: stop.name,
+      label,
+      departures: await interurbanDepartures(stopIds, null, now),
+      timetables: weekTimetables(stopIds, now),
+    };
+  }));
+  return { stops, schedulesUpdatedOn: SCHEDULES_GENERATED_ON };
 }
 
 export async function replyToBus(db: SupabaseClient, request: BusRequest, now: Date): Promise<string> {

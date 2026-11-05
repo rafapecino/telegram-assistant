@@ -26,7 +26,8 @@ Bot personal de Telegram que:
   de casa es la 1234" y luego "¿cuándo pasa el bus de casa?").
 - Lo mismo con los interurbanos 627 y N907 ("¿cuándo pasa el 627 por la parada 10590?"; sin parada, enseña las
   interurbanas guardadas): tiempo real del CRTM y, si no lo hay (el N907 de día o el servicio caído), el horario. En
-  la cabecera (Moncloa) se usa directamente el horario de salida. Los horarios salen del GTFS del CRTM y están en
+  la cabecera (Moncloa) se usa directamente el horario de salida. La sección Transporte del panel enseña los próximos buses de las
+  paradas guardadas y su horario de laborables, sábados y domingos. Los horarios salen del GTFS del CRTM y están en
   `supabase/functions/_shared/crtm-schedules.json`. Para actualizarlos o añadir líneas, ver
   `scripts/crtm-schedules.ts`. Datos: CRTM (https://www.crtm.es/licencia-de-uso).
 - Avisa por Telegram cuando AEMET publica un aviso meteorológico (amarillo, naranja o rojo) en la Comunidad de

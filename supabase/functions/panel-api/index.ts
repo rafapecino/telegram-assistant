@@ -21,6 +21,7 @@ import { loadNews, NEWS_TOPICS } from "../_shared/news.ts";
 import { fetchCuriosity } from "../_shared/curiosity.ts";
 import { fetchQuotes, followAsset, loadWatchlist, type MarketKind, unfollowAsset } from "../_shared/markets.ts";
 import { addWatch, comparePrices, listWatches, removeWatch } from "../_shared/prices.ts";
+import { loadTransit } from "../_shared/emt.ts";
 import { parseMovementFilters, searchEverything, searchMovements } from "../_shared/search.ts";
 import { UserFacingError } from "../_shared/errors.ts";
 import { corsHeaders, describeErrorForClient, isOverRateLimit, recordAccessDenied } from "../_shared/panel-security.ts";
@@ -132,6 +133,7 @@ async function readResource(db: ReturnType<typeof createAdminClient>, resource: 
     return { assets, ...await fetchQuotes(assets, now) };
   }
   if (resource === "prices") return await comparePrices(params.get("q"));
+  if (resource === "transit") return await loadTransit(db, now);
   if (resource === "price_watches") return await listWatches(db);
   if (resource === "curiosity") return await fetchCuriosity(today);
   if (resource === "news_topics") {
