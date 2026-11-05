@@ -24,6 +24,10 @@ Bot personal de Telegram que:
   correos de X" y "vuelve a enseñarme los de X".
 - Dice cuándo pasa el autobús de la EMT por una parada, por número o con paradas guardadas por nombre ("la parada
   de casa es la 1234" y luego "¿cuándo pasa el bus de casa?").
+- Lo mismo con los interurbanos 627 y N907 ("¿cuándo pasa el 627 por la parada 10590?"): tiempo real del CRTM y, si no
+  lo hay (el N907 de día o el servicio caído), el horario. Los horarios salen del GTFS del CRTM y están en
+  `supabase/functions/_shared/crtm-schedules.json`. Para actualizarlos o añadir líneas, ver
+  `scripts/crtm-schedules.ts`. Datos: CRTM (https://www.crtm.es/licencia-de-uso).
 - Avisa por Telegram cuando AEMET publica un aviso meteorológico (amarillo, naranja o rojo) en la Comunidad de
   Madrid. Lo mira cada hora.
 - Responde preguntas generales, como un chat normal, cuando el mensaje no es de ninguna de sus funciones. Si en esa
@@ -124,7 +128,7 @@ botones necesitan `callback_query`), repite también el paso 6.
 A Groq van el texto de tus mensajes, las notas de voz para transcribirlas, las descripciones de los gastos para
 clasificarlas (y, si preguntas por un sitio que no aparece tal cual, las de ese periodo para reconocerlo) tus notas cuando les haces una pregunta o pides borrar una, y las confirmaciones cortas del bot (lo que se ha apuntado, con sus fechas e importes) para darles un tono más cercano. Los números de tarjeta se ocultan antes
 (`****1234`). A Google van los eventos que creas, las fechas que consultas y las búsquedas de Gmail; el contenido
-de los correos no se lee y a Groq solo llega tu pregunta. A Open-Meteo, solo el nombre de la ciudad; a la EMT, el
+de los correos no se lee y a Groq solo llega tu pregunta. A Open-Meteo, solo el nombre de la ciudad; a la EMT y al CRTM, el
 número de parada.
 
 Si conectaste Google antes de añadir Gmail, vuelve a escribir `/conectar_calendario` para dar el permiso nuevo.
