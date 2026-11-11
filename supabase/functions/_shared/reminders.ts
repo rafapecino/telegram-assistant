@@ -3,6 +3,8 @@ import { addDaysToDate, formatMadridDateTime, madridClock, madridLocalToUtc, wee
 import { sendTelegramMessage, type TelegramButton } from "./telegram.ts";
 
 export type Repeat = "daily" | "weekdays" | "weekly" | "monthly";
+// 0: sin aviso previo; 30: media hora antes; 1440: un día antes.
+export type AdvanceMinutes = 0 | 30 | 1440;
 
 const REPEAT_LABELS: Record<Repeat, string> = {
   daily: "cada día",
@@ -16,10 +18,10 @@ export const REMINDER_INTENT_FORMAT =
   'Pide un recordatorio: {"intent": "reminder", "text": "<qué hay que recordar, breve>", ' +
   '"local_datetime": "YYYY-MM-DDTHH:mm", "repeat": null, "advance_minutes": null}. local_datetime es la hora local de Madrid de la primera vez; ' +
   'sin hora indicada, usa las 09:00. Si se repite, repeat es "daily" (cada día), "weekdays" (de lunes a viernes), ' +
-  '"weekly" (cada semana) o "monthly" (cada mes); si no, null. advance_minutes es 30 o 1440 solo si la persona pide expresamente ese aviso previo; si no, null.';
+  '"weekly" (cada semana) o "monthly" (cada mes); si no, null. advance_minutes es 0 si pide que no haya aviso previo, 30 o 1440 solo si pide expresamente ese aviso previo; si no, null.';
 
 export type ReminderRequest =
-  | { kind: "reminder"; text: string; remindAt: Date; repeat: Repeat | null; advanceMinutes?: 30 | 1440 }
+  | { kind: "reminder"; text: string; remindAt: Date; repeat: Repeat | null; advanceMinutes?: AdvanceMinutes }
   | { kind: "invalid"; message: string };
 
 function invalidReminder(reason: string): ReminderRequest {
@@ -49,7 +51,9 @@ export function parseReminderRequest(raw: unknown, now: Date): ReminderRequest {
   const repeat = candidate.repeat ?? null;
   if (repeat !== null && !isRepeat(repeat)) return invalidReminder("no he entendido cada cuánto se repite");
   const advance = candidate.advance_minutes ?? null;
-  if (advance !== null && advance !== 30 && advance !== 1440) return invalidReminder("no he entendido cuándo avisarte antes");
+  if (advance !== null && advance !== 0 && advance !== 30 && advance !== 1440) {
+    return invalidReminder("no he entendido cuándo avisarte antes");
+  }
   let remindAt: Date;
   try {
     remindAt = madridLocalToUtc(String(candidate.local_datetime));
@@ -66,7 +70,7 @@ export function parseReminderRequest(raw: unknown, now: Date): ReminderRequest {
   if (repeat !== null && remindAt <= now) remindAt = nextOccurrenceAfter(remindAt, repeat, null, now);
   if (remindAt <= now) return invalidReminder("la fecha que he entendido ya ha pasado");
   return { kind: "reminder", text: candidate.text.trim(), remindAt, repeat,
-    ...(advance === null ? {} : { advanceMinutes: advance as 30 | 1440 }) };
+    ...(advance === null ? {} : { advanceMinutes: advance as AdvanceMinutes }) };
 }
 
 export function suggestAdvanceMinutes(text: string, remindAt: Date, now: Date): 30 | 1440 {
@@ -125,7 +129,7 @@ export async function saveReminder(
   text: string,
   remindAt: Date,
   repeat: Repeat | null = null,
-  advanceMinutes?: 30 | 1440,
+  advanceMinutes?: AdvanceMinutes,
 ): Promise<void> {
   const now = new Date();
   const minutes = advanceMinutes ?? suggestAdvanceMinutes(text, remindAt, now);
@@ -134,7 +138,7 @@ export async function saveReminder(
     text,
     remind_at: remindAt.toISOString(),
     advance_minutes: minutes,
-    advance_at: advanceAt > now.getTime() ? new Date(advanceAt).toISOString() : null,
+    advance_at: minutes > 0 && advanceAt > now.getTime() ? new Date(advanceAt).toISOString() : null,
     repeat,
     repeat_day: repeat === "monthly" ? Number(madridClock(remindAt).localDate.slice(8)) : null,
   });
@@ -215,14 +219,14 @@ interface DueReminder {
   remind_at: string;
   repeat: Repeat | null;
   repeat_day: number | null;
-  advance_minutes: 30 | 1440;
+  advance_minutes: AdvanceMinutes;
 }
 
 async function reschedule(db: SupabaseClient, reminder: DueReminder & { repeat: Repeat }, now: Date): Promise<void> {
   const next = nextOccurrenceAfter(new Date(reminder.remind_at), reminder.repeat, reminder.repeat_day, now);
   const { error } = await db.from("reminders")
     .update({ remind_at: next.toISOString(), sent_at: null,
-      advance_at: next.getTime() - reminder.advance_minutes * 60_000 >= now.getTime()
+      advance_at: reminder.advance_minutes > 0 && next.getTime() - reminder.advance_minutes * 60_000 >= now.getTime()
         ? new Date(next.getTime() - reminder.advance_minutes * 60_000).toISOString() : null,
       advance_notified_at: null })
     .eq("id", reminder.id);

@@ -5,6 +5,7 @@ import {
   nextOccurrenceAfter,
   parseReminderButton,
   parseReminderRequest,
+  saveReminder,
   sendDueReminders,
   snoozeUntil,
 } from "./reminders.ts";
@@ -160,4 +161,33 @@ Deno.test("si se repite y la hora de hoy ya ha pasado, empieza la próxima vez",
   assertEquals(request.kind === "reminder" && request.remindAt, new Date("2026-10-22T07:30:00Z"));
   const once = parseReminderRequest({ text: "grabar las clases", local_datetime: "2026-10-21T09:30" }, NOW);
   assertEquals(once.kind, "invalid");
+});
+
+Deno.test("se puede elegir no tener aviso previo, también en los que se repiten", async () => {
+  const request = parseReminderRequest({
+    text: "vitamina",
+    local_datetime: "2026-10-22T09:00",
+    repeat: "daily",
+    advance_minutes: 0,
+  }, NOW);
+  assertEquals(request.kind === "reminder" && request.advanceMinutes, 0);
+  const { db, queries } = fakeDb(() => ({}));
+  await saveReminder(db, "vitamina", new Date("2026-10-22T07:00:00Z"), "daily", 0);
+  assertStringIncludes(queries[0][1], '"advance_minutes":0,"advance_at":null');
+  const due = [{
+    id: 3,
+    text: "vitamina",
+    remind_at: "2026-10-21T10:00:00Z",
+    repeat: "daily",
+    repeat_day: null,
+    advance_minutes: 0,
+  }];
+  const sent = fakeDb((query) => {
+    if (query.some((step) => step.startsWith('update({"advance_notified_at"'))) return { data: [] };
+    return query.some((step) => step.startsWith("select(")) ? { data: due } : {};
+  });
+  await withTelegram(async () => {
+    assertEquals(await sendDueReminders(sent.db, NOW), 1);
+  });
+  assertStringIncludes(sent.queries.at(-1)![1], '"advance_at":null');
 });
