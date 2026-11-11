@@ -201,8 +201,8 @@ Deno.test("las actualizaciones del mismo aviso se juntan en una línea", () => {
   assertEquals(mergeAlerts([update, first]), [{ ...first, expires: update.expires }]);
 });
 
-Deno.test("como mucho un mensaje al día: si hoy ya se avisó, no se manda nada", async () => {
-  const { db, queries } = fakeDb(() => ({ count: 1 }));
+Deno.test("si hoy ya se avisó y no sube de nivel, no se manda nada", async () => {
+  const { db, queries } = fakeDb(() => ({ data: [{ level: "amarillo" }] }));
   await withFakeFetch(ENV, aemet(buildTar({ "a.xml": RAIN })), async (requests) => {
     assertEquals(await notifyNewWeatherAlerts(db, NOW), 0);
     assertEquals(requests.some((request) => request.url.includes("api.telegram.org")), false);
@@ -212,7 +212,7 @@ Deno.test("como mucho un mensaje al día: si hoy ya se avisó, no se manda nada"
 });
 
 Deno.test("el primer aviso del día se manda en un solo mensaje y se apunta", async () => {
-  const { db, queries } = fakeDb(() => ({ count: 0 }));
+  const { db, queries } = fakeDb(() => ({ data: [] }));
   const update = capXml({ ...RAIN_OPTIONS, id: "aviso-lluvia-2" });
   const respond = (request: Request) =>
     request.url.includes("api.telegram.org")
@@ -225,5 +225,24 @@ Deno.test("el primer aviso del día se manda en un solo mensaje y se apunta", as
     const body = await sent[0].json();
     assertEquals(body.text, `⚠️ Avisos de AEMET en Madrid y Villanueva:\n${describeAlert(parseCapAlert(RAIN)!)}`);
   });
-  assertEquals(queries.at(-1)?.[1].startsWith('upsert([{"id":"aviso-lluvia"'), true);
+  assertEquals(queries.at(-1)?.[1].startsWith('upsert([{"id":"aviso-lluvia","level":"amarillo"'), true);
+});
+
+Deno.test("el mismo día vuelve a avisar si sube a naranja, pero no dos veces por el mismo nivel", async () => {
+  const orange = capXml({ ...RAIN_OPTIONS, id: "naranja", level: "naranja" });
+  const respond = (request: Request) =>
+    request.url.includes("api.telegram.org")
+      ? Response.json({ ok: true, result: { message_id: 1 } })
+      : aemet(buildTar({ "a.xml": RAIN, "b.xml": orange }))(request);
+  const afterYellow = fakeDb(() => ({ data: [{ level: "amarillo" }] }));
+  await withFakeFetch(ENV, respond, async (requests) => {
+    assertEquals(await notifyNewWeatherAlerts(afterYellow.db, NOW), 1);
+    const body = await requests.find((request) => request.url.includes("api.telegram.org"))!.json();
+    assertEquals(body.text, `⚠️ Sube el aviso de AEMET:\n${describeAlert(parseCapAlert(orange)!)}`);
+  });
+  const afterOrange = fakeDb(() => ({ data: [{ level: "amarillo" }, { level: "naranja" }] }));
+  await withFakeFetch(ENV, respond, async (requests) => {
+    assertEquals(await notifyNewWeatherAlerts(afterOrange.db, NOW), 0);
+    assertEquals(requests.some((request) => request.url.includes("api.telegram.org")), false);
+  });
 });

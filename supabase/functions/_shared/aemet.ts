@@ -168,27 +168,34 @@ export function morningAlertLines(alerts: WeatherAlert[], now: Date): string[] {
   return ["⚠️ Avisos de AEMET para hoy:", ...mergeAlerts(today).map(describeAlert)];
 }
 
+// Para saber si un aviso es más grave que lo ya avisado hoy.
+const LEVEL_RANK: Record<string, number> = { amarillo: 1, naranja: 2, rojo: 3 };
+
 /**
- * Un solo mensaje al día como mucho: la primera vez que hay avisos vigentes en sus zonas, todos juntos. Los que salgan
- * después ese mismo día (casi siempre actualizaciones del mismo) esperan al día siguiente o al resumen de la mañana.
- * Devuelve cuántos avisos de AEMET ha resumido en el mensaje.
+ * Un mensaje al día con todos los avisos vigentes de sus zonas, la primera hora que los haya. Ese mismo día solo
+ * vuelve a avisar si sube a naranja o rojo por encima de lo ya avisado; las actualizaciones del mismo nivel esperan al
+ * día siguiente o al resumen de la mañana. El límite se cuenta desde la medianoche de Madrid.
+ * Devuelve cuántos avisos de AEMET ha resumido en el mensaje (0 si no ha mandado nada).
  */
 export async function notifyNewWeatherAlerts(db: SupabaseClient, now: Date): Promise<number> {
   const current = (await fetchWeatherAlerts()).filter((alert) => alert.expires > now);
   if (current.length === 0) return 0;
   const startOfToday = madridLocalToUtc(`${madridClock(now).localDate}T00:00`);
-  const { count, error } = await db.from("weather_alerts_sent").select("id", { count: "exact", head: true })
+  const { data, error } = await db.from("weather_alerts_sent").select("level")
     .gte("sent_at", startOfToday.toISOString());
-  if (error) throw new Error(`No se pudo comprobar si hoy ya se avisó: ${error.message}`);
-  if ((count ?? 0) > 0) return 0;
-  await sendTelegramMessage(
-    ["⚠️ Avisos de AEMET en Madrid y Villanueva:", ...mergeAlerts(current).map(describeAlert)].join("\n"),
-  );
-  // Se apuntan todos: la fecha del envío es la que dice si hoy ya se avisó.
+  if (error) throw new Error(`No se pudo comprobar qué se ha avisado hoy: ${error.message}`);
+  const sentToday = (data ?? []) as { level: string | null }[];
+  const notifiedRank = Math.max(0, ...sentToday.map((row) => LEVEL_RANK[row.level ?? ""] ?? 1));
+  const toSend = sentToday.length === 0
+    ? current
+    : current.filter((alert) => LEVEL_RANK[alert.level] >= 2 && LEVEL_RANK[alert.level] > notifiedRank);
+  if (toSend.length === 0) return 0;
+  const title = sentToday.length === 0 ? "⚠️ Avisos de AEMET en Madrid y Villanueva:" : "⚠️ Sube el aviso de AEMET:";
+  await sendTelegramMessage([title, ...mergeAlerts(toSend).map(describeAlert)].join("\n"));
   const { error: insertError } = await db.from("weather_alerts_sent").upsert(
-    current.map((alert) => ({ id: alert.id, sent_at: now.toISOString() })),
+    toSend.map((alert) => ({ id: alert.id, level: alert.level, sent_at: now.toISOString() })),
     { onConflict: "id" },
   );
   if (insertError) throw new Error(`No se pudieron apuntar los avisos enviados: ${insertError.message}`);
-  return current.length;
+  return toSend.length;
 }
