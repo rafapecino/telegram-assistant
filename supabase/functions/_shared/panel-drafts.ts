@@ -32,7 +32,7 @@ export async function preparePanelDraft(message:string,now:Date){
     'Fechas YYYY-MM-DD, horas locales YYYY-MM-DDTHH:mm. Importes numéricos en euros. No inventes datos ausentes: déjalos vacíos para que se completen.',
     'Para gastos sin fecha usa hoy y categoría Otros. Categorías: Supermercado, Restaurantes, Transporte, Hogar, Suscripciones, Ocio, Salud, Compras, Otros.',
     'Si dice añade un gasto sin más, prepara expenses con description vacía. Ingreso es incomes.',
-    'Recordatorios sin hora: 09:00 del día pedido; repeat vacío, daily, weekdays, weekly o monthly; advance_minutes vacío,30 o1440.',
+    'Recordatorios sin hora: 09:00 del día pedido; repeat vacío, daily, weekdays, weekly o monthly; advance_minutes vacío, 0 si pide sin aviso previo, 30 o 1440.',
     'Evento sin hora: date y local_datetime vacío (todo el día). Con hora: local_datetime y date vacío. Duración 60 minutos si no dice otra.',
     'Energéticas: 1,20 por lata si no indica precio. Tabaco necesita el importe dicho. Conserva TABACO o ENERGÉTICA xN en description.',
     'En hábitos, scheduled_days es una cadena con los días ISO elegidos: lunes=1, domingo=7; por ejemplo 1,3,5. Si no dice días, 1,2,3,4,5,6,7.',
