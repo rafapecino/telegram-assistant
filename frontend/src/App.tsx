@@ -228,7 +228,7 @@ function TodayWeather({forecasts,alerts,goTo,date=todayInMadrid()}:{forecasts:Ro
 
 function WeatherSection({forecasts,alerts}:{forecasts?:Row[];alerts?:Row[]}) {
   return <>
-    <Card title="Avisos de AEMET">{alerts?alerts.length?alerts.map(a=><div className="list-row" key={a.id}><span className="row-symbol peach"><AlertTriangle size={17}/></span><span className="row-main"><strong>{ALERT_LEVEL_EMOJI[a.level]} {a.event}</strong><small>{a.zone} · {dateTime(a.onset)} – {dateTime(a.expires)}</small></span></div>):<Empty>Sin avisos en la Comunidad de Madrid.</Empty>:<Empty>No he podido consultar los avisos de AEMET.</Empty>}</Card>
+    <Card title="Avisos de AEMET">{alerts?alerts.length?alerts.map(a=><div className="list-row" key={a.id}><span className="row-symbol peach"><AlertTriangle size={17}/></span><span className="row-main"><strong>{ALERT_LEVEL_EMOJI[a.level]} {a.event}</strong><small>{a.zone} · {dateTime(a.onset)} – {dateTime(a.expires)}</small></span></div>):<Empty>Sin avisos en Madrid ni en Villanueva de la Cañada.</Empty>:<Empty>No he podido consultar los avisos de AEMET.</Empty>}</Card>
     {forecasts?<div className="two-cols">{forecasts.map(f=><Card key={f.place} title={f.place}>{f.days.map((day:Row)=><div className="list-row" key={day.date}><span className="row-symbol warm weather-emoji">{weatherEmoji(day.code)}</span><span className="row-main"><strong>{dayLabel(day.date)}</strong><small>{day.description}{rainText(day)}</small></span><strong className="weather-temps">{Math.round(day.min)}° / {Math.round(day.max)}°</strong></div>)}</Card>)}</div>:<Card title="Previsión"><Empty>No he podido consultar la previsión.</Empty></Card>}
   </>;
 }
