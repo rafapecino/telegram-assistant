@@ -3,6 +3,7 @@ import {
   describeAlert,
   extractXmlDocuments,
   fetchWeatherAlerts,
+  mergeAlerts,
   morningAlertLines,
   notifyNewWeatherAlerts,
   parseCapAlert,
@@ -15,7 +16,10 @@ const NOW = new Date("2026-10-26T11:00:00Z");
 const DATA_URL = "https://opendata.aemet.es/opendata/sh/datos-avisos";
 
 /** Un aviso CAP 1.2 como los de AEMET: una parte en español y otra en inglés. */
-function capXml(options: { id: string; level: string; onset: string; expires: string; msgType?: string }): string {
+function capXml(
+  options: { id: string; level: string; onset: string; expires: string; msgType?: string; zone?: [string, string] },
+): string {
+  const [zoneName, zoneCode] = options.zone ?? ["Metropolitana y Henares", "722802"];
   const info = (language: string, event: string) => `
   <info>
     <language>${language}</language>
@@ -23,12 +27,12 @@ function capXml(options: { id: string; level: string; onset: string; expires: st
     <event>${event}</event>
     <onset>${options.onset}</onset>
     <expires>${options.expires}</expires>
-    <headline>${event}. Metropolitana y Henares</headline>
+    <headline>${event}. ${zoneName}</headline>
     <parameter><valueName>AEMET-Meteoalerta nivel</valueName><value>${options.level}</value></parameter>
     <parameter><valueName>AEMET-Meteoalerta probabilidad</valueName><value>40%-70%</value></parameter>
     <area>
-      <areaDesc>Metropolitana y Henares</areaDesc>
-      <geocode><valueName>AEMET-Meteoalerta zona</valueName><value>722802</value></geocode>
+      <areaDesc>${zoneName}</areaDesc>
+      <geocode><valueName>AEMET-Meteoalerta zona</valueName><value>${zoneCode}</value></geocode>
     </area>
   </info>`;
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -44,12 +48,13 @@ function capXml(options: { id: string; level: string; onset: string; expires: st
 </alert>`;
 }
 
-const RAIN = capXml({
+const RAIN_OPTIONS = {
   id: "aviso-lluvia",
   level: "amarillo",
   onset: "2026-10-26T14:00:00+01:00",
   expires: "2026-10-26T23:59:00+01:00",
-});
+};
+const RAIN = capXml(RAIN_OPTIONS);
 const GREEN = capXml({
   id: "verde",
   level: "verde",
@@ -178,27 +183,66 @@ Deno.test("el resumen de la mañana solo enseña los avisos de hoy que no han te
   assertEquals(morningAlertLines([over], NOW), []);
 });
 
-Deno.test("cada aviso se manda una sola vez", async () => {
-  const { db, queries } = fakeDb((query) => query[1].startsWith("select(") ? { data: [{ id: "aviso-lluvia" }] } : {});
-  const tar = buildTar({ "a.xml": RAIN, "c.xml": OVER });
-  await withFakeFetch(ENV, aemet(tar), async (requests) => {
-    // El de lluvia ya se mandó y el naranja ya ha terminado: no se manda nada.
+Deno.test("solo cuentan los avisos de sus zonas: Madrid y Villanueva, no la Sierra", () => {
+  const sierra = capXml({ ...RAIN_OPTIONS, id: "sierra", zone: ["Sierra de Madrid", "722801"] });
+  const villanueva = capXml({ ...RAIN_OPTIONS, id: "villanueva", zone: ["Sur, Vegas y Oeste", "722803"] });
+  assertEquals(parseCapAlert(sierra), null);
+  assertEquals(parseCapAlert(villanueva)?.zone, "Sur, Vegas y Oeste");
+});
+
+Deno.test("las actualizaciones del mismo aviso se juntan en una línea", () => {
+  const first = parseCapAlert(RAIN)!;
+  const update: WeatherAlert = {
+    ...first,
+    id: "actualizado",
+    onset: new Date("2026-10-26T15:00:00Z"),
+    expires: new Date("2026-10-27T06:00:00Z"),
+  };
+  assertEquals(mergeAlerts([update, first]), [{ ...first, expires: update.expires }]);
+});
+
+Deno.test("si hoy ya se avisó y no sube de nivel, no se manda nada", async () => {
+  const { db, queries } = fakeDb(() => ({ data: [{ level: "amarillo" }] }));
+  await withFakeFetch(ENV, aemet(buildTar({ "a.xml": RAIN })), async (requests) => {
     assertEquals(await notifyNewWeatherAlerts(db, NOW), 0);
     assertEquals(requests.some((request) => request.url.includes("api.telegram.org")), false);
   });
-  assertEquals(queries.some((query) => query[1].startsWith("insert(")), false);
+  // Desde la medianoche de Madrid (00:00 del 26 en hora de invierno = 23:00 UTC del 25).
+  assertEquals(queries[0].includes('gte("sent_at", "2026-10-25T23:00:00.000Z")'), true);
 });
 
-Deno.test("un aviso nuevo se manda por Telegram y se apunta", async () => {
-  const { db, queries } = fakeDb((query) => query[1].startsWith("select(") ? { data: [] } : {});
+Deno.test("el primer aviso del día se manda en un solo mensaje y se apunta", async () => {
+  const { db, queries } = fakeDb(() => ({ data: [] }));
+  const update = capXml({ ...RAIN_OPTIONS, id: "aviso-lluvia-2" });
   const respond = (request: Request) =>
     request.url.includes("api.telegram.org")
       ? Response.json({ ok: true, result: { message_id: 1 } })
-      : aemet(buildTar({ "a.xml": RAIN }))(request);
+      : aemet(buildTar({ "a.xml": RAIN, "b.xml": update, "c.xml": OVER }))(request);
   await withFakeFetch(ENV, respond, async (requests) => {
-    assertEquals(await notifyNewWeatherAlerts(db, NOW), 1);
-    const sent = await requests.find((request) => request.url.includes("api.telegram.org"))!.json();
-    assertEquals(sent.text, `⚠️ Nuevo aviso de AEMET:\n${describeAlert(parseCapAlert(RAIN)!)}`);
+    assertEquals(await notifyNewWeatherAlerts(db, NOW), 2);
+    const sent = requests.filter((request) => request.url.includes("api.telegram.org"));
+    assertEquals(sent.length, 1);
+    const body = await sent[0].json();
+    assertEquals(body.text, `⚠️ Avisos de AEMET en Madrid y Villanueva:\n${describeAlert(parseCapAlert(RAIN)!)}`);
   });
-  assertEquals(queries.at(-1), ['from("weather_alerts_sent")', 'insert([{"id":"aviso-lluvia"}])']);
+  assertEquals(queries.at(-1)?.[1].startsWith('upsert([{"id":"aviso-lluvia","level":"amarillo"'), true);
+});
+
+Deno.test("el mismo día vuelve a avisar si sube a naranja, pero no dos veces por el mismo nivel", async () => {
+  const orange = capXml({ ...RAIN_OPTIONS, id: "naranja", level: "naranja" });
+  const respond = (request: Request) =>
+    request.url.includes("api.telegram.org")
+      ? Response.json({ ok: true, result: { message_id: 1 } })
+      : aemet(buildTar({ "a.xml": RAIN, "b.xml": orange }))(request);
+  const afterYellow = fakeDb(() => ({ data: [{ level: "amarillo" }] }));
+  await withFakeFetch(ENV, respond, async (requests) => {
+    assertEquals(await notifyNewWeatherAlerts(afterYellow.db, NOW), 1);
+    const body = await requests.find((request) => request.url.includes("api.telegram.org"))!.json();
+    assertEquals(body.text, `⚠️ Sube el aviso de AEMET:\n${describeAlert(parseCapAlert(orange)!)}`);
+  });
+  const afterOrange = fakeDb(() => ({ data: [{ level: "amarillo" }, { level: "naranja" }] }));
+  await withFakeFetch(ENV, respond, async (requests) => {
+    assertEquals(await notifyNewWeatherAlerts(afterOrange.db, NOW), 0);
+    assertEquals(requests.some((request) => request.url.includes("api.telegram.org")), false);
+  });
 });

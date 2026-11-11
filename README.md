@@ -30,8 +30,9 @@ Bot personal de Telegram que:
   paradas guardadas y los horarios oficiales del CRTM en imagen. Los horarios salen del GTFS del CRTM y están en
   `supabase/functions/_shared/crtm-schedules.json`. Para actualizarlos o añadir líneas, ver
   `scripts/crtm-schedules.ts`. Datos: CRTM (https://www.crtm.es/licencia-de-uso).
-- Avisa por Telegram cuando AEMET publica un aviso meteorológico (amarillo, naranja o rojo) en la Comunidad de
-  Madrid. Lo mira cada hora.
+- Avisa por Telegram cuando AEMET publica un aviso meteorológico (amarillo, naranja o rojo) en las zonas de Madrid
+  capital y de Villanueva de la Cañada (Metropolitana y Henares; Sur, Vegas y Oeste). Lo mira cada hora, pero manda
+  un mensaje al día con los avisos juntos; ese día solo vuelve a avisar si sube a naranja o rojo.
 - Responde preguntas generales, como un chat normal, cuando el mensaje no es de ninguna de sus funciones. Si en esa
   conversación cuentas algo nuevo de ti ("en abril corro la maratón"), propone apuntarlo en la memoria con los botones
   Guárdalo y No. Nunca lo guarda sin que pulses Guárdalo.
