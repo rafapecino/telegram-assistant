@@ -89,7 +89,7 @@ la función (`madridClock`), así el cambio de horario no las desplaza:
 
 | Hora (Madrid) | Tarea |
 |---|---|
-| Cada hora | Avisos de AEMET |
+| Cada hora | Avisos de AEMET: un mensaje al día como mucho y otro si sube a naranja o rojo |
 | 8:00 | Resumen de la mañana; importación del banco, presupuestos y conciliación de deudas |
 | 10:00 | Vigilancia de precios (SerpApi) |
 | 21:00 | Pregunta de hábitos |
@@ -165,7 +165,7 @@ Algunos ficheros ya no cumplen `deno fmt` (`calendar.ts`); no los reformatees en
 | Enable Banking | Movimientos del banco | El permiso caduca; se renueva con `/conectar_banco` |
 | Google OAuth | Calendar (lectura y escritura) y Gmail (solo lectura) | La app de OAuth debe estar «En producción» o el acceso caduca a los 7 días |
 | Open-Meteo | Previsión del tiempo | Da 503 a las horas en punto; hay reintentos |
-| AEMET | Avisos meteorológicos de Madrid | Clave gratuita |
+| AEMET | Avisos meteorológicos de Madrid | Clave gratuita. Solo cuentan las zonas de `MY_ZONES` (`aemet.ts`): 722802 Metropolitana y Henares (Madrid capital) y 722803 Sur, Vegas y Oeste (Villanueva de la Cañada) |
 | EMT Madrid | Autobuses | Usuario y contraseña de MobilityLabs |
 | CRTM | Interurbanos 627 y N907 (`crtm.ts`) | Tiempo real con el servicio de los widgets de crtm.es: no es API pública, puede cambiar. Si falla, horario de `crtm-schedules.json`, que se regenera con `scripts/crtm-schedules.ts` cuando el CRTM publique otro GTFS |
 | SerpApi | Comparador y vigilancia de precios | 250 búsquedas al mes; se reservan 15 para la vigilancia. Cada aviso pide además el enlace directo de cada opción (`google_immersive_product`, una búsqueda por opción) |
@@ -201,6 +201,12 @@ Algunos ficheros ya no cumplen `deno fmt` (`calendar.ts`); no los reformatees en
   El GTFS junta las dos noches del N907: `NIGHT_DEPARTURES` en `crtm.ts` las separa según el horario oficial. El GTFS
   no trae el horario de verano (16 de julio a 31 de agosto). En el panel se enseñan las imágenes oficiales
   (`frontend/public/horarios/`); si el CRTM cambia el horario, hay que sustituirlas.
+- AEMET publica un aviso CAP por zona y otro con cada actualización (en un día de lluvia llegaron 25 mensajes).
+  `notifyNewWeatherAlerts` manda un mensaje al día con todo junto (`mergeAlerts` une las actualizaciones del mismo
+  fenómeno, nivel y zona) y, ese día, otro solo si sube a naranja o rojo por encima de lo avisado. Lo enviado se
+  guarda en `weather_alerts_sent` con `sent_at` y `level`; el límite se cuenta desde la medianoche de Madrid.
+- Aviso previo de los recordatorios: `advance_minutes` es 0 (sin aviso previo), 30 o 1440; sin elegir, lo decide
+  `suggestAdvanceMinutes`. Con 0 no se crea `advance_at`. En el panel, ojo con `value||…`: un 0 se perdería.
 - Un recordatorio que se repite y cuya primera vez ya ha pasado hoy empieza la siguiente vez que toca. Uno sin
   repetición con fecha pasada se rechaza.
 - En las sesiones remotas de Claude, `git fetch origin main` puede no actualizar `origin/main`: usa
