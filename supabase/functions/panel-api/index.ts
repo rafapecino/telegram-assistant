@@ -16,7 +16,7 @@ import { clearChatMessages, loadChatMessages, parseChatInput, replyToChat } from
 import { parseWeightRequest, saveWeight } from "../_shared/weight.ts";
 import { transcribeAudio } from "../_shared/groq.ts";
 import { inventFunnyLine, loadMemory, saveMemory } from "../_shared/memory.ts";
-import { fetchWeatherAlerts } from "../_shared/aemet.ts";
+import { loadStoredAlerts } from "../_shared/aemet.ts";
 import { loadNews, NEWS_TOPICS } from "../_shared/news.ts";
 import { fetchCuriosity } from "../_shared/curiosity.ts";
 import { fetchQuotes, followAsset, loadWatchlist, type MarketKind, unfollowAsset } from "../_shared/markets.ts";
@@ -118,7 +118,7 @@ async function readResource(db: ReturnType<typeof createAdminClient>, resource: 
   }
   // Separado del tiempo: si AEMET falla, la previsión se sigue viendo.
   if (resource === "weather_alerts") {
-    return (await fetchWeatherAlerts()).filter((alert) => alert.expires > now);
+    return await loadStoredAlerts(db, now);
   }
   if (resource === "bank_connection") return { connected: await hasBankConnections(db) };
   // Ajustes: se piden al abrir la sección, no con el resto, porque consultan a Google.

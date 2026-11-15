@@ -51,6 +51,7 @@ Deno.test("si el tiempo falla, el resumen lo dice y sigue; sin avisos ni Google 
     if (query[0] === 'from("reminders")') return { data: [{ text: "Llamar", remind_at: "2026-10-22T16:00:00Z" }] };
     if (query[0] === 'from("google_connections")') return { data: null };
     if (query[0] === 'from("birthdays")') return { data: [] };
+    if (query[0] === 'from("weather_alerts")') return { data: [] };
     return { data: [{ id: 1, text: "leche" }] };
   });
   // AEMET contesta así cuando no hay avisos.

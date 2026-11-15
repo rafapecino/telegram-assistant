@@ -10,6 +10,8 @@ const WARNINGS_URL = "https://opendata.aemet.es/opendata/api/avisos_cap/ultimoel
 // AEMET falla a ratos con 5xx, 429 (límite de peticiones) o cortando la conexión sin responder: se reintenta antes
 // de rendirse.
 export const RETRY_DELAYS_MS = [2_000, 5_000];
+// Con el límite por minuto agotado, AEMET contesta «estado 429» y pide volver a intentarlo al minuto siguiente.
+export const RATE_LIMIT_WAIT_MS = 61_000;
 const TAR_BLOCK = 512;
 const LEVEL_EMOJI: Record<string, string> = { amarillo: "🟡", naranja: "🟠", rojo: "🔴" };
 // Solo las zonas por las que se mueve: Metropolitana y Henares (Madrid capital) y Sur, Vegas y Oeste (Villanueva de
@@ -125,10 +127,21 @@ export function parseCapAlert(xml: string): WeatherAlert | null {
 }
 
 /** Los avisos que tiene publicados AEMET ahora en sus zonas de la Comunidad de Madrid. */
-export async function fetchWeatherAlerts(retryDelaysMs = RETRY_DELAYS_MS): Promise<WeatherAlert[]> {
+export async function fetchWeatherAlerts(
+  retryDelaysMs = RETRY_DELAYS_MS,
+  rateLimitWaitMs = RATE_LIMIT_WAIT_MS,
+): Promise<WeatherAlert[]> {
   const headers = { api_key: requireEnv("AEMET_API_KEY") };
-  const response = await fetchWithRetry(WARNINGS_URL, { headers }, retryDelaysMs);
-  const result = await response.json().catch(() => ({})) as { estado?: number; datos?: string; descripcion?: string };
+  const ask = async () => {
+    const response = await fetchWithRetry(WARNINGS_URL, { headers }, retryDelaysMs);
+    const body = await response.json().catch(() => ({})) as { estado?: number; datos?: string; descripcion?: string };
+    return { response, result: body };
+  };
+  let { response, result } = await ask();
+  if (result.estado === 429) {
+    await new Promise((resolve) => setTimeout(resolve, rateLimitWaitMs));
+    ({ response, result } = await ask());
+  }
   // Sin avisos, AEMET contesta 404 "No hay datos que satisfagan esos criterios".
   if (result.estado === 404) return [];
   if (!response.ok || result.estado !== 200 || !result.datos) {
@@ -168,34 +181,53 @@ export function morningAlertLines(alerts: WeatherAlert[], now: Date): string[] {
   return ["⚠️ Avisos de AEMET para hoy:", ...mergeAlerts(today).map(describeAlert)];
 }
 
-// Para saber si un aviso es más grave que lo ya avisado hoy.
-const LEVEL_RANK: Record<string, number> = { amarillo: 1, naranja: 2, rojo: 3 };
+interface StoredAlert {
+  id: string;
+  level: string;
+  event: string;
+  zone: string;
+  onset: string;
+  expires: string;
+}
 
 /**
- * Un mensaje al día con todos los avisos vigentes de sus zonas, la primera hora que los haya. Ese mismo día solo
- * vuelve a avisar si sube a naranja o rojo por encima de lo ya avisado; las actualizaciones del mismo nivel esperan al
- * día siguiente o al resumen de la mañana. El límite se cuenta desde la medianoche de Madrid.
- * Devuelve cuántos avisos de AEMET ha resumido en el mensaje (0 si no ha mandado nada).
+ * Consulta AEMET y guarda la foto en weather_alerts. Solo se llama a las 8:00 y a las 14:00: el panel y el resumen
+ * leen de la tabla, porque consultar AEMET cada vez agotaba el límite de la clave.
  */
-export async function notifyNewWeatherAlerts(db: SupabaseClient, now: Date): Promise<number> {
-  const current = (await fetchWeatherAlerts()).filter((alert) => alert.expires > now);
-  if (current.length === 0) return 0;
-  const startOfToday = madridLocalToUtc(`${madridClock(now).localDate}T00:00`);
-  const { data, error } = await db.from("weather_alerts_sent").select("level")
-    .gte("sent_at", startOfToday.toISOString());
-  if (error) throw new Error(`No se pudo comprobar qué se ha avisado hoy: ${error.message}`);
-  const sentToday = (data ?? []) as { level: string | null }[];
-  const notifiedRank = Math.max(0, ...sentToday.map((row) => LEVEL_RANK[row.level ?? ""] ?? 1));
-  const toSend = sentToday.length === 0
-    ? current
-    : current.filter((alert) => LEVEL_RANK[alert.level] >= 2 && LEVEL_RANK[alert.level] > notifiedRank);
-  if (toSend.length === 0) return 0;
-  const title = sentToday.length === 0 ? "⚠️ Avisos de AEMET en Madrid y Villanueva:" : "⚠️ Sube el aviso de AEMET:";
-  await sendTelegramMessage([title, ...mergeAlerts(toSend).map(describeAlert)].join("\n"));
-  const { error: insertError } = await db.from("weather_alerts_sent").upsert(
-    toSend.map((alert) => ({ id: alert.id, level: alert.level, sent_at: now.toISOString() })),
-    { onConflict: "id" },
-  );
-  if (insertError) throw new Error(`No se pudieron apuntar los avisos enviados: ${insertError.message}`);
-  return toSend.length;
+export async function refreshWeatherAlerts(db: SupabaseClient, now: Date): Promise<WeatherAlert[]> {
+  const alerts = (await fetchWeatherAlerts()).filter((alert) => alert.expires > now);
+  const { error: deleteError } = await db.from("weather_alerts").delete().neq("id", "");
+  if (deleteError) throw new Error(`No se pudieron borrar los avisos anteriores: ${deleteError.message}`);
+  if (alerts.length === 0) return [];
+  const { error } = await db.from("weather_alerts").insert(alerts.map((alert) => ({
+    id: alert.id,
+    level: alert.level,
+    event: alert.event,
+    zone: alert.zone,
+    onset: alert.onset.toISOString(),
+    expires: alert.expires.toISOString(),
+    fetched_at: now.toISOString(),
+  })));
+  if (error) throw new Error(`No se pudieron guardar los avisos de AEMET: ${error.message}`);
+  return alerts;
+}
+
+/** Los avisos de la última consulta que aún no han terminado. */
+export async function loadStoredAlerts(db: SupabaseClient, now: Date): Promise<WeatherAlert[]> {
+  const { data, error } = await db.from("weather_alerts").select("id,level,event,zone,onset,expires")
+    .gt("expires", now.toISOString()).order("onset");
+  if (error) throw new Error(`No se pudieron leer los avisos de AEMET: ${error.message}`);
+  return ((data ?? []) as StoredAlert[]).map((alert) => ({
+    ...alert,
+    onset: new Date(alert.onset),
+    expires: new Date(alert.expires),
+  }));
+}
+
+/** A las 14:00: vuelve a consultar AEMET y, si hay avisos, los manda juntos. Devuelve cuántos había. */
+export async function sendMiddayAlerts(db: SupabaseClient, now: Date): Promise<number> {
+  const alerts = await refreshWeatherAlerts(db, now);
+  if (alerts.length === 0) return 0;
+  await sendTelegramMessage(["⚠️ Avisos de AEMET a mediodía:", ...mergeAlerts(alerts).map(describeAlert)].join("\n"));
+  return alerts.length;
 }
