@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
-import { fetchWeatherAlerts, morningAlertLines } from "./aemet.ts";
+import { loadStoredAlerts, morningAlertLines } from "./aemet.ts";
 import { type Birthday, birthdaysOn, listBirthdays, nameWithAge } from "./birthdays.ts";
 import { type CalendarEvent, isCalendarConnected, listEvents } from "./calendar.ts";
 import { fetchCuriosity, formatCuriosity } from "./curiosity.ts";
@@ -158,7 +158,7 @@ export async function buildMorningSummary(db: SupabaseClient, now: Date): Promis
   return composeSummary([
     [await morningGreeting(db, today)],
     await section("el tiempo", async () => [describeWeather(await fetchTodayWeather(await mainPlace()))]),
-    await section("los avisos de AEMET", async () => morningAlertLines(await fetchWeatherAlerts(), now)),
+    await section("los avisos de AEMET", async () => morningAlertLines(await loadStoredAlerts(db, now), now)),
     await section("los recordatorios", async () => reminderLines(await todayReminders(db, today))),
     // Sin calendario conectado no hay nada que decir: no es un fallo.
     await section(

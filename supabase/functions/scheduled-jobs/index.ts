@@ -1,6 +1,6 @@
 import { reconcileDebts, sendLifeWeeklyReview } from "../_shared/life.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.117.3";
-import { notifyNewWeatherAlerts } from "../_shared/aemet.ts";
+import { refreshWeatherAlerts, sendMiddayAlerts } from "../_shared/aemet.ts";
 import { checkBudgetAlerts } from "../_shared/budgets.ts";
 import { createAdminClient, functionUrl, getInternalSecret } from "../_shared/database.ts";
 import { errorMessage } from "../_shared/env.ts";
@@ -14,6 +14,8 @@ import { sendTelegramMessage, setTelegramWebhook } from "../_shared/telegram.ts"
 
 const DAILY_IMPORT_HOUR = 8;
 const WEEKLY_SUMMARY_HOUR = 20;
+// AEMET se consulta solo dos veces al día (a las 8:00, para el resumen, y a mediodía): cada hora agotaba la clave.
+const MIDDAY_ALERTS_HOUR = 14;
 
 /** Tras cada importación se revisan los presupuestos, porque es cuando cambia lo gastado. */
 async function importAndCheckBudgets(db: SupabaseClient, now: Date): Promise<string> {
@@ -35,8 +37,12 @@ async function morningSummary(db: SupabaseClient, now: Date): Promise<string> {
   return "Enviado el resumen de la mañana";
 }
 
-async function weatherAlerts(db: SupabaseClient, now: Date): Promise<string> {
-  return `Enviados ${await notifyNewWeatherAlerts(db, now)} avisos de AEMET`;
+async function refreshAlerts(db: SupabaseClient, now: Date): Promise<string> {
+  return `Guardados ${(await refreshWeatherAlerts(db, now)).length} avisos de AEMET`;
+}
+
+async function middayAlerts(db: SupabaseClient, now: Date): Promise<string> {
+  return `Enviados ${await sendMiddayAlerts(db, now)} avisos de AEMET`;
 }
 
 async function priceWatches(db: SupabaseClient, now: Date): Promise<string> {
@@ -66,9 +72,10 @@ async function runAll(db: SupabaseClient, now: Date, tasks: ((db: SupabaseClient
 // pg_cron funciona en UTC: la hora de Madrid se comprueba aquí para no desfasarse con el cambio de horario.
 async function runHourlyJobs(db: SupabaseClient, now: Date): Promise<string> {
   const clock = madridClock(now);
-  // Los avisos de AEMET se miran cada hora: pueden publicarse en cualquier momento.
-  const tasks: ((db: SupabaseClient, now: Date) => Promise<string>)[] = [weatherAlerts];
-  if (clock.hour === MORNING_SUMMARY_HOUR) tasks.push(morningSummary);
+  const tasks: ((db: SupabaseClient, now: Date) => Promise<string>)[] = [];
+  // Primero se guardan los avisos: el resumen de la mañana los lee de la tabla.
+  if (clock.hour === MORNING_SUMMARY_HOUR) tasks.push(refreshAlerts, morningSummary);
+  if (clock.hour === MIDDAY_ALERTS_HOUR) tasks.push(middayAlerts);
   if (clock.hour === DAILY_IMPORT_HOUR) tasks.push(importAndCheckBudgets);
   if (clock.isSunday && clock.hour === WEEKLY_SUMMARY_HOUR) tasks.push(importAndSummarize);
   if (clock.hour === HABIT_QUESTION_HOUR) tasks.push(habitQuestions);
@@ -93,7 +100,7 @@ async function runJob(db: SupabaseClient, job: string, now: Date): Promise<strin
     case "price-watches":
       return priceWatches(db, now);
     case "weather-alerts":
-      return weatherAlerts(db, now);
+      return middayAlerts(db, now);
     case "setup-telegram-webhook":
       await setTelegramWebhook(functionUrl("telegram-webhook"), await getInternalSecret(db, "telegram_webhook_secret"));
       return "Webhook de Telegram configurado";
