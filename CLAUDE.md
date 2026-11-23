@@ -45,6 +45,8 @@ frontend/              React 19 + Vite + TypeScript; casi toda la interfaz está
   src/navigation.ts    rutas ?section=… y última sección guardada
   src/LifePanels.tsx   tareas sin hora, deudas, objetivos, repaso semanal, pedidos
   src/ExperiencePanels.tsx  notas, deshacer borrados, frescura de datos, propuestas editables del chat
+  src/CloudSky.tsx     cielo animado de fondo (WebGL), componente de OriginKit con cambios propios
+  src/sky.ts           franja del cielo (día, tarde o noche) según la hora de Madrid y sus colores
   vercel.json          CSP y cabeceras de seguridad
   tests/               pruebas Node (node --test) y de interfaz con jsdom
 ```
@@ -208,6 +210,15 @@ Algunos ficheros ya no cumplen `deno fmt` (`calendar.ts`); no los reformatees en
   `mergeAlerts` los junta por fenómeno, nivel y zona. La tabla `weather_alerts_sent` ya no se usa.
 - Aviso previo de los recordatorios: `advance_minutes` es 0 (sin aviso previo), 30 o 1440; sin elegir, lo decide
   `suggestAdvanceMinutes`. Con 0 no se crea `advance_at`. En el panel, ojo con `value||…`: un 0 se perdería.
+- Cielo de fondo: `SkyBackground` (`App.tsx`) pinta `CloudSky` fijo detrás de la zona de contenido, con los colores de
+  `SKY_PRESETS` (día de 7:00 a 17:00, tarde de 17:00 a 20:00, noche el resto). `CloudSky.tsx` viene de OriginKit
+  (`bunx --bun originkit@latest add cloud-sky`, pide cuenta) con dos cambios: sin `"use client"` y con las props
+  `maxPixelRatio` y `maxFps`. Volver a descargarlo con el CLI los borra. En el móvil (hasta 850 px o táctil) se
+  dibuja a resolución 1 y a 30 fps, unas 8 veces menos trabajo de GPU; en escritorio, a 2x y 60 fps. Siempre se
+  mueve, también con «reducir movimiento»: lo pidió así el usuario. El componente trae `minWidth: 1200` y
+  `minHeight: 800`, que se anulan con `style`. `.sky-background` empieza en `left: 244px` (el ancho del menú
+  lateral) y en el móvil en 0. Los textos que quedan sobre el cielo (título, subtítulo, «Panel actualizado» y pie)
+  van en blanco con sombra; las tarjetas siguen blancas.
 - Un recordatorio que se repite y cuya primera vez ya ha pasado hoy empieza la siguiente vez que toca. Uno sin
   repetición con fecha pasada se rechaza.
 - En las sesiones remotas de Claude, `git fetch origin main` puede no actualizar `origin/main`: usa
