@@ -293,6 +293,9 @@ interface Props {
     clouds?: Clouds
     sun?: Sun
     pointer?: Pointer
+    // Añadidos para el panel: en el móvil se dibuja a menos resolución y con menos fotogramas.
+    maxPixelRatio?: number
+    maxFps?: number
 }
 
 function __OriginkitBase_CloudSky(props: Props) {
@@ -309,6 +312,8 @@ function __OriginkitBase_CloudSky(props: Props) {
         pointer,
         width,
         height,
+        maxPixelRatio = MAX_DPR,
+        maxFps = 60,
     } = props
 
     // A group the designer never opened arrives undefined; spread-merging over a
@@ -341,6 +346,8 @@ function __OriginkitBase_CloudSky(props: Props) {
         parallax: clampN(num(pointer_.parallax, 100), 0, 300) / 100,
         wind: clampN(num(pointer_.wind, 100), 0, 300) / 100,
         damping: clampN(num(pointer_.damping, 20), 1, 100),
+        maxDpr: clampN(num(maxPixelRatio, MAX_DPR), 0.5, MAX_DPR),
+        frameMs: 1000 / clampN(num(maxFps, 60), 1, 60),
     }
 
     const ptrRef = useRef({ x: 0, y: 0, inside: false })
@@ -383,6 +390,7 @@ function __OriginkitBase_CloudSky(props: Props) {
 
         let raf = 0
         let last = performance.now()
+        let lastDraw = -Infinity
         // Each layer keeps its OWN accumulator, wrapped on the CPU. One shared
         // clock scaled per layer would jump every time Speed changed, because the
         // scale multiplies the whole elapsed time, not just what comes next.
@@ -393,9 +401,15 @@ function __OriginkitBase_CloudSky(props: Props) {
         let leanY = 0
 
         const render = (now: number) => {
+            const v = vRef.current
+            // Limita los fotogramas: el navegador pide 60 por segundo y aquí se salta los que sobran.
+            if (now - lastDraw < (v.frameMs as number) - 1) {
+                raf = requestAnimationFrame(render)
+                return
+            }
+            lastDraw = now
             const dt = Math.min(0.05, (now - last) / 1000)
             last = now
-            const v = vRef.current
             const p = ptrRef.current
 
             // Eased toward target; higher Damping settles faster.
@@ -411,7 +425,7 @@ function __OriginkitBase_CloudSky(props: Props) {
             farX = (farX - FAR_DRIFT * rate * dt) % 1000
             cirrusX = (cirrusX - CIRRUS_DRIFT * rate * dt) % 1000
 
-            const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR)
+            const dpr = Math.min(window.devicePixelRatio || 1, v.maxDpr as number)
             const cw = sizeRef.current.w || canvas.clientWidth || 1200
             const ch = sizeRef.current.h || canvas.clientHeight || 800
             const bw = Math.max(1, Math.round(cw * dpr))

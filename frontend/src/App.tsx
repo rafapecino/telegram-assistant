@@ -54,11 +54,16 @@ async function api(resource:string, token:string, method='GET', data?:object, pa
 /** Sin conexión o con un fallo del servidor tiene sentido reintentar; con un dato no válido, no. */
 const isRetryable=(error:unknown)=>{const status=(error as {status?:number}).status;return status===0||(status??0)>=500};
 
-/** Cielo animado de fondo de la zona de contenido. Con «reducir movimiento» las nubes se quedan quietas. */
+const matches=(query:string)=>typeof window!=='undefined'&&!!window.matchMedia?.(query).matches;
+/**
+ * Cielo animado de fondo de la zona de contenido, siempre en movimiento (lo pidió así el usuario). En el móvil se
+ * dibuja a resolución normal y a 30 fotogramas: unas 8 veces menos trabajo para la GPU, sin diferencia visible en
+ * unas nubes difuminadas.
+ */
 function SkyBackground({now}:{now:Date}){
-  const isStill=typeof window!=='undefined'&&window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  const motion=isStill?{speed:0,pointer:{wind:0,parallax:0,damping:50}}:{};
-  return <div className="sky-background" aria-hidden="true"><CloudSky {...SKY_PRESETS[skyPhase(now)]} {...motion} style={{minWidth:0,minHeight:0}}/></div>;
+  const isMobile=matches('(max-width: 850px), (pointer: coarse)');
+  const performance=isMobile?{maxPixelRatio:1,maxFps:30}:{};
+  return <div className="sky-background" aria-hidden="true"><CloudSky {...SKY_PRESETS[skyPhase(now)]} {...performance} style={{minWidth:0,minHeight:0}}/></div>;
 }
 function Card({title,aside,children,className=''}:{title:ReactNode;aside?:ReactNode;children:ReactNode;className?:string}) {return <section className={`card ${className}`}><div className="card-heading"><h2>{title}</h2>{aside}</div>{children}</section>}
 function SectionLink({target,goTo,className,children}:{target:Section;goTo:(section:Section)=>void;className?:string;children:ReactNode}) {
