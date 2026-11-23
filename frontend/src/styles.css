@@ -66,7 +66,7 @@ a.nav-item{text-decoration:none}
 /* Inicio: conversación, hoy y cuatro accesos; el resto queda plegado. */
 .overview-content .overview-subtitle{display:none}
 .overview-layout>.chat-card{padding:18px 20px}
-.overview-layout .chat-log{height:190px;max-height:190px;overscroll-behavior-y:contain;padding-bottom:8px}
+.overview-layout .chat-log{height:190px;max-height:190px;padding-bottom:8px}
 .overview-layout .chat-card .card-heading{margin-bottom:12px}
 .overview-layout .chat-message{padding:8px 11px;font-size:13px;line-height:1.45}
 .overview-layout .chat-welcome{padding:16px 8px}
@@ -176,3 +176,5 @@ a.nav-item{text-decoration:none}
 .transit-stops{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr))}.transit-stop h3{font-size:14px;margin:0 0 6px}.line-badge{display:grid;place-items:center;min-width:46px;height:30px;padding:0 8px;border-radius:8px;background:#2f9a4a;color:#fff;font-weight:800;font-size:13px;flex-shrink:0}.line-badge.night{background:#2b3440}.transit-source{font-size:12px;font-weight:700;color:#5b6b82;white-space:nowrap}.transit-source.live{color:#137360}.timetable-images{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr))}.timetable-images a{display:block;border:1px solid #e4ebf5;border-radius:12px;overflow:hidden;background:#fff}.timetable-images img{display:block;width:100%;height:auto}
 .transit-days button[aria-pressed=true]{background:#fff;color:#1259b0;font-weight:800;box-shadow:0 1px 4px #142b5a26}
 .workspace{position:relative;background:transparent}.sky-background{position:fixed;top:0;bottom:0;left:244px;right:0;z-index:-1;pointer-events:none}.sky-background::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,20,45,.35),rgba(8,20,45,.1) 45%)}@media(max-width:850px){.sky-background{left:0}}.page-heading h1,.page-heading p,.page-heading .eyebrow,.freshness,.freshness.is-stale,.content>footer{color:#fff;text-shadow:0 1px 8px rgba(0,0,0,.45)}
+
+.today{text-transform:none}.page-heading .today{align-self:flex-start}.page-heading h1{letter-spacing:-.025em;line-height:1.15}.page-heading h1,.page-heading p,.page-heading .eyebrow{text-shadow:0 1px 3px rgba(0,0,0,.35)}.sidebar nav{scrollbar-width:thin;scrollbar-color:#30405f transparent}
